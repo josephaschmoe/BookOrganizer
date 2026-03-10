@@ -1,0 +1,9 @@
+{
+  "name": "book-organizer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal book catalog with Gemini-powered research briefings.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

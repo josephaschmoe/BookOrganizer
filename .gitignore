@@ -1,0 +1,12 @@
+# Environment / secrets
+.env
+
+# Personal catalog data
+catalog-data.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
