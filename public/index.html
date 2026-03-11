@@ -433,6 +433,93 @@ const firebaseConfig = {
     margin-top: 6px;
   }
 
+  /* ── Bulk Load tab ── */
+  .beta-badge {
+    display: inline-block;
+    background: var(--gold);
+    color: #fff;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 1px 5px;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-left: 5px;
+    line-height: 1.6;
+  }
+  .bulk-explanation {
+    font-size: 0.88rem;
+    color: var(--brown);
+    line-height: 1.55;
+    margin-bottom: 14px;
+  }
+  .bulk-photo-btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .bulk-book-cards { display: flex; flex-direction: column; gap: 7px; margin: 10px 0; }
+  .bulk-book-card {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border: 1px solid var(--tan);
+    border-left: 3px solid var(--tan);
+    border-radius: 1px;
+    background: var(--cream);
+    transition: border-left-color 0.15s, opacity 0.15s;
+  }
+  .bulk-book-card.is-correct  { border-left-color: var(--green); }
+  .bulk-book-card.is-incorrect { border-left-color: var(--red); opacity: 0.55; }
+  .bulk-book-thumb {
+    width: 34px; min-width: 34px; height: 48px;
+    border: 1px solid var(--tan); border-radius: 1px;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+    background: var(--parchment); font-size: 1rem; color: var(--tan); flex-shrink: 0;
+  }
+  .bulk-book-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .bulk-book-info { flex: 1; min-width: 0; }
+  .bulk-book-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.88rem; font-weight: 700; color: var(--dark);
+    line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bulk-book-author {
+    font-size: 0.78rem; color: var(--brown); font-style: italic;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+  }
+  .bulk-book-meta {
+    font-family: 'Courier Prime', monospace; font-size: 0.62rem;
+    color: var(--tan); margin-top: 2px;
+  }
+  .bulk-toggle-btns { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+  .bulk-toggle-btn {
+    width: 30px; height: 24px;
+    border: 1px solid var(--tan); background: transparent; border-radius: 1px;
+    cursor: pointer; font-size: 0.8rem; color: var(--brown);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .bulk-toggle-btn.active-correct  { background: var(--green); border-color: var(--green); color: #fff; }
+  .bulk-toggle-btn.active-incorrect { background: var(--red);   border-color: var(--red);   color: #fff; }
+  .bulk-results-hdr {
+    font-family: 'Courier Prime', monospace; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--brown); margin-bottom: 8px;
+  }
+  .bulk-fix-prompt {
+    font-size: 0.88rem; color: var(--brown); line-height: 1.5;
+    margin: 10px 0 8px; padding: 10px 12px;
+    background: var(--parchment); border: 1px dashed var(--tan); border-radius: 1px;
+  }
+  .bulk-correction-hdr {
+    font-family: 'Playfair Display', serif; font-style: italic;
+    font-size: 1rem; color: var(--dark); margin-bottom: 12px;
+    padding-bottom: 8px; border-bottom: 1px dashed var(--tan);
+  }
+  .bulk-ai-saw {
+    font-family: 'Courier Prime', monospace; font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--tan); margin-bottom: 4px;
+  }
+
   .catalog-toolbar {
     margin-bottom: 14px;
     flex-wrap: wrap;
@@ -1395,6 +1482,117 @@ const firebaseConfig = {
     max-height: 240px;
     object-fit: cover;
   }
+
+  /* ── Bookshelves ── */
+  .header-shelf-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: var(--cream);
+    padding: 5px 12px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .header-shelf-btn:hover {
+    border-color: var(--gold);
+    background: rgba(255,255,255,0.1);
+  }
+
+  .shelf-label-row {
+    padding: 10px 0 2px;
+    display: flex;
+    align-items: center;
+  }
+  .shelf-label-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.12rem;
+    color: var(--dark);
+    cursor: pointer;
+    padding: 2px 0;
+    letter-spacing: 0.01em;
+  }
+  .shelf-label-btn:hover { color: var(--brown); }
+  .shelf-label-btn svg { color: var(--brown); flex-shrink: 0; }
+
+  .shelves-modal {
+    width: 480px;
+    max-width: 95vw;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .shelves-modal h3 { margin-bottom: 16px; }
+
+  #shelvesList { margin-bottom: 4px; }
+
+  .shelf-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 6px;
+    border-bottom: 1px solid var(--tan);
+    flex-wrap: wrap;
+    border-radius: 2px;
+  }
+  .shelf-item:last-child { border-bottom: none; }
+  .shelf-item.active { background: #edf4fb; }
+
+  .shelf-item-name {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    background: none;
+    border: none;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: var(--dark);
+    cursor: pointer;
+    padding: 2px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .shelf-item-name:hover { color: var(--brown); }
+  .shelf-item.active .shelf-item-name { color: var(--gold); font-weight: 700; }
+
+  .shelf-item-count {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.72rem;
+    color: var(--brown);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .shelf-item-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .shelves-new-shelf-row {
+    padding-top: 12px;
+    border-top: 1px dashed var(--tan);
+    margin-top: 4px;
+  }
+
+  @media (max-width: 420px) {
+    .shelf-item-actions {
+      flex-basis: 100%;
+      justify-content: flex-end;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1449,6 +1647,7 @@ const firebaseConfig = {
           <div class="tabs">
             <button class="tab active" type="button" data-tab="isbn" onclick="switchTab('isbn')">By ISBN</button>
             <button class="tab" type="button" data-tab="manual" onclick="switchTab('manual')">Manual Entry</button>
+            <button class="tab" type="button" data-tab="bulk" onclick="switchTab('bulk')">Bulk Load <span class="beta-badge">Beta</span></button>
           </div>
 
           <div id="tabIsbn">
@@ -1519,6 +1718,73 @@ const firebaseConfig = {
               <input type="text" id="manSubjects" placeholder="e.g. Fiction; Coming of age">
             </div>
           </div>
+
+          <!-- ─── Bulk Load tab ─── -->
+          <div id="tabBulk" style="display:none;">
+
+            <!-- Intro: explanation + photo picker -->
+            <div id="bulkIntroSection">
+              <p class="bulk-explanation">
+                <strong>Bulk Load</strong> lets you photograph a bookshelf, a stack of covers, or any collection of books.
+                TomeShelf sends the image to AI, identifies every title it can see, searches each one, and presents
+                a list for you to confirm — then adds them all at once.<br><br>
+                Book covers work best. For a shelf, make sure spines are readable.
+              </p>
+              <div class="bulk-photo-btn-row">
+                <button class="btn btn-accent" type="button" onclick="startBulkCamera()">📷 Camera</button>
+                <button class="btn btn-accent" type="button" onclick="startBulkGallery()">🖼 Gallery</button>
+                <input type="file" id="bulkCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this)">
+                <input type="file" id="bulkGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this)">
+              </div>
+              <div class="lookup-status" id="bulkStatus"></div>
+            </div>
+
+            <!-- Results: review identified books, toggle correct/incorrect -->
+            <div id="bulkResultsSection" style="display:none;">
+              <div class="bulk-results-hdr" id="bulkResultsHdr"></div>
+              <div class="bulk-book-cards" id="bulkBookCards"></div>
+              <!-- Fix prompt shown after adding correct books (if any marked incorrect) -->
+              <div id="bulkFixPrompt" class="bulk-fix-prompt" style="display:none;">
+                <span id="bulkFixPromptText"></span>
+                <div class="button-row" style="margin-top:8px;">
+                  <button class="btn btn-light btn-sm" type="button" onclick="resetBulkLoad()">No, Done</button>
+                  <button class="btn btn-primary btn-sm" type="button" id="bulkFixBtn" onclick="startBulkCorrection()">Yes, Fix Them →</button>
+                </div>
+              </div>
+              <!-- Normal action row (hidden once fix prompt is shown) -->
+              <div class="button-row" id="bulkActionRow">
+                <button class="btn btn-light btn-sm" type="button" onclick="resetBulkLoad()">Start Over</button>
+                <button class="btn btn-primary" type="button" id="bulkAddCorrectBtn" onclick="addCorrectBulkBooks()">Add Books</button>
+              </div>
+              <div class="lookup-status" id="bulkResultStatus"></div>
+            </div>
+
+            <!-- Correction: manual search for incorrect / unmatched books, one at a time -->
+            <div id="bulkCorrectionSection" style="display:none;">
+              <div class="bulk-correction-hdr" id="bulkCorrectionHdr"></div>
+              <div class="bulk-ai-saw" id="bulkAiSaw"></div>
+              <div class="form-group">
+                <label for="bulkCorrTitle">Title</label>
+                <input type="text" id="bulkCorrTitle" onkeydown="if(event.key==='Enter') bulkCorrectionSearch()">
+              </div>
+              <div class="form-group">
+                <label for="bulkCorrAuthor">Author</label>
+                <input type="text" id="bulkCorrAuthor" onkeydown="if(event.key==='Enter') bulkCorrectionSearch()">
+              </div>
+              <div class="button-row">
+                <button class="btn btn-secondary" type="button" onclick="bulkCorrectionSearch()">Search</button>
+                <button class="btn btn-light" type="button" onclick="clearBulkCorrSearch()">Clear</button>
+              </div>
+              <div class="lookup-status" id="bulkCorrStatus"></div>
+              <div class="search-results" id="bulkCorrSearchResults" style="display:none;"></div>
+              <div class="button-row" style="margin-top:4px;">
+                <button class="btn btn-light" type="button" onclick="bulkCorrectionSkip()">Skip →</button>
+                <button class="btn btn-primary" type="button" id="bulkCorrAddBtn" onclick="addBulkCorrectionBook()" disabled>Add to Catalog</button>
+              </div>
+              <div class="lookup-status" id="bulkCorrAddStatus"></div>
+            </div>
+
+          </div><!-- /tabBulk -->
         </div><!-- /addModeSection -->
 
         <hr class="form-divider">
@@ -1567,6 +1833,12 @@ const firebaseConfig = {
 
         <!-- ── Physical / provenance fields ── -->
         <div class="form-group">
+          <label for="bookListShelfId">Bookshelf</label>
+          <select id="bookListShelfId">
+            <option value="default">Reading List</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label for="bookCondition">Condition</label>
           <select id="bookCondition">
             <option value="">Select</option>
@@ -1595,6 +1867,12 @@ const firebaseConfig = {
   </div>
 
   <div id="catalogPanel">
+    <div class="shelf-label-row">
+      <button class="shelf-label-btn" onclick="openShelvesModal()" title="Switch or manage bookshelves">
+        <span id="currentShelfName">Reading List</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
     <div class="catalog-toolbar">
       <input class="search-input" id="searchInput" type="text" placeholder="Search titles, authors, subjects, notes..." oninput="renderCatalog()">
       <select class="sort-select" id="sortSelect" onchange="renderCatalog()">
@@ -1675,6 +1953,10 @@ const firebaseConfig = {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     <span>Add</span>
   </button>
+  <button class="mobile-nav-btn" data-section="shelves" onclick="openShelvesModal()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><rect x="2" y="10" width="20" height="5" rx="1"/><rect x="2" y="17" width="20" height="5" rx="1"/></svg>
+    <span>Shelves</span>
+  </button>
 </nav>
 
 <div class="modal-overlay" id="aboutModal" onclick="closeAbout(event)">
@@ -1742,6 +2024,19 @@ const firebaseConfig = {
   <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:90vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);" onclick="event.stopPropagation()">
 </div>
 
+<div class="modal-overlay" id="shelvesModal" onclick="closeShelvesModal(event)">
+  <div class="modal shelves-modal" onclick="event.stopPropagation()">
+    <h3>TomeShelves</h3>
+    <div id="shelvesList"></div>
+    <div class="shelves-new-shelf-row">
+      <button class="btn btn-secondary btn-sm" type="button" onclick="createShelf()">+ New Shelf</button>
+    </div>
+    <div class="modal-actions" style="margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-light" type="button" onclick="closeShelvesModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="cameraModal">
   <div class="modal">
     <h3>Scan Barcode</h3>
@@ -1758,6 +2053,8 @@ const firebaseConfig = {
 <script>
 let books = [];
 let researchCache = {};
+let shelves = [];
+let currentShelfId = "default";
 let _booksOwnedByUid = null; // tracks which user the in-memory books belong to
 let pendingBook = null;
 let cameraStream = null;
@@ -1780,6 +2077,13 @@ let photoFiles = [];
 let photoLookupInFlight = false;
 let reviewData = null;
 let html5QrScanner = null;
+// Bulk Load state
+let bulkLoadInFlight = false;
+let bulkFoundBooks   = [];   // [{aiTitle, aiAuthor, result, correct}]
+let bulkIncorrectQueue  = []; // [{aiTitle, aiAuthor}] for correction flow
+let bulkCorrectionIdx   = 0;
+let bulkCorrSearchResults  = [];
+let bulkCorrSelectedResult = null;
 
 function safeLoad(key, fallback) {
   try {
@@ -1801,7 +2105,7 @@ async function persistCatalog() {
     return;
   }
   try {
-    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache });
+    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves });
   } catch (error) {
     console.error(error);
     setStatus("addStatus", "Saved locally, but cloud sync failed.", "error");
@@ -1833,10 +2137,17 @@ async function loadCatalogData() {
       const data = snap.data();
       books = Array.isArray(data.books) ? data.books.map(normalizeBook) : [];
       researchCache = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
+      shelves = Array.isArray(data.shelves) && data.shelves.length
+        ? data.shelves
+        : [{ id: "default", name: "Reading List", createdAt: Date.now() }];
     } else {
       books = [];
       researchCache = {};
+      shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
     }
+    // Restore last-viewed shelf for this user
+    const savedShelfId = loadSavedShelfId(uid);
+    currentShelfId = shelves.find(s => s.id === savedShelfId) ? savedShelfId : shelves[0].id;
     _booksOwnedByUid = uid;
     console.log("[loadCatalogData] books after load:", books.length, "owner set to:", uid);
   } catch (error) {
@@ -1877,7 +2188,8 @@ function normalizeBook(book) {
     readingStatus: normalizeReadingStatus(source.readingStatus),
     startDate: normalizeDateInput(source.startDate),
     finishDate: normalizeDateInput(source.finishDate),
-    rating: ratingValue >= 1 && ratingValue <= 5 ? ratingValue : 0
+    rating: ratingValue >= 1 && ratingValue <= 5 ? ratingValue : 0,
+    listShelfId: source.listShelfId || "default"
   };
 }
 
@@ -1953,6 +2265,7 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById("tabIsbn").style.display = tab === "isbn" ? "" : "none";
   document.getElementById("tabManual").style.display = tab === "manual" ? "" : "none";
+  document.getElementById("tabBulk").style.display = tab === "bulk" ? "" : "none";
   document.querySelectorAll(".tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
@@ -2041,7 +2354,7 @@ async function lookupISBN(isbn) {
         publisher: v.publisher || "",
         year: (v.publishedDate || "").match(/\d{4}/)?.[0] || "",
         subjects: (v.categories || []).join("; "),
-        edition: v.contentVersion || "",
+        edition: "",
         coverUrl: ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || "").replace(/^http:\/\//, "https://"),
         source: "Google Books"
       };
@@ -2143,10 +2456,12 @@ async function searchGoogleBooks(title, author) {
       author: Array.isArray(info.authors) ? info.authors.join(", ") : "",
       publisher: info.publisher || "",
       year: (info.publishedDate || "").match(/\d{4}/)?.[0] || "",
-      edition: info.contentVersion || "",
+      edition: "",
       subjects: Array.isArray(info.categories) ? info.categories.join("; ") : "",
       isbn: extractGoogleIsbn(info.industryIdentifiers || []),
-      coverUrl: (info.imageLinks ? info.imageLinks.thumbnail || info.imageLinks.smallThumbnail || "" : "").replace(/^http:\/\//, "https://"),
+      coverUrl: info.imageLinks
+        ? (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail || "").replace(/^http:\/\//, "https://")
+        : (item.id ? `https://books.google.com/books/content?id=${item.id}&printsec=frontcover&img=1&zoom=1&source=gbs_api` : ""),
       source: "Google Books"
     };
   });
@@ -2162,15 +2477,21 @@ function extractGoogleIsbn(identifiers) {
 }
 
 function dedupeManualResults(results) {
-  const seen = new Set();
-  return results.filter((item) => {
+  const seen = new Map();
+  const out = [];
+  for (const item of results) {
     const key = `${(item.title || "").toLowerCase()}|${(item.author || "").toLowerCase()}|${(item.year || "").toLowerCase()}`;
     if (seen.has(key)) {
-      return false;
+      // If the kept result has no cover but this duplicate does, use it
+      const kept = seen.get(key);
+      if (!kept.coverUrl && item.coverUrl) kept.coverUrl = item.coverUrl;
+    } else {
+      const copy = { ...item };
+      seen.set(key, copy);
+      out.push(copy);
     }
-    seen.add(key);
-    return true;
-  });
+  }
+  return out;
 }
 
 function renderManualSearchResults(results) {
@@ -2284,6 +2605,7 @@ async function addBook() {
   book.finishDate = normalizeDateInput(finishDate);
   book.personalNotes = personalNotes;
   book.rating = rating >= 1 && rating <= 5 ? rating : 0;
+  book.listShelfId = document.getElementById("bookListShelfId").value || currentShelfId;
   book.addedAt = editingBook ? editingBook.addedAt : Date.now();
   book.id = editingBook ? editingBook.id : Math.random().toString(36).slice(2);
   book = normalizeBook(book);
@@ -2332,6 +2654,8 @@ function clearForm() {
   });
   document.getElementById("bookCondition").value = "";
   document.getElementById("bookReadingStatus").value = "";
+  const shelfSel = document.getElementById("bookListShelfId");
+  if (shelfSel) shelfSel.value = currentShelfId;
   setFormRating(0);
   document.getElementById("coverPreview").innerHTML = "";
   pendingBook = null;
@@ -2376,6 +2700,8 @@ function startEditBook(id) {
   document.getElementById("bookCondition").value = book.condition || "";
   document.getElementById("bookShelf").value = book.shelf || "";
   document.getElementById("bookNotes").value = book.notes || "";
+  const shelfSel = document.getElementById("bookListShelfId");
+  if (shelfSel) shelfSel.value = book.listShelfId || "default";
 
   const shortTitle = book.title.length > 28 ? book.title.slice(0, 28) + "…" : book.title;
   document.getElementById("editBackBtn").style.display = "";
@@ -2390,7 +2716,9 @@ function renderCatalog() {
   const query = document.getElementById("searchInput").value.toLowerCase().trim();
   const sort = document.getElementById("sortSelect").value;
 
-  let list = books.filter((book) => {
+  const shelfBooks = books.filter(b => (b.listShelfId || "default") === currentShelfId);
+
+  let list = shelfBooks.filter((book) => {
     if (filterStatus && book.readingStatus !== filterStatus) {
       return false;
     }
@@ -2420,7 +2748,7 @@ function renderCatalog() {
 
   renderStats();
 
-  document.getElementById("countBadge").textContent = `${books.length} tome${books.length === 1 ? "" : "s"}`;
+  document.getElementById("countBadge").textContent = `${shelfBooks.length} tome${shelfBooks.length === 1 ? "" : "s"}`;
 
   const grid = document.getElementById("bookGrid");
   if (catalogLoading && !books.length) {
@@ -2428,7 +2756,7 @@ function renderCatalog() {
     return;
   }
   if (!list.length) {
-    grid.innerHTML = `<div class="empty-state"><p>${books.length ? "No books match your search." : "Your catalog is empty. Add your first book."}</p></div>`;
+    grid.innerHTML = `<div class="empty-state"><p>${shelfBooks.length ? "No books match your search." : "This shelf is empty. Add your first book."}</p></div>`;
     return;
   }
 
@@ -2864,22 +3192,38 @@ document.addEventListener("keydown", (e) => {
 function showCoverLightbox(url) {
   let largeUrl = url;
   if (/covers\.openlibrary\.org/.test(url)) {
-    // Open Library: upgrade -S / -M suffix to -L
+    // Open Library: upgrade -S / -M suffix to -L (always available)
     largeUrl = url.replace(/-[SM]\.jpg(\?|$)/, "-L.jpg$1");
-  } else if (/books\.google\.com/.test(url)) {
-    // Google Books: swap zoom=1 → zoom=0 for the largest available image
-    // and strip the page-curl edge effect
-    largeUrl = url
-      .replace(/zoom=\d+/, "zoom=0")
-      .replace(/&edge=curl/, "");
+  } else if (/books\.google\.com/.test(url) && /[?&]zoom=\d+/.test(url)) {
+    // Google Books: try zoom=0 for full cover, strip edge=curl artifact
+    largeUrl = url.replace(/zoom=\d+/, "zoom=0").replace(/[&?]edge=curl/, "");
   }
-  document.getElementById("coverLightboxImg").src = largeUrl;
+  const img = document.getElementById("coverLightboxImg");
+  img.style.minWidth = ""; // reset any upscaling from previous lightbox open
+  img.onload = function() {
+    // Google Books "image not available" placeholder is exactly 575x750.
+    // Detect it, fall back to the thumbnail, and upscale it so it's not tiny.
+    if (img.src !== url && img.naturalWidth === 575 && img.naturalHeight === 750) {
+      img.onload = null;
+      img.style.minWidth = "min(80vw, 350px)";
+      img.src = url;
+    }
+  };
+  img.onerror = function() {
+    if (img.src !== url) {
+      img.onerror = null;
+      img.src = url;
+    }
+  };
+  img.src = largeUrl;
   document.getElementById("coverLightbox").classList.add("open");
 }
 
 function closeCoverLightbox() {
   document.getElementById("coverLightbox").classList.remove("open");
-  document.getElementById("coverLightboxImg").src = "";
+  const img = document.getElementById("coverLightboxImg");
+  img.style.minWidth = "";
+  img.src = "";
 }
 
 function closeCamera() {
@@ -3252,16 +3596,17 @@ window.addEventListener("keydown", (e) => {
 
 function renderStats() {
   const bar = document.getElementById("statsBar");
-  if (!books.length) {
+  const sb = books.filter(b => (b.listShelfId || "default") === currentShelfId);
+  if (!sb.length) {
     bar.innerHTML = "";
     return;
   }
-  const read = books.filter((b) => b.readingStatus === "Read").length;
-  const reading = books.filter((b) => b.readingStatus === "Currently Reading").length;
-  const want = books.filter((b) => b.readingStatus === "Want to Read").length;
-  const dnf = books.filter((b) => b.readingStatus === "Did Not Finish").length;
+  const read = sb.filter((b) => b.readingStatus === "Read").length;
+  const reading = sb.filter((b) => b.readingStatus === "Currently Reading").length;
+  const want = sb.filter((b) => b.readingStatus === "Want to Read").length;
+  const dnf = sb.filter((b) => b.readingStatus === "Did Not Finish").length;
   const parts = [
-    `<span><strong>${books.length}</strong> total</span>`,
+    `<span><strong>${sb.length}</strong> total</span>`,
     read ? `<span><strong>${read}</strong> read</span>` : "",
     reading ? `<span><strong>${reading}</strong> reading</span>` : "",
     want ? `<span><strong>${want}</strong> want to read</span>` : "",
@@ -3279,7 +3624,7 @@ function setFilter(status) {
 }
 
 function exportJSON() {
-  const data = JSON.stringify({ books, researchCache }, null, 2);
+  const data = JSON.stringify({ books, researchCache, shelves }, null, 2);
   const blob = new Blob([data], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -3427,6 +3772,7 @@ function mapImportedReadingStatus(value) {
 
 function buildImportedBook(book) {
   return normalizeBook({
+    listShelfId: currentShelfId,
     condition: "",
     shelf: "",
     notes: "",
@@ -3506,36 +3852,50 @@ function buildOpenLibraryImportRecord(doc) {
 
 async function fetchOpenLibraryImportMatch(book) {
   const isbn = cleanImportedIsbn(book.isbn);
+  let match = null;
+
   if (isbn) {
     const byIsbn = await fetch(`https://openlibrary.org/search.json?isbn=${encodeURIComponent(isbn)}&limit=1`);
     if (byIsbn.ok) {
       const data = await byIsbn.json();
       const doc = Array.isArray(data.docs) ? data.docs[0] : null;
-      if (doc) {
-        return buildOpenLibraryImportRecord(doc);
-      }
+      if (doc) match = buildOpenLibraryImportRecord(doc);
     }
   }
 
-  if (!book.title) {
-    return null;
+  if (!match) {
+    if (!book.title) return null;
+    const params = new URLSearchParams();
+    params.set("title", book.title);
+    if (book.author) params.set("author", book.author);
+    params.set("limit", "1");
+    const byTitle = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+    if (!byTitle.ok) return null;
+    const data = await byTitle.json();
+    const doc = Array.isArray(data.docs) ? data.docs[0] : null;
+    if (doc) match = buildOpenLibraryImportRecord(doc);
   }
 
-  const params = new URLSearchParams();
-  params.set("title", book.title);
-  if (book.author) {
-    params.set("author", book.author);
+  // Open Library found the book but has no cover — try Google Books for just the image
+  if (match && !match.coverUrl) {
+    try {
+      const lookupIsbn = isbn || cleanImportedIsbn(match.isbn);
+      const q = lookupIsbn
+        ? `isbn:${lookupIsbn}`
+        : encodeURIComponent([match.title || book.title, match.author || book.author].filter(Boolean).join(" "));
+      const gbRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`);
+      if (gbRes.ok) {
+        const gbData = await gbRes.json();
+        if ((gbData.totalItems || 0) > 0) {
+          const links = ((gbData.items[0].volumeInfo || {}).imageLinks) || {};
+          const rawUrl = links.thumbnail || links.smallThumbnail || "";
+          if (rawUrl) match.coverUrl = rawUrl.replace(/^http:\/\//, "https://");
+        }
+      }
+    } catch (e) { /* no cover is fine */ }
   }
-  params.set("limit", "1");
 
-  const byTitle = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
-  if (!byTitle.ok) {
-    return null;
-  }
-
-  const data = await byTitle.json();
-  const doc = Array.isArray(data.docs) ? data.docs[0] : null;
-  return doc ? buildOpenLibraryImportRecord(doc) : null;
+  return match;
 }
 
 async function enrichImportedBooksFromOpenLibrary(importedBooks) {
@@ -3650,9 +4010,18 @@ async function importCatalog(input) {
     }
     const imported = data.books.map(normalizeBook);
     const importedResearch = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
+    // Merge any shelves from the import (add ones not already present by id)
+    if (Array.isArray(data.shelves)) {
+      data.shelves.forEach(function(s) {
+        if (s && s.id && s.name && !shelves.find(function(x) { return x.id === s.id; })) {
+          shelves.push(s);
+        }
+      });
+    }
     const added = mergeImportedBooks(imported);
     Object.assign(researchCache, importedResearch);
     await persistCatalog();
+    updateShelfSelector();
     renderCatalog();
     setStatus("addStatus", `Imported ${added} new book${added === 1 ? "" : "s"} (${imported.length - added} already existed).`, "success");
     setTimeout(() => setStatus("addStatus", "", ""), 4000);
@@ -3684,6 +4053,142 @@ function renderSkeletonCards(count = 3) {
   return Array.from({ length: count }, () => card).join("");
 }
 
+// ══════════════════════════════════════════════════════════════
+// Bookshelves
+// ══════════════════════════════════════════════════════════════
+
+function getShelfStorageKey(uid) {
+  return `tomeshelf-shelf-${uid}`;
+}
+
+function loadSavedShelfId(uid) {
+  try { return localStorage.getItem(getShelfStorageKey(uid)) || "default"; } catch (e) { return "default"; }
+}
+
+function saveCurrentShelfId() {
+  const uid = auth.currentUser && auth.currentUser.uid;
+  if (!uid) return;
+  try { localStorage.setItem(getShelfStorageKey(uid), currentShelfId); } catch (e) {}
+}
+
+function openShelvesModal() {
+  renderShelvesModal();
+  document.getElementById("shelvesModal").classList.add("open");
+}
+
+function closeShelvesModal(e) {
+  if (!e || e.target === document.getElementById("shelvesModal")) {
+    document.getElementById("shelvesModal").classList.remove("open");
+  }
+}
+
+function renderShelvesModal() {
+  const list = document.getElementById("shelvesList");
+  list.innerHTML = shelves.map(function(shelf) {
+    const count = books.filter(function(b) { return (b.listShelfId || "default") === shelf.id; }).length;
+    const isActive = shelf.id === currentShelfId;
+    return `
+      <div class="shelf-item${isActive ? " active" : ""}" data-shelf-id="${escapeAttribute(shelf.id)}">
+        <button class="shelf-item-name" type="button" onclick="switchShelf('${escapeAttribute(shelf.id)}')">
+          ${esc(shelf.name)}
+        </button>
+        <span class="shelf-item-count">${count} tome${count === 1 ? "" : "s"}</span>
+        <div class="shelf-item-actions">
+          <button class="btn btn-light btn-sm" type="button" onclick="renameShelf('${escapeAttribute(shelf.id)}')">Rename</button>
+          ${shelves.length > 1 ? `<button class="btn btn-danger btn-sm" type="button" onclick="deleteShelf('${escapeAttribute(shelf.id)}')">Delete</button>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function updateShelfLabel() {
+  const shelf = shelves.find(function(s) { return s.id === currentShelfId; }) || shelves[0];
+  const el = document.getElementById("currentShelfName");
+  if (el) el.textContent = shelf ? shelf.name : "Reading List";
+}
+
+function updateShelfSelector() {
+  const sel = document.getElementById("bookListShelfId");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = shelves.map(function(s) {
+    return `<option value="${escapeAttribute(s.id)}">${esc(s.name)}</option>`;
+  }).join("");
+  sel.value = shelves.find(function(s) { return s.id === prev; }) ? prev : currentShelfId;
+}
+
+function switchShelf(id) {
+  if (id === currentShelfId) {
+    closeShelvesModal();
+    return;
+  }
+  currentShelfId = id;
+  saveCurrentShelfId();
+  // Deselect book if it's not in the new shelf
+  if (selectedBookId) {
+    const book = books.find(function(b) { return b.id === selectedBookId; });
+    if (book && (book.listShelfId || "default") !== id) {
+      selectedBookId = null;
+      renderBriefingPanel();
+    }
+  }
+  // Reset filter
+  filterStatus = "";
+  document.querySelectorAll(".filter-pill").forEach(function(pill) {
+    pill.classList.toggle("active", pill.dataset.status === "");
+  });
+  updateShelfLabel();
+  updateShelfSelector();
+  renderCatalog();
+  closeShelvesModal();
+}
+
+async function createShelf() {
+  const name = prompt("Name for new bookshelf:");
+  if (!name || !name.trim()) return;
+  const newShelf = { id: Math.random().toString(36).slice(2), name: name.trim(), createdAt: Date.now() };
+  shelves.push(newShelf);
+  await persistCatalog();
+  renderShelvesModal();
+  updateShelfSelector();
+}
+
+async function renameShelf(id) {
+  const shelf = shelves.find(function(s) { return s.id === id; });
+  if (!shelf) return;
+  const name = prompt("New name for this shelf:", shelf.name);
+  if (!name || !name.trim() || name.trim() === shelf.name) return;
+  shelf.name = name.trim();
+  await persistCatalog();
+  renderShelvesModal();
+  updateShelfLabel();
+  updateShelfSelector();
+}
+
+async function deleteShelf(id) {
+  if (shelves.length <= 1) return;
+  const shelf = shelves.find(function(s) { return s.id === id; });
+  if (!shelf) return;
+  const count = books.filter(function(b) { return (b.listShelfId || "default") === id; }).length;
+  const other = shelves.find(function(s) { return s.id !== id; });
+  const msg = count > 0
+    ? `Delete "${shelf.name}"? Its ${count} book${count === 1 ? "" : "s"} will be moved to "${other.name}".`
+    : `Delete "${shelf.name}"?`;
+  if (!confirm(msg)) return;
+  // Move books to another shelf
+  books.forEach(function(b) { if ((b.listShelfId || "default") === id) b.listShelfId = other.id; });
+  shelves = shelves.filter(function(s) { return s.id !== id; });
+  if (currentShelfId === id) {
+    currentShelfId = shelves[0].id;
+    saveCurrentShelfId();
+  }
+  await persistCatalog();
+  renderShelvesModal();
+  updateShelfLabel();
+  updateShelfSelector();
+  renderCatalog();
+}
+
 async function initializeApp() {
   setMobileSection("catalog");
   renderCatalog();
@@ -3692,6 +4197,8 @@ async function initializeApp() {
   await loadApiConfig();
   await loadCatalogData();
   catalogLoading = false;
+  updateShelfLabel();
+  updateShelfSelector();
   renderCatalog();
   renderBriefingPanel();
   updateResearchButtons();
@@ -3713,6 +4220,356 @@ async function signInWithGoogle() {
 async function signOutUser() {
   if (!confirm("Sign out of My Library?")) { return; }
   await auth.signOut();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Bulk Load — photo → AI identify → search → review → add
+// ═══════════════════════════════════════════════════════════════
+
+function startBulkCamera()  { document.getElementById("bulkCameraInput").click(); }
+function startBulkGallery() { document.getElementById("bulkGalleryInput").click(); }
+
+function handleBulkPhotoSelection(input) {
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  runBulkAnalysis(file);
+}
+
+async function runBulkAnalysis(file) {
+  if (bulkLoadInFlight) return;
+  bulkLoadInFlight = true;
+  showBulkSection("intro");
+  setBulkStatus("Preparing image…", "");
+
+  try {
+    const image = await resizeImage(file, 1600);
+    if (!image) {
+      setBulkStatus("Could not read the image. Please try another photo.", "error");
+      return;
+    }
+
+    setBulkStatus("Sending image to AI — identifying books…", "");
+    const identifyFn = functions.httpsCallable("identifyBooksInImage");
+    const result = await identifyFn({ image });
+    const aiBooks = (result.data.books || []).filter(b => b.title);
+
+    if (!aiBooks.length) {
+      setBulkStatus("No books could be identified. Try a clearer photo with visible titles or covers.", "error");
+      return;
+    }
+
+    setBulkStatus(`Found ${aiBooks.length} book${aiBooks.length !== 1 ? "s" : ""} — searching catalog for each…`, "");
+
+    const found = [];
+    for (let i = 0; i < aiBooks.length; i++) {
+      const { title, author } = aiBooks[i];
+      setBulkStatus(`Searching ${i + 1} of ${aiBooks.length}: "${title}"…`, "");
+      let searchResult = null;
+      try {
+        const [olHits, gbHits] = await Promise.all([
+          searchOpenLibrary(title, author || "").catch(() => []),
+          searchGoogleBooks(title, author || "").catch(() => [])
+        ]);
+        const merged = dedupeManualResults([...gbHits, ...olHits]);
+        if (merged.length) searchResult = merged[0];
+
+        // If no result or no cover, retry with a plain-text GB query (no intitle:/inauthor: operators)
+        // — handles cases where the AI returns a different author name format than GB expects
+        if (!searchResult || !searchResult.coverUrl) {
+          const plainQ = encodeURIComponent([title, author].filter(Boolean).join(" "));
+          const plainRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${plainQ}&maxResults=5&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`).catch(() => null);
+          if (plainRes && plainRes.ok) {
+            const plainData = await plainRes.json();
+            const plainItems = Array.isArray(plainData.items) ? plainData.items : [];
+            for (const item of plainItems) {
+              const info = item.volumeInfo || {};
+              const il = info.imageLinks || {};
+              const coverUrl = (il.thumbnail || il.smallThumbnail || "").replace(/^http:\/\//, "https://")
+                || (item.id ? `https://books.google.com/books/content?id=${item.id}&printsec=frontcover&img=1&zoom=1&source=gbs_api` : "");
+              if (coverUrl) {
+                if (!searchResult) {
+                  searchResult = {
+                    title: info.title || title,
+                    author: Array.isArray(info.authors) ? info.authors.join(", ") : (author || ""),
+                    publisher: info.publisher || "",
+                    year: (info.publishedDate || "").match(/\d{4}/)?.[0] || "",
+                    edition: "",
+                    subjects: Array.isArray(info.categories) ? info.categories.join("; ") : "",
+                    isbn: extractGoogleIsbn(info.industryIdentifiers || []),
+                    coverUrl,
+                    source: "Google Books"
+                  };
+                } else {
+                  searchResult.coverUrl = coverUrl;
+                }
+                break;
+              }
+            }
+          }
+        }
+      } catch (_) { /* no result is fine */ }
+      found.push({ aiTitle: title, aiAuthor: author || "", result: searchResult, correct: true });
+    }
+
+    bulkFoundBooks = found;
+    renderBulkResults();
+    showBulkSection("results");
+    setBulkStatus("", "");
+
+  } catch (err) {
+    setBulkStatus(err.message || "Analysis failed. Please try again.", "error");
+  } finally {
+    bulkLoadInFlight = false;
+  }
+}
+
+function setBulkStatus(msg, type) { setStatus("bulkStatus", msg, type); }
+
+function showBulkSection(section) {
+  document.getElementById("bulkIntroSection").style.display     = section === "intro"      ? "" : "none";
+  document.getElementById("bulkResultsSection").style.display   = section === "results"    ? "" : "none";
+  document.getElementById("bulkCorrectionSection").style.display = section === "correction" ? "" : "none";
+}
+
+function renderBulkResults() {
+  const correctCount = bulkFoundBooks.filter(b => b.correct).length;
+  document.getElementById("bulkResultsHdr").textContent =
+    `${bulkFoundBooks.length} book${bulkFoundBooks.length !== 1 ? "s" : ""} identified — toggle any that are incorrect`;
+
+  document.getElementById("bulkBookCards").innerHTML = bulkFoundBooks.map((b, i) => {
+    const r = b.result;
+    const cover  = r && r.coverUrl ? `<img src="${escapeAttribute(r.coverUrl)}" alt="">` : "📖";
+    const title  = esc(r ? r.title  : b.aiTitle);
+    const author = esc(r ? r.author : b.aiAuthor);
+    const meta   = r ? [r.publisher, r.year].filter(Boolean).join(" · ") : "(no catalog match)";
+    return `<div class="bulk-book-card${b.correct ? " is-correct" : " is-incorrect"}" id="bulkCard${i}">
+      <div class="bulk-book-thumb">${cover}</div>
+      <div class="bulk-book-info">
+        <div class="bulk-book-title">${title}</div>
+        <div class="bulk-book-author">${author}</div>
+        <div class="bulk-book-meta">${esc(meta)}</div>
+      </div>
+      <div class="bulk-toggle-btns">
+        <button class="bulk-toggle-btn${b.correct ? " active-correct" : ""}" onclick="toggleBulkBook(${i},true)"  title="Correct">✓</button>
+        <button class="bulk-toggle-btn${!b.correct ? " active-incorrect" : ""}" onclick="toggleBulkBook(${i},false)" title="Incorrect">✗</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  updateBulkAddBtn();
+  document.getElementById("bulkFixPrompt").style.display = "none";
+  document.getElementById("bulkActionRow").style.display = "";
+}
+
+function toggleBulkBook(index, correct) {
+  bulkFoundBooks[index].correct = correct;
+  const card = document.getElementById(`bulkCard${index}`);
+  card.className = `bulk-book-card${correct ? " is-correct" : " is-incorrect"}`;
+  const [btnOk, btnNo] = card.querySelectorAll(".bulk-toggle-btn");
+  btnOk.className = `bulk-toggle-btn${correct  ? " active-correct" : ""}`;
+  btnNo.className = `bulk-toggle-btn${!correct ? " active-incorrect" : ""}`;
+  updateBulkAddBtn();
+}
+
+function updateBulkAddBtn() {
+  const n = bulkFoundBooks.filter(b => b.correct).length;
+  const btn = document.getElementById("bulkAddCorrectBtn");
+  btn.textContent = `Add ${n} Correct Book${n !== 1 ? "s" : ""} to TomeShelf`;
+  btn.disabled = n === 0;
+}
+
+async function addCorrectBulkBooks() {
+  const toAdd    = bulkFoundBooks.filter(b => b.correct && b.result);
+  const noMatch  = bulkFoundBooks.filter(b => b.correct && !b.result);  // correct but no catalog hit
+  const incorrect = bulkFoundBooks.filter(b => !b.correct);
+
+  let addedCount = 0, skippedCount = 0;
+  const addedIds = new Set();
+
+  for (const b of toAdd) {
+    const r = b.result;
+    const dupKey = r.isbn || `${r.title.toLowerCase()}||${(r.author||"").toLowerCase()}`;
+    if (addedIds.has(dupKey)) { skippedCount++; continue; }
+    const already = books.find(e =>
+      (r.isbn && e.isbn && e.isbn === r.isbn) ||
+      (e.title.toLowerCase() === r.title.toLowerCase() &&
+       (e.author||"").toLowerCase() === (r.author||"").toLowerCase())
+    );
+    if (already) { skippedCount++; continue; }
+    books.unshift(normalizeBook({
+      ...r, condition: "", shelf: "", notes: "",
+      readingStatus: "", startDate: "", finishDate: "",
+      personalNotes: "", rating: 0, listShelfId: currentShelfId,
+      addedAt: Date.now(), id: Math.random().toString(36).slice(2)
+    }));
+    addedIds.add(dupKey);
+    addedCount++;
+  }
+
+  if (addedCount > 0) { await saveBooks(); renderCatalog(); }
+
+  // Build correction queue: incorrect books + correct-but-unmatched books
+  bulkIncorrectQueue = [
+    ...incorrect.map(b => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor })),
+    ...noMatch.map(b  => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor }))
+  ];
+
+  let statusMsg = `Added ${addedCount} book${addedCount !== 1 ? "s" : ""} to TomeShelf.`;
+  if (skippedCount) statusMsg += ` (${skippedCount} already in catalog.)`;
+
+  if (bulkIncorrectQueue.length > 0) {
+    const n = bulkIncorrectQueue.length;
+    document.getElementById("bulkResultsHdr").textContent = statusMsg;
+    document.getElementById("bulkFixPromptText").textContent =
+      `${n} book${n !== 1 ? "s were" : " was"} marked incorrect or couldn't be matched. ` +
+      `Search for ${n !== 1 ? "them" : "it"} manually?`;
+    document.getElementById("bulkActionRow").style.display = "none";
+    document.getElementById("bulkFixPrompt").style.display = "";
+  } else {
+    setStatus("bulkResultStatus", statusMsg, "success");
+    setTimeout(() => {
+      setStatus("bulkResultStatus", "", "");
+      resetBulkLoad();
+    }, 2500);
+  }
+}
+
+function resetBulkLoad() {
+  bulkFoundBooks = [];
+  bulkIncorrectQueue = [];
+  bulkCorrectionIdx = 0;
+  bulkCorrSearchResults = [];
+  bulkCorrSelectedResult = null;
+  setBulkStatus("", "");
+  showBulkSection("intro");
+}
+
+// ── Correction flow ──
+
+function startBulkCorrection() {
+  bulkCorrectionIdx = 0;
+  renderBulkCorrectionForm();
+  showBulkSection("correction");
+}
+
+function renderBulkCorrectionForm() {
+  const total = bulkIncorrectQueue.length;
+  const curr  = bulkCorrectionIdx;
+  if (curr >= total) { finishBulkCorrection(); return; }
+
+  const item = bulkIncorrectQueue[curr];
+  document.getElementById("bulkCorrectionHdr").textContent =
+    `Reviewing book ${curr + 1} of ${total}`;
+  document.getElementById("bulkAiSaw").textContent =
+    `AI saw: "${item.aiTitle}"${item.aiAuthor ? ` by ${item.aiAuthor}` : ""}`;
+  document.getElementById("bulkCorrTitle").value  = item.aiTitle;
+  document.getElementById("bulkCorrAuthor").value = item.aiAuthor;
+  document.getElementById("bulkCorrSearchResults").style.display = "none";
+  document.getElementById("bulkCorrSearchResults").innerHTML = "";
+  bulkCorrSearchResults = [];
+  bulkCorrSelectedResult = null;
+  document.getElementById("bulkCorrAddBtn").disabled = true;
+  setStatus("bulkCorrStatus", "", "");
+  setStatus("bulkCorrAddStatus", "", "");
+
+  const skipBtn = document.querySelector("#bulkCorrectionSection .button-row .btn-light");
+  if (skipBtn) skipBtn.textContent = curr < total - 1 ? "Skip →" : "Skip (Done)";
+}
+
+async function bulkCorrectionSearch() {
+  const title  = document.getElementById("bulkCorrTitle").value.trim();
+  const author = document.getElementById("bulkCorrAuthor").value.trim();
+  if (!title && !author) {
+    return setStatus("bulkCorrStatus", "Enter a title or author to search.", "error");
+  }
+  setStatus("bulkCorrStatus", "Searching…", "");
+  document.getElementById("bulkCorrSearchResults").style.display = "none";
+  bulkCorrSelectedResult = null;
+  document.getElementById("bulkCorrAddBtn").disabled = true;
+
+  try {
+    const [olResults, gbResults] = await Promise.all([
+      searchOpenLibrary(title, author),
+      searchGoogleBooks(title, author)
+    ]);
+    bulkCorrSearchResults = dedupeManualResults([...olResults, ...gbResults]).slice(0, 10);
+    if (!bulkCorrSearchResults.length) {
+      return setStatus("bulkCorrStatus", "No matches found. Edit the title/author and try again, or skip.", "error");
+    }
+    renderBulkCorrResults();
+    setStatus("bulkCorrStatus", `${bulkCorrSearchResults.length} result${bulkCorrSearchResults.length !== 1 ? "s" : ""} — pick one.`, "success");
+  } catch (err) {
+    setStatus("bulkCorrStatus", "Search failed. Try again or skip.", "error");
+  }
+}
+
+function renderBulkCorrResults() {
+  const el = document.getElementById("bulkCorrSearchResults");
+  el.innerHTML = bulkCorrSearchResults.map((r, i) => {
+    const meta = [r.author, r.year, r.publisher, r.source].filter(Boolean).join(" · ");
+    return `<div class="search-result-item" onclick="selectBulkCorrResult(${i})" style="cursor:pointer;">
+      <div class="search-result-title">${esc(r.title)}</div>
+      <div class="search-result-meta">${esc(meta)}</div>
+    </div>`;
+  }).join("");
+  el.style.display = "";
+}
+
+function selectBulkCorrResult(index) {
+  bulkCorrSelectedResult = bulkCorrSearchResults[index];
+  document.getElementById("bulkCorrAddBtn").disabled = false;
+  setStatus("bulkCorrStatus", `Selected: "${bulkCorrSelectedResult.title}"`, "success");
+  // highlight chosen row
+  document.querySelectorAll("#bulkCorrSearchResults .search-result-item").forEach((el, i) => {
+    el.style.background = i === index ? "var(--parchment)" : "";
+  });
+}
+
+function clearBulkCorrSearch() {
+  bulkCorrSearchResults = [];
+  bulkCorrSelectedResult = null;
+  document.getElementById("bulkCorrSearchResults").innerHTML = "";
+  document.getElementById("bulkCorrSearchResults").style.display = "none";
+  document.getElementById("bulkCorrAddBtn").disabled = true;
+  setStatus("bulkCorrStatus", "", "");
+}
+
+async function addBulkCorrectionBook() {
+  if (!bulkCorrSelectedResult) return;
+  const r = bulkCorrSelectedResult;
+  const already = books.find(e =>
+    (r.isbn && e.isbn && e.isbn === r.isbn) ||
+    (e.title.toLowerCase() === r.title.toLowerCase() &&
+     (e.author||"").toLowerCase() === (r.author||"").toLowerCase())
+  );
+  if (already) {
+    setStatus("bulkCorrAddStatus", "Already in catalog — skipping.", "error");
+  } else {
+    books.unshift(normalizeBook({
+      ...r, condition: "", shelf: "", notes: "",
+      readingStatus: "", startDate: "", finishDate: "",
+      personalNotes: "", rating: 0, listShelfId: currentShelfId,
+      addedAt: Date.now(), id: Math.random().toString(36).slice(2)
+    }));
+    await saveBooks();
+    renderCatalog();
+    setStatus("bulkCorrAddStatus", `Added "${r.title}".`, "success");
+  }
+  await new Promise(r => setTimeout(r, 700));
+  bulkCorrectionIdx++;
+  renderBulkCorrectionForm();
+}
+
+function bulkCorrectionSkip() {
+  bulkCorrectionIdx++;
+  renderBulkCorrectionForm();
+}
+
+function finishBulkCorrection() {
+  setBulkStatus("All done! Your library has been updated.", "success");
+  resetBulkLoad();
+  setTimeout(() => setBulkStatus("", ""), 3000);
 }
 
 auth.onAuthStateChanged(async (user) => {
@@ -3750,15 +4607,21 @@ auth.onAuthStateChanged(async (user) => {
     _booksOwnedByUid = null; // reset until loadCatalogData sets it
     books = [];
     researchCache = {};
+    shelves = [];
+    currentShelfId = "default";
     await initializeApp();
   } else {
     _booksOwnedByUid = null;
     books = [];
     researchCache = {};
+    shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
+    currentShelfId = "default";
     localStorage.removeItem("myLibraryBooks");
     localStorage.removeItem("myLibraryResearch");
     catalogLoading = false;
     selectedBookId = null;
+    updateShelfLabel();
+    updateShelfSelector();
     renderCatalog();
     renderBriefingPanel();
     updateResearchButtons();
