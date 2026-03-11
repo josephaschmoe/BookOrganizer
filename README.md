@@ -11,6 +11,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Cover Lookup** — Finds covers via Open Library and Google Books across all entry methods (ISBN scan, manual search, bulk load, CSV import)
 - **AI Research Briefings** — Generate college-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash
 - **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per Google account
+- **Account Settings** — Click your Google avatar to access Sign Out or Account Settings; Account Settings lets you export a JSON backup or permanently delete your account and all associated data
 - **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces

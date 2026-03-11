@@ -1224,6 +1224,42 @@ const firebaseConfig = {
   .data-menu button:hover,
   .data-menu label:hover { background: #f0e8d4; }
 
+  .account-menu-wrap { position: relative; }
+
+  .account-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: var(--parchment);
+    border: 1px solid var(--tan);
+    box-shadow: 3px 4px 14px var(--shadow);
+    z-index: 60;
+    min-width: 170px;
+    border-radius: 2px;
+  }
+  .account-menu.open { display: block; }
+  .account-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--tan);
+    cursor: pointer;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink);
+    box-sizing: border-box;
+  }
+  .account-menu button:last-child { border-bottom: none; }
+  .account-menu button:hover { background: #f0e8d4; }
+  .account-menu button.danger { color: #b33; }
+  .account-menu button.danger:hover { background: #fde8e8; }
+
   #userEmailIcon {
     display: none;
     width: 30px;
@@ -1612,9 +1648,13 @@ const firebaseConfig = {
   <img class="header-logo" src="TomeShelf-Logo.png" alt="TomeShelf" onclick="openAbout()" title="About TomeShelf" style="cursor:pointer;">
   <h1>TomeShelf</h1>
   <span class="count-badge" id="countBadge">0 tomes</span>
-  <div class="header-user">
-    <img id="userEmailIcon" src="" alt="Account" referrerpolicy="no-referrer" onclick="signOutUser()">
-    <span id="userEmailText" onclick="signOutUser()"></span>
+  <div class="header-user account-menu-wrap">
+    <img id="userEmailIcon" src="" alt="Account" referrerpolicy="no-referrer" onclick="toggleAccountMenu()">
+    <span id="userEmailText" onclick="toggleAccountMenu()"></span>
+    <div class="account-menu" id="accountMenu">
+      <button type="button" onclick="signOutUser()">Sign Out</button>
+      <button type="button" onclick="openAccountSettings()">Account Settings</button>
+    </div>
   </div>
 </header>
 
@@ -2051,6 +2091,31 @@ const firebaseConfig = {
   </div>
 </div>
 
+<div class="modal-overlay" id="accountSettingsModal" onclick="closeAccountSettings(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
+    <h3 style="margin-bottom:8px;">Account Settings</h3>
+    <p id="accountSettingsEmail" style="font-family:'Courier Prime',monospace;font-size:0.82rem;color:var(--brown);margin-bottom:20px;"></p>
+    <div style="border-top:1px solid var(--tan);padding-top:16px;">
+      <p style="font-size:0.88rem;color:var(--ink);margin-bottom:12px;"><strong>Delete Account &amp; All Data</strong></p>
+      <p style="font-size:0.82rem;color:#666;margin-bottom:16px;line-height:1.5;">
+        This permanently deletes your TomeShelf account, all books, all shelves, all research briefings, and all cover images. This cannot be undone.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()" style="flex:1;min-width:120px;">
+          Export JSON Backup
+        </button>
+        <button class="btn btn-sm" type="button" onclick="confirmDeleteAccount()"
+          style="flex:1;min-width:120px;background:#b33;border-color:#b33;color:#fff;">
+          Delete Everything
+        </button>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-light" type="button" onclick="closeAccountSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="cameraModal">
   <div class="modal">
     <h3>Scan Barcode</h3>
@@ -2234,6 +2299,9 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".data-menu-wrap")) {
     const m = document.getElementById("dataMenu");
     if (m) m.classList.remove("open");
+  }
+  if (!e.target.closest(".account-menu-wrap")) {
+    closeAccountMenu();
   }
 });
 
@@ -4281,9 +4349,103 @@ async function signInWithGoogle() {
   }
 }
 
+// ── Account menu ──────────────────────────────────────────────
+function toggleAccountMenu() {
+  const menu = document.getElementById("accountMenu");
+  menu.classList.toggle("open");
+}
+
+function closeAccountMenu() {
+  const menu = document.getElementById("accountMenu");
+  if (menu) menu.classList.remove("open");
+}
+
 async function signOutUser() {
-  if (!confirm("Sign out of My Library?")) { return; }
+  closeAccountMenu();
+  if (!confirm("Sign out of TomeShelf?")) { return; }
   await auth.signOut();
+}
+
+function openAccountSettings() {
+  closeAccountMenu();
+  const user = auth.currentUser;
+  const emailEl = document.getElementById("accountSettingsEmail");
+  if (emailEl && user) emailEl.textContent = user.email || user.displayName || "";
+  document.getElementById("accountSettingsModal").classList.add("open");
+}
+
+function closeAccountSettings(event) {
+  if (event && event.target !== document.getElementById("accountSettingsModal")) return;
+  document.getElementById("accountSettingsModal").classList.remove("open");
+}
+
+async function confirmDeleteAccount() {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  // First confirmation
+  const first = confirm(
+    "Delete your TomeShelf account and ALL data?\n\n" +
+    "This will permanently delete:\n" +
+    "• All your books and shelves\n" +
+    "• All research briefings\n" +
+    "• All cover images\n" +
+    "• Your TomeShelf account\n\n" +
+    "This CANNOT be undone. Click OK to continue."
+  );
+  if (!first) return;
+
+  // Second confirmation
+  const second = confirm(
+    "FINAL WARNING\n\n" +
+    "Are you absolutely sure you want to permanently delete everything?\n\n" +
+    "Click OK to permanently delete your account and all data."
+  );
+  if (!second) return;
+
+  const uid = user.uid;
+  document.getElementById("accountSettingsModal").classList.remove("open");
+
+  // Show a status message on the auth overlay after deletion
+  try {
+    // 1. Delete Firestore catalog data
+    await db.collection("users").doc(uid).collection("catalog").doc("data").delete();
+
+    // 2. Delete Storage covers (list and delete each)
+    try {
+      const coverRef = storage.ref(`users/${uid}/covers`);
+      const list = await coverRef.listAll();
+      await Promise.all(list.items.map((item) => item.delete()));
+    } catch (storageErr) {
+      // Storage may not have covers folder — not fatal
+    }
+
+    // 3. Delete Firebase Auth account (may require recent login)
+    try {
+      await user.delete();
+    } catch (authErr) {
+      if (authErr.code === "auth/requires-recent-login") {
+        // Re-authenticate then retry
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        await auth.signInWithPopup(provider);
+        await auth.currentUser.delete();
+      } else {
+        throw authErr;
+      }
+    }
+
+    // Clear local state and show sign-in screen
+    books = [];
+    shelves = [];
+    researchCache = {};
+    localStorage.removeItem(`activeShelf_${uid}`);
+    // onAuthStateChanged will handle showing the auth overlay
+
+  } catch (err) {
+    console.error("Delete account error:", err);
+    alert("Error deleting account: " + (err.message || err.code || err) + "\n\nPlease try again or contact support.");
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
