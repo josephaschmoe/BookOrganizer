@@ -3970,6 +3970,29 @@ function mergeImportedBooks(imported) {
   return added;
 }
 
+// JSON import uses upsert: adds new books AND updates listShelfId on existing ones
+function upsertImportedBooks(imported) {
+  let added = 0, updated = 0;
+
+  for (const book of imported) {
+    const existingIdx = books.findIndex((existing) => {
+      if (book.isbn && existing.isbn) return existing.isbn === book.isbn;
+      return (existing.title || "").toLowerCase() === (book.title || "").toLowerCase()
+        && (existing.author || "").toLowerCase() === (book.author || "").toLowerCase();
+    });
+
+    if (existingIdx === -1) {
+      books.push(book);
+      added++;
+    } else if (books[existingIdx].listShelfId !== book.listShelfId) {
+      books[existingIdx].listShelfId = book.listShelfId;
+      updated++;
+    }
+  }
+
+  return { added, updated };
+}
+
 async function importCsvCatalog(text) {
   const rows = parseCSV(text);
   if (rows.length < 2) {
@@ -4032,12 +4055,16 @@ async function importCatalog(input) {
         }
       });
     }
-    const added = mergeImportedBooks(imported);
+    const { added, updated } = upsertImportedBooks(imported);
     Object.assign(researchCache, importedResearch);
     await persistCatalog();
     updateShelfSelector();
     renderCatalog();
-    setStatus("addStatus", `Imported ${added} new book${added === 1 ? "" : "s"} (${imported.length - added} already existed).`, "success");
+    const parts = [];
+    if (added > 0) parts.push(`${added} new book${added === 1 ? "" : "s"} added`);
+    if (updated > 0) parts.push(`${updated} shelf assignment${updated === 1 ? "" : "s"} updated`);
+    if (parts.length === 0) parts.push("no changes");
+    setStatus("addStatus", `Import complete: ${parts.join(", ")}.`, "success");
     setTimeout(() => setStatus("addStatus", "", ""), 4000);
   } catch (error) {
     setStatus("addStatus", `Import failed: ${error.message}`, "error");
