@@ -1,20 +1,27 @@
-# Book Organizer
+# TomeShelf
 
-A personal book catalog with a vintage aesthetic and AI-powered research briefings. Add books to your library, manage metadata, and generate college-level discussion guides using Google Gemini.
+A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes to add books, manage your collection, and generate structured discussion guides using Google Gemini — all synced to the cloud via Firebase.
 
 ## Features
 
-- **Book Catalog** — Add, edit, and delete books with fields for title, author, year, publisher, edition, ISBN, subjects, and notes
-- **AI Research Briefings** — Generate structured discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash
-- **Research Cache** — Briefings are cached locally so repeat lookups are instant
-- **Persistent Storage** — Catalog data saved to a local JSON file on the server
-- **Vintage UI** — Parchment-toned design with Playfair Display and EB Garamond typefaces
+- **Book Catalog** — Add, edit, and search books with title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading status, dates, rating, and notes
+- **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
+- **Cover Lookup** — Find covers via Open Library by ISBN, title search, or photo
+- **AI Research Briefings** — Generate college-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash
+- **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per Google account
+- **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library)
+- **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
+- **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
 
 ## Tech Stack
 
-- **Backend** — Node.js (no dependencies, standard library only)
-- **Frontend** — Vanilla HTML/CSS/JS, single-file, no build step
-- **AI** — Google Gemini 2.5 Flash via REST API
+| Layer | Technology |
+|---|---|
+| Hosting | Firebase Hosting |
+| Auth | Firebase Auth (Google Sign-In) |
+| Database | Cloud Firestore |
+| AI backend | Firebase Cloud Functions + Google Gemini 2.5 Flash |
+| Frontend | Vanilla HTML/CSS/JS — single file, no build step |
 
 ## Setup
 
@@ -25,29 +32,64 @@ git clone https://github.com/josephaschmoe/BookOrganizer.git
 cd BookOrganizer
 ```
 
-### 2. Add your Gemini API key (optional)
+### 2. Create a Firebase project
 
-Research briefings require a [Google Gemini API key](https://aistudio.google.com/apikey). Create a `.env` file in the project root:
+1. Go to [console.firebase.google.com](https://console.firebase.google.com) and create a new project
+2. **Authentication** → Sign-in method → enable **Google**
+3. **Firestore Database** → Create database (start in production mode)
+4. **Project Settings** → Add a Web App → copy the config values
 
+### 3. Add Firebase config to the app
+
+Open `public/index.html` and fill in your project's values in the `firebaseConfig` block near the top of the `<script>` section:
+
+```js
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
 ```
-GEMINI_API_KEY=your_key_here
-```
 
-The app runs fine without a key — research features will simply be disabled.
-
-### 3. Start the server
+### 4. Install the Firebase CLI
 
 ```bash
-node server.js
+npm install -g firebase-tools
+firebase login
+firebase use --add   # select your project
 ```
 
-Then open [http://localhost:3000](http://localhost:3000) in your browser.
+### 5. Enable AI briefings (optional)
 
-The default port is `3000`. Override it with a `PORT` variable in `.env`.
+Research briefings require a [Google Gemini API key](https://aistudio.google.com/apikey) and a Firebase **Blaze (pay-as-you-go)** plan for Cloud Functions.
+
+```bash
+cd functions
+npm install
+cd ..
+firebase functions:secrets:set GEMINI_API_KEY   # paste your key when prompted
+```
+
+The app works without this — the Generate button simply won't be available.
+
+### 6. Deploy
+
+```bash
+firebase deploy
+```
+
+Or deploy only the frontend:
+
+```bash
+firebase deploy --only hosting
+```
 
 ## Data Storage
 
-The catalog is saved to `catalog-data.json` in the project directory. This file is excluded from version control — your book list stays local.
+All catalog data and briefing cache are stored in **Cloud Firestore** under each user's Google account (`users/{uid}/catalog/data`). No data is stored locally beyond an in-memory cache while the app is open.
 
 ## License
 
