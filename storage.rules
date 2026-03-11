@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Each signed-in user can read/write only their own cover images.
+    // Covers are readable publicly so the img src works without auth headers.
+    match /users/{uid}/covers/{filename} {
+      allow read:  if true;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 5 * 1024 * 1024   // 5 MB max
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <!-- Barcode scanning fallback for browsers without native BarcodeDetector -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <!--
@@ -38,19 +39,20 @@ const firebaseConfig = {
   const auth      = firebase.auth();
   const db        = firebase.firestore();
   const functions = firebase.functions();
+  const storage   = firebase.storage();
 </script>
 <style>
   :root {
     --cream: #f5f0e8;
     --parchment: #ede5d0;
     --tan: #c9b99a;
-    --brown: #6b4f35;
-    --dark: #2c1f14;
-    --ink: #1a1208;
+    --brown: #2e5c85;
+    --dark: #152d45;
+    --ink: #0c1926;
     --red: #8b2020;
-    --gold: #b8962e;
+    --gold: #3f7eb5;
     --green: #2f6a3a;
-    --shadow: rgba(44, 31, 20, 0.15);
+    --shadow: rgba(21, 45, 69, 0.15);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -66,7 +68,7 @@ const firebaseConfig = {
   button, input, select, textarea { font: inherit; }
 
   header {
-    background: #5a3e28;
+    background: #1a3355;
     color: var(--cream);
     padding: 12px 32px;
     border-bottom: 4px solid var(--gold);
@@ -119,7 +121,7 @@ const firebaseConfig = {
   }
 
   .count-badge { margin-left: 4px; }
-  .api-badge.offline { border-color: #7d6650; color: #7d6650; }
+  .api-badge.offline { border-color: #6a8daa; color: #6a8daa; }
   .api-badge.online { border-color: #c8dfb8; color: #c8dfb8; }
 
   .main {
@@ -290,8 +292,8 @@ const firebaseConfig = {
   .btn-primary:hover { background: #6e1a1a; }
   .btn-secondary { background: var(--brown); color: var(--cream); }
   .btn-secondary:hover { background: var(--dark); }
-  .btn-accent { background: var(--gold); color: var(--dark); }
-  .btn-accent:hover { background: #9a7d28; color: #fff; }
+  .btn-accent { background: var(--gold); color: #fff; }
+  .btn-accent:hover { background: #2e699e; color: #fff; }
   .btn-light { background: transparent; border: 1px solid var(--tan); color: var(--brown); }
   .btn-light:hover { border-color: var(--brown); }
   .btn-danger { background: transparent; border: 1px solid #c8a4a4; color: var(--red); }
@@ -372,6 +374,65 @@ const firebaseConfig = {
     margin: 14px 0;
   }
 
+  /* Edit-mode read-only book header */
+  .edit-book-cover-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px;
+    background: var(--parchment);
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+    margin-bottom: 14px;
+  }
+  .edit-book-cover {
+    width: 56px;
+    min-width: 56px;
+    height: 76px;
+    border: 1px solid var(--tan);
+    border-radius: 1px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cream);
+    font-size: 1.4rem;
+    color: var(--tan);
+    flex-shrink: 0;
+  }
+  .edit-book-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .edit-book-biblio { flex: 1; min-width: 0; }
+  .edit-biblio-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.97rem;
+    font-weight: 700;
+    color: var(--dark);
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .edit-biblio-author {
+    font-style: italic;
+    font-size: 0.88rem;
+    color: var(--brown);
+    margin-top: 3px;
+  }
+  .edit-biblio-meta {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.7rem;
+    color: var(--brown);
+    margin-top: 5px;
+    line-height: 1.5;
+    opacity: 0.85;
+  }
+  .edit-locked-note {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--tan);
+    margin-top: 6px;
+  }
+
   .catalog-toolbar {
     margin-bottom: 14px;
     flex-wrap: wrap;
@@ -406,12 +467,15 @@ const firebaseConfig = {
     gap: 12px;
     align-items: flex-start;
     box-shadow: 1px 2px 6px var(--shadow);
+    cursor: pointer;
+    transition: border-left-color 0.15s;
   }
+  .book-card:hover { border-left-color: var(--gold); }
 
   .book-cover-thumb {
-    width: 52px;
-    min-width: 52px;
-    height: 72px;
+    width: 80px;
+    min-width: 80px;
+    height: 110px;
     background: var(--tan);
     border: 1px solid #aaa;
     display: flex;
@@ -453,7 +517,7 @@ const firebaseConfig = {
   .book-meta,
   .book-research-meta {
     margin-top: 6px;
-    color: #7a6045;
+    color: #3a6a90;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -465,7 +529,7 @@ const firebaseConfig = {
     margin-top: 6px;
     border-top: 1px dashed var(--tan);
     padding-top: 6px;
-    color: #5a4030;
+    color: #285078;
     font-style: italic;
   }
 
@@ -515,12 +579,96 @@ const firebaseConfig = {
   }
   .star-rating-widget .clear-rating.visible { display: inline; }
 
-  .book-actions {
+  /* ── Clickable cover placeholder ── */
+  .cover-add-btn {
+    width: 100%;
+    height: 100%;
     display: flex;
-    gap: 6px;
     flex-direction: column;
-    align-items: stretch;
-    min-width: 120px;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+  .cover-add-btn:hover { opacity: 1; }
+  .cover-add-label {
+    font-size: 0.58rem;
+    color: var(--brown);
+    font-family: 'Courier Prime', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+  }
+
+  /* ── Book Detail Panel ── */
+  .book-detail-header {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 14px 0 12px;
+    border-bottom: 1px solid var(--tan);
+    margin-bottom: 10px;
+  }
+  .book-detail-cover {
+    width: 90px;
+    min-width: 90px;
+    height: 126px;
+    background: var(--tan);
+    border: 1px solid #aaa;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .book-detail-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .book-detail-info { flex: 1; min-width: 0; }
+  .book-detail-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--dark);
+  }
+  .book-detail-author {
+    font-style: italic;
+    font-size: 1.0rem;
+    color: var(--brown);
+    margin-top: 3px;
+  }
+  .book-detail-meta {
+    margin-top: 6px;
+    color: #3a6a90;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.78rem;
+  }
+  .book-detail-notes {
+    margin-top: 8px;
+    font-size: 0.88rem;
+    color: #285078;
+    font-style: italic;
+    border-top: 1px dashed var(--tan);
+    padding-top: 6px;
+  }
+  .book-detail-personal-notes {
+    margin-top: 6px;
+    font-size: 0.88rem;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .book-detail-action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--tan);
+    margin-bottom: 10px;
   }
 
   .condition-badge {
@@ -536,7 +684,7 @@ const firebaseConfig = {
   .cond-good { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
   .cond-fair { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
   .cond-poor { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-  .status-want-to-read { background: #efe6d2; color: #6b4f35; border: 1px solid #d8c5a1; }
+  .status-want-to-read { background: #dce9f5; color: #1e4d75; border: 1px solid #aac9e4; }
   .status-currently-reading { background: #d9ecff; color: #184d7a; border: 1px solid #b8d8f5; }
   .status-read { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
   .status-did-not-finish { background: #f8d7da; color: #721c24; border: 1px solid #f1bfc5; }
@@ -579,7 +727,7 @@ const firebaseConfig = {
   }
 
   .briefing-scroll {
-    max-height: calc(100vh - 180px);
+    max-height: calc(100vh - 360px);
     overflow: auto;
     padding-right: 4px;
   }
@@ -655,7 +803,7 @@ const firebaseConfig = {
   }
 
   .about-header {
-    background: #5a3e28;
+    background: #1a3355;
     padding: 28px 28px 20px;
     text-align: center;
     position: relative;
@@ -750,7 +898,7 @@ const firebaseConfig = {
 
   .about-feature p {
     font-size: 0.88rem;
-    color: #5a4030;
+    color: #285078;
     line-height: 1.5;
     margin: 0;
   }
@@ -779,7 +927,7 @@ const firebaseConfig = {
 
   .scan-line {
     height: 2px;
-    background: rgba(139, 32, 32, 0.7);
+    background: rgba(63, 126, 181, 0.7);
     width: 100%;
     animation: scanAnim 1.5s ease-in-out infinite;
     margin: -32px 0 20px;
@@ -803,6 +951,9 @@ const firebaseConfig = {
 
   /* Mobile nav layout: phones, landscape phones, tablets (< 1024px) */
   @media (max-width: 1023px) {
+    /* All rem values in this stylesheet are font-size only — safe to scale root */
+    html { font-size: 18px; }
+
     /* Header: tighten padding, hide subtitle to reduce clutter */
     header { padding: 16px 16px 14px; }
     .subtitle { display: none; }
@@ -855,21 +1006,24 @@ const firebaseConfig = {
     .catalog-toolbar { flex-direction: column; align-items: stretch; }
     .sort-select { width: 100%; }
 
-    /* Book cards: cover+info stack vertically; actions go horizontal */
-    .book-card { flex-direction: column; }
-    .book-actions {
-      width: 100%;
-      min-width: 0;
-      flex-direction: row;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
     /* Touch targets — minimum 44px height across all interactive elements */
-    .btn { min-height: 44px; }
-    .btn-sm { min-height: 40px; padding: 8px 12px; font-size: 0.75rem; }
-    .filter-pill { min-height: 40px; padding: 8px 14px; }
-    .tab { min-height: 44px; padding: 10px 14px; }
+    .btn { min-height: 44px; font-size: 0.9rem; }
+    .btn-sm { min-height: 40px; padding: 8px 12px; font-size: 0.82rem; }
+    .filter-pill { min-height: 40px; padding: 8px 14px; font-size: 0.88rem; }
+    .tab { min-height: 44px; padding: 10px 14px; font-size: 0.88rem; }
+
+    /* Larger text sizes for small-screen readability (font-size only, no layout dims) */
+    label { font-size: 0.85rem; }
+    input, select, textarea { font-size: 1rem; }
+    .book-title { font-size: 1.1rem; }
+    .book-author { font-size: 1rem; }
+    .book-meta { font-size: 0.82rem; }
+    .stats-bar { font-size: 0.82rem; }
+    .section-label { font-size: 0.82rem; }
+    .panel-header { font-size: 1.05rem; }
+    .search-result-title { font-size: 1.05rem; }
+    .search-result-meta { font-size: 0.85rem; }
+    .mobile-nav-btn { font-size: 0.72rem; }
 
     /* ISBN row: keep on one line so buttons don't orphan to a half-empty line */
     .button-row { flex-wrap: wrap; }
@@ -888,7 +1042,7 @@ const firebaseConfig = {
       border-left: none;
       border-right: none;
       border-radius: 0;
-      border-top: 1px dashed rgba(184, 150, 46, 0.4);
+      border-top: 1px dashed rgba(63, 126, 181, 0.35);
       border-bottom: none;
       padding: 5px 0 6px;
       font-size: 0.68rem;
@@ -1050,9 +1204,9 @@ const firebaseConfig = {
   }
 
   .book-card.selected {
-    border-left-color: var(--red);
-    background: #f5ede0;
-    box-shadow: 2px 3px 10px rgba(139, 32, 32, 0.12);
+    border-left-color: var(--gold);
+    background: #ddeaf5;
+    box-shadow: 2px 3px 10px rgba(21, 45, 69, 0.14);
   }
 
   @keyframes shimmer {
@@ -1269,103 +1423,118 @@ const firebaseConfig = {
 <div class="main">
   <div id="addPanel">
     <div class="panel">
-      <div class="panel-header">Add to Catalog</div>
+      <div class="panel-header" style="display:flex;align-items:center;gap:10px;">
+        <button class="briefing-back-btn" id="editBackBtn" style="display:none;" onclick="cancelEdit()" title="Back to Book">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span id="addPanelTitle">Add to Catalog</span>
+      </div>
       <div class="panel-body">
-        <div class="tabs">
-          <button class="tab active" type="button" data-tab="isbn" onclick="switchTab('isbn')">By ISBN</button>
-          <button class="tab" type="button" data-tab="manual" onclick="switchTab('manual')">Manual Entry</button>
-        </div>
 
-        <div id="tabIsbn">
-          <div class="form-group">
-            <label for="isbnInput">ISBN (10 or 13 digits)</label>
-            <div class="isbn-row">
-              <input type="text" id="isbnInput" placeholder="e.g. 9780374533557" maxlength="17" onkeydown="if (event.key === 'Enter') lookupISBN()">
-              <button class="btn btn-secondary" type="button" onclick="lookupISBN()">Look up</button>
-              <button class="btn btn-accent" type="button" onclick="openCamera()" title="Scan barcode">Scan</button>
-            </div>
-          </div>
-          <div class="lookup-status" id="lookupStatus">Enter an ISBN and click Look up, or use Scan.</div>
-          <div class="cover-preview" id="coverPreview"></div>
-
-          <div class="photo-lookup-section" id="photoLookupSection">
-            <div class="section-label">Or use photos</div>
-            <div class="photo-lookup-row">
-              <button class="btn btn-accent" type="button" onclick="startPhotoCamera()">Camera</button>
-              <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
-              <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
-              <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
-              <span class="helper-text">Title page or copyright page work best</span>
-            </div>
-            <div class="photo-preview-row" id="photoPreviewRow"></div>
-            <div class="lookup-status" id="photoStatus"></div>
-          </div>
-
-          <div class="review-section" id="reviewSection" style="display:none;">
-            <div class="section-label">Review match</div>
-            <div id="reviewCard"></div>
-            <div class="candidate-list" id="candidateList"></div>
-            <div class="button-row" style="margin-top: 10px;">
-              <button class="btn btn-secondary btn-sm" type="button" onclick="acceptReviewMatch()">Use This Match</button>
-              <button class="btn btn-light btn-sm" type="button" onclick="dismissReview()">Dismiss</button>
+        <!-- ─── Edit mode: read-only book header (hidden until startEditBook) ─── -->
+        <div id="editModeHeader" style="display:none;">
+          <div class="edit-book-cover-row">
+            <div id="editBookCoverThumb" class="edit-book-cover">📖</div>
+            <div class="edit-book-biblio">
+              <div id="editBookTitle" class="edit-biblio-title"></div>
+              <div id="editBookAuthor" class="edit-biblio-author"></div>
+              <div id="editBookMeta" class="edit-biblio-meta"></div>
+              <div class="edit-locked-note">🔒 To change title / edition, re-add the book</div>
             </div>
           </div>
         </div>
 
-        <div id="tabManual" style="display: none;">
-          <div class="form-group">
-            <label for="manTitle">Title *</label>
-            <input type="text" id="manTitle" placeholder="Book title" onkeydown="if (event.key === 'Enter') searchManualBook()">
+        <!-- ─── Add mode: tabs + lookup / manual entry ─── -->
+        <div id="addModeSection">
+          <div class="tabs">
+            <button class="tab active" type="button" data-tab="isbn" onclick="switchTab('isbn')">By ISBN</button>
+            <button class="tab" type="button" data-tab="manual" onclick="switchTab('manual')">Manual Entry</button>
           </div>
-          <div class="form-group">
-            <label for="manAuthor">Author</label>
-            <input type="text" id="manAuthor" placeholder="Last, First" onkeydown="if (event.key === 'Enter') searchManualBook()">
+
+          <div id="tabIsbn">
+            <div class="form-group">
+              <label for="isbnInput">ISBN (10 or 13 digits)</label>
+              <div class="isbn-row">
+                <input type="text" id="isbnInput" placeholder="e.g. 9780374533557" maxlength="17" onkeydown="if (event.key === 'Enter') lookupISBN()">
+                <button class="btn btn-secondary" type="button" onclick="lookupISBN()">Look up</button>
+                <button class="btn btn-accent" type="button" onclick="openCamera()" title="Scan barcode">Scan</button>
+              </div>
+            </div>
+            <div class="lookup-status" id="lookupStatus">Enter an ISBN and click Look up, or use Scan.</div>
+            <div class="cover-preview" id="coverPreview"></div>
+
+            <div class="photo-lookup-section" id="photoLookupSection">
+              <div class="section-label">Or use photos</div>
+              <div class="photo-lookup-row">
+                <button class="btn btn-accent" type="button" onclick="startPhotoCamera()">Camera</button>
+                <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
+                <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
+                <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
+                <span class="helper-text">Title page or copyright page work best</span>
+              </div>
+              <div class="photo-preview-row" id="photoPreviewRow"></div>
+              <div class="lookup-status" id="photoStatus"></div>
+            </div>
+
+            <div class="review-section" id="reviewSection" style="display:none;">
+              <div class="section-label">Review match</div>
+              <div id="reviewCard"></div>
+              <div class="candidate-list" id="candidateList"></div>
+              <div class="button-row" style="margin-top: 10px;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="acceptReviewMatch()">Use This Match</button>
+                <button class="btn btn-light btn-sm" type="button" onclick="dismissReview()">Dismiss</button>
+              </div>
+            </div>
           </div>
-          <div class="button-row">
-            <button class="btn btn-secondary" type="button" onclick="searchManualBook()">Search</button>
-            <button class="btn btn-light" type="button" onclick="clearManualSearch()">Clear Search</button>
+
+          <div id="tabManual" style="display: none;">
+            <div class="form-group">
+              <label for="manTitle">Title *</label>
+              <input type="text" id="manTitle" placeholder="Book title" onkeydown="if (event.key === 'Enter') searchManualBook()">
+            </div>
+            <div class="form-group">
+              <label for="manAuthor">Author</label>
+              <input type="text" id="manAuthor" placeholder="Last, First" onkeydown="if (event.key === 'Enter') searchManualBook()">
+            </div>
+            <div class="button-row">
+              <button class="btn btn-secondary" type="button" onclick="searchManualBook()">Search</button>
+              <button class="btn btn-light" type="button" onclick="clearManualSearch()">Clear Search</button>
+            </div>
+            <div class="lookup-status" id="manualSearchStatus">Search by title and optionally author, or type details manually.</div>
+            <div class="search-results" id="manualSearchResults" style="display: none;"></div>
+            <div class="form-group">
+              <label for="manPublisher">Publisher</label>
+              <input type="text" id="manPublisher" placeholder="Publisher name">
+            </div>
+            <div class="form-group">
+              <label for="manYear">Year Published</label>
+              <input type="number" id="manYear" placeholder="e.g. 1952" min="1400" max="2100">
+            </div>
+            <div class="form-group">
+              <label for="manEdition">Edition / Printing</label>
+              <input type="text" id="manEdition" placeholder="e.g. First edition, third printing">
+            </div>
+            <div class="form-group">
+              <label for="manSubjects">Subjects</label>
+              <input type="text" id="manSubjects" placeholder="e.g. Fiction; Coming of age">
+            </div>
           </div>
-          <div class="lookup-status" id="manualSearchStatus">Search by title and optionally author, or type details manually.</div>
-          <div class="search-results" id="manualSearchResults" style="display: none;"></div>
-          <div class="form-group">
-            <label for="manPublisher">Publisher</label>
-            <input type="text" id="manPublisher" placeholder="Publisher name">
-          </div>
-          <div class="form-group">
-            <label for="manYear">Year Published</label>
-            <input type="number" id="manYear" placeholder="e.g. 1952" min="1400" max="2100">
-          </div>
-          <div class="form-group">
-            <label for="manEdition">Edition / Printing</label>
-            <input type="text" id="manEdition" placeholder="e.g. First edition, third printing">
-          </div>
-          <div class="form-group">
-            <label for="manSubjects">Subjects</label>
-            <input type="text" id="manSubjects" placeholder="e.g. Fiction; Coming of age">
-          </div>
-        </div>
+        </div><!-- /addModeSection -->
 
         <hr class="form-divider">
 
+        <!-- ── Personal / reading fields — in edit order ── -->
         <div class="form-group">
-          <label for="bookCondition">Condition</label>
-          <select id="bookCondition">
-            <option value="">Select</option>
-            <option value="Fine">Fine</option>
-            <option value="Good">Good</option>
-            <option value="Fair">Fair</option>
-            <option value="Poor">Poor</option>
-          </select>
+          <label>Your Rating</label>
+          <div class="star-rating-widget" id="starRatingWidget">
+            <button type="button" class="star-btn" data-value="1" onclick="setFormRating(1)" title="1 star">&#9733;</button>
+            <button type="button" class="star-btn" data-value="2" onclick="setFormRating(2)" title="2 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="3" onclick="setFormRating(3)" title="3 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="4" onclick="setFormRating(4)" title="4 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="5" onclick="setFormRating(5)" title="5 stars">&#9733;</button>
+            <button type="button" class="clear-rating" id="clearRatingBtn" onclick="setFormRating(0)" title="Clear rating">✕ clear</button>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="bookShelf">Shelf / Location</label>
-          <input type="text" id="bookShelf" placeholder="e.g. Study / Top shelf">
-        </div>
-        <div class="form-group">
-          <label for="bookNotes">Notes / Provenance</label>
-          <textarea id="bookNotes" placeholder="Acquired from..., inscribed by..., etc."></textarea>
-        </div>
-
         <div class="form-group">
           <label for="bookReadingStatus">Reading Status</label>
           <select id="bookReadingStatus">
@@ -1384,21 +1553,36 @@ const firebaseConfig = {
           <label for="bookFinishDate">Finish Date</label>
           <input type="date" id="bookFinishDate">
         </div>
-
+        <!-- Subject Tags: shown only when editing an existing book -->
+        <div class="form-group" id="bookSubjectTagsGroup" style="display:none;">
+          <label for="bookSubjectTags">Subject Tags</label>
+          <input type="text" id="bookSubjectTags" placeholder="e.g. Fiction; Coming of age">
+        </div>
         <div class="form-group">
           <label for="bookPersonalNotes">Your Reading Notes</label>
           <textarea id="bookPersonalNotes" placeholder="What you thought, favorite parts, things to revisit..."></textarea>
         </div>
+
+        <hr class="form-divider">
+
+        <!-- ── Physical / provenance fields ── -->
         <div class="form-group">
-          <label>Your Rating</label>
-          <div class="star-rating-widget" id="starRatingWidget">
-            <button type="button" class="star-btn" data-value="1" onclick="setFormRating(1)" title="1 star">&#9733;</button>
-            <button type="button" class="star-btn" data-value="2" onclick="setFormRating(2)" title="2 stars">&#9733;</button>
-            <button type="button" class="star-btn" data-value="3" onclick="setFormRating(3)" title="3 stars">&#9733;</button>
-            <button type="button" class="star-btn" data-value="4" onclick="setFormRating(4)" title="4 stars">&#9733;</button>
-            <button type="button" class="star-btn" data-value="5" onclick="setFormRating(5)" title="5 stars">&#9733;</button>
-            <button type="button" class="clear-rating" id="clearRatingBtn" onclick="setFormRating(0)" title="Clear rating">✕ clear</button>
-          </div>
+          <label for="bookCondition">Condition</label>
+          <select id="bookCondition">
+            <option value="">Select</option>
+            <option value="Fine">Fine</option>
+            <option value="Good">Good</option>
+            <option value="Fair">Fair</option>
+            <option value="Poor">Poor</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="bookShelf">Shelf / Location</label>
+          <input type="text" id="bookShelf" placeholder="e.g. Study / Top shelf">
+        </div>
+        <div class="form-group">
+          <label for="bookNotes">Other Notes / Provenance</label>
+          <textarea id="bookNotes" placeholder="Acquired from..., inscribed by..., etc."></textarea>
         </div>
 
         <div class="button-row">
@@ -1450,41 +1634,46 @@ const firebaseConfig = {
       <button class="briefing-back-btn" onclick="setMobileSection('catalog')" title="Back to Library">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      Book Briefing
+      Book Detail
+      <span style="flex:1;"></span>
+      <button class="briefing-back-btn" id="prevBookBtn" onclick="navigateBook(-1)" title="Previous book" disabled style="opacity:0.4;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="briefing-back-btn" id="nextBookBtn" onclick="navigateBook(1)" title="Next book" disabled style="opacity:0.4;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
     </div>
     <div class="panel-body">
-      <div class="research-header">
-        <div>
-          <h2 id="briefingTitle">Select a book</h2>
-          <div class="research-subtitle" id="briefingSubtitle">Generate or open a briefing from any catalog card.</div>
-        </div>
-        <div class="button-row">
-          <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
-          <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
-            <input type="checkbox" id="spoilerToggle" onchange="renderBriefingPanel()">
-            <span class="toggle-slider"></span>
-            <span class="toggle-text">Show Spoilers</span>
-          </label>
-        </div>
+      <div id="bookDetailHeader"></div>
+      <div class="book-detail-action-row" id="bookDetailActions" style="display:none;">
+        <button class="btn btn-light btn-sm" type="button" id="editBookDetailBtn">Edit</button>
+        <button class="btn btn-danger btn-sm" type="button" id="removeBookDetailBtn">Remove</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
+        <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
+          <input type="checkbox" id="spoilerToggle" onchange="renderBriefingPanel()">
+          <span class="toggle-slider"></span>
+          <span class="toggle-text">Show Spoilers</span>
+        </label>
       </div>
       <div class="research-status" id="briefingStatus"></div>
       <div class="briefing-scroll" id="briefingContent">
         <div class="briefing-empty">
-          <p>Choose a book to view or generate its discussion guide.</p>
+          <p>Choose a book to view its details and discussion guide.</p>
         </div>
       </div>
     </div>
   </div>
 </div>
 
+<input type="file" id="coverUploadInput" accept="image/*" style="display:none" onchange="handleCoverUpload(this)">
 <nav class="mobile-nav" id="mobileNav" aria-label="Main sections">
-  <button class="mobile-nav-btn" data-section="add" onclick="setMobileSection('add')">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    <span>Add</span>
-  </button>
   <button class="mobile-nav-btn active" data-section="catalog" onclick="setMobileSection('catalog')">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     <span>Library</span>
+  </button>
+  <button class="mobile-nav-btn" data-section="add" onclick="setMobileSection('add')">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span>Add</span>
   </button>
 </nav>
 
@@ -1578,6 +1767,9 @@ let researchEnabled = false;
 let selectedBookId = null;
 let researchRequestInFlight = false;
 let editingBookId = null;
+let _filteredBookIds = [];
+let pendingCoverBlob = null;
+let _coverUploadBookId = null;
 let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
@@ -1657,11 +1849,21 @@ function stopEditing() {
   editingBookId = null;
   document.getElementById("saveBookBtn").textContent = "Add to Catalog";
   document.getElementById("cancelEditBtn").style.display = "none";
+  document.getElementById("editBackBtn").style.display = "none";
+  document.getElementById("addPanelTitle").textContent = "Add to Catalog";
+  // Restore add mode UI
+  document.getElementById("addModeSection").style.display = "";
+  document.getElementById("editModeHeader").style.display = "none";
+  document.getElementById("bookSubjectTagsGroup").style.display = "none";
 }
 
 function cancelEdit() {
+  const wasEditing = Boolean(editingBookId);
   clearForm();
   setStatus("addStatus", "", "");
+  if (wasEditing && selectedBookId) {
+    setMobileSection("briefing");
+  }
 }
 
 function normalizeBook(book) {
@@ -1725,6 +1927,13 @@ function setMobileSection(name) {
   if (name === "briefing") {
     history.pushState({ tomeshelfSection: "briefing" }, "");
   }
+  // When returning to catalog, scroll the last-viewed book into view
+  if (name === "catalog" && selectedBookId) {
+    requestAnimationFrame(() => {
+      const card = document.querySelector(`.book-card[data-book-id="${selectedBookId}"]`);
+      if (card) card.scrollIntoView({ block: "center", behavior: "instant" });
+    });
+  }
 }
 
 // Intercept the phone/browser back button while briefing is open
@@ -1760,6 +1969,8 @@ async function loadApiConfig() {
   researchEnabled = Boolean(auth.currentUser);
   if (!researchEnabled) {
     setResearchStatus("Sign in to enable book briefings.", "error");
+  } else {
+    setResearchStatus("", "");
   }
 }
 
@@ -2024,27 +2235,30 @@ async function addBook() {
   const selectedManualResult = manualSelectedResult;
 
   let book;
-  if (currentTab === "isbn") {
-    if (!pendingBook && !editingBook) {
+  if (isEditing) {
+    // Edit mode: bibliographic fields are locked — preserve everything from the saved book
+    book = { ...editingBook };
+    book.subjects = document.getElementById("bookSubjectTags").value.trim();
+  } else if (currentTab === "isbn") {
+    if (!pendingBook) {
       return setStatus("addStatus", "Look up an ISBN first.", "error");
     }
-    book = editingBook ? { ...editingBook } : { ...pendingBook };
+    book = { ...pendingBook };
   } else {
     const title = document.getElementById("manTitle").value.trim();
     if (!title) {
       return setStatus("addStatus", "Title is required.", "error");
     }
     book = {
-      ...(editingBook || {}),
       title,
       author: document.getElementById("manAuthor").value.trim(),
       publisher: document.getElementById("manPublisher").value.trim(),
       year: document.getElementById("manYear").value.trim(),
       edition: document.getElementById("manEdition").value.trim(),
       subjects: document.getElementById("manSubjects").value.trim(),
-      isbn: editingBook ? editingBook.isbn || "" : selectedManualResult ? selectedManualResult.isbn || "" : "",
-      source: editingBook ? editingBook.source || "Manual" : selectedManualResult ? selectedManualResult.source || "Manual" : "Manual",
-      coverUrl: editingBook ? editingBook.coverUrl || "" : selectedManualResult ? selectedManualResult.coverUrl || "" : ""
+      isbn: selectedManualResult ? selectedManualResult.isbn || "" : "",
+      source: selectedManualResult ? selectedManualResult.source || "Manual" : "Manual",
+      coverUrl: selectedManualResult ? selectedManualResult.coverUrl || "" : ""
     };
   }
 
@@ -2083,6 +2297,23 @@ async function addBook() {
     books.unshift(book);
   }
   await saveBooks();
+
+  // If a photo was used for identification and no cover was found, upload the compressed photo
+  if (pendingCoverBlob && !book.coverUrl && !editingBook) {
+    const blobToUpload = pendingCoverBlob;
+    pendingCoverBlob = null;
+    try {
+      const url = await uploadCoverToStorage(book.id, blobToUpload);
+      const idx = books.findIndex((b) => b.id === book.id);
+      if (idx >= 0) { books[idx].coverUrl = url; }
+      await saveBooks();
+    } catch (e) {
+      console.warn("Cover photo upload failed:", e);
+    }
+  } else {
+    pendingCoverBlob = null;
+  }
+
   stopEditing();
   clearForm();
   renderCatalog();
@@ -2093,7 +2324,7 @@ async function addBook() {
 
 function clearForm() {
   stopEditing();
-  ["isbnInput", "manTitle", "manAuthor", "manPublisher", "manYear", "manEdition", "manSubjects", "bookShelf", "bookNotes", "bookPersonalNotes", "bookStartDate", "bookFinishDate"].forEach((id) => {
+  ["isbnInput", "manTitle", "manAuthor", "manPublisher", "manYear", "manEdition", "manSubjects", "bookSubjectTags", "bookShelf", "bookNotes", "bookPersonalNotes", "bookStartDate", "bookFinishDate"].forEach((id) => {
     const element = document.getElementById(id);
     if (element) {
       element.value = "";
@@ -2104,6 +2335,7 @@ function clearForm() {
   setFormRating(0);
   document.getElementById("coverPreview").innerHTML = "";
   pendingBook = null;
+  pendingCoverBlob = null;
   setStatus("lookupStatus", "Enter an ISBN and click Look up, or use Scan.", "");
   // Clear photo lookup / review state
   photoFiles = [];
@@ -2115,29 +2347,39 @@ function clearForm() {
 
 function startEditBook(id) {
   const book = findBook(id);
-  if (!book) {
-    return;
-  }
+  if (!book) return;
 
   editingBookId = id;
-  switchTab("manual");
-  document.getElementById("manTitle").value = book.title || "";
-  document.getElementById("manAuthor").value = book.author || "";
-  document.getElementById("manPublisher").value = book.publisher || "";
-  document.getElementById("manYear").value = book.year || "";
-  document.getElementById("manEdition").value = book.edition || "";
-  document.getElementById("manSubjects").value = book.subjects || "";
-  document.getElementById("bookCondition").value = book.condition || "";
-  document.getElementById("bookShelf").value = book.shelf || "";
-  document.getElementById("bookNotes").value = book.notes || "";
+
+  // Switch to edit mode: hide add tabs, show read-only book header
+  document.getElementById("addModeSection").style.display = "none";
+  document.getElementById("editModeHeader").style.display = "";
+  document.getElementById("bookSubjectTagsGroup").style.display = "";
+
+  // Populate read-only header
+  const coverThumb = document.getElementById("editBookCoverThumb");
+  coverThumb.innerHTML = book.coverUrl
+    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="">`
+    : "📖";
+  document.getElementById("editBookTitle").textContent = book.title || "";
+  document.getElementById("editBookAuthor").textContent = book.author || "";
+  const metaParts = [book.publisher, book.year, book.edition].filter(Boolean);
+  document.getElementById("editBookMeta").textContent = metaParts.join(" · ");
+
+  // Populate editable fields (in display order)
+  setFormRating(book.rating || 0);
   document.getElementById("bookReadingStatus").value = book.readingStatus || "";
   document.getElementById("bookStartDate").value = book.startDate || "";
   document.getElementById("bookFinishDate").value = book.finishDate || "";
+  document.getElementById("bookSubjectTags").value = book.subjects || "";
   document.getElementById("bookPersonalNotes").value = book.personalNotes || "";
-  setFormRating(book.rating || 0);
-  document.getElementById("coverPreview").innerHTML = book.coverUrl ? `<img src="${escapeAttribute(book.coverUrl)}" alt="Book cover">` : "";
-  clearManualSearch(false);
-  setStatus("lookupStatus", `Editing "${book.title}". Save to update this entry.`, "success");
+  document.getElementById("bookCondition").value = book.condition || "";
+  document.getElementById("bookShelf").value = book.shelf || "";
+  document.getElementById("bookNotes").value = book.notes || "";
+
+  const shortTitle = book.title.length > 28 ? book.title.slice(0, 28) + "…" : book.title;
+  document.getElementById("editBackBtn").style.display = "";
+  document.getElementById("addPanelTitle").textContent = `Editing: ${shortTitle}`;
   document.getElementById("saveBookBtn").textContent = "Save Changes";
   document.getElementById("cancelEditBtn").style.display = "inline-flex";
   setMobileSection("add");
@@ -2190,6 +2432,7 @@ function renderCatalog() {
     return;
   }
 
+  _filteredBookIds = list.map((b) => b.id);
   grid.innerHTML = list.map((book) => renderBookCard(book)).join("");
 }
 
@@ -2198,41 +2441,30 @@ function renderBookCard(book) {
   const isSelected = book.id === selectedBookId;
   const condClass = book.condition ? `cond-${book.condition.toLowerCase()}` : "";
   const statusClass = book.readingStatus ? `status-${book.readingStatus.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
-  const readingDates = [
-    book.startDate ? `Started ${book.startDate}` : "",
-    book.finishDate ? `Finished ${book.finishDate}` : ""
-  ].filter(Boolean);
   const rating = Number(book.rating || 0);
   const stars = rating ? `${"&#9733;".repeat(rating)}${"&#9734;".repeat(5 - rating)}` : "";
   const thumb = book.coverUrl
-    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)" onclick="showCoverLightbox('${escapeAttribute(book.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`
+    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)">`
     : bookIconSVG();
 
+  const cardMeta = [
+    book.year ? esc(book.year) : "",
+    book.finishDate ? `Finished ${esc(book.finishDate)}` : ""
+  ].filter(Boolean);
+
   return `
-    <div class="book-card${isSelected ? " selected" : ""}">
+    <div class="book-card${isSelected ? " selected" : ""}" data-book-id="${escapeAttribute(book.id)}" onclick="openBriefing('${escapeAttribute(book.id)}')">
       <div class="book-cover-thumb">${thumb}</div>
       <div class="book-info">
         <div class="book-title">${esc(book.title)}</div>
         ${book.author ? `<div class="book-author">${esc(book.author)}</div>` : ""}
-        <div class="book-meta">
-          ${book.year ? `<span>Year ${esc(book.year)}</span>` : ""}
-          ${book.publisher ? `<span>${esc(book.publisher)}</span>` : ""}
-          ${book.isbn ? `<span>ISBN ${esc(book.isbn)}</span>` : book.edition ? `<span>${esc(book.edition)}</span>` : ""}
-          ${book.shelf ? `<span>Shelf ${esc(book.shelf)}</span>` : ""}
+        ${cardMeta.length ? `<div class="book-meta" style="margin-top:4px;">${cardMeta.map((m) => `<span>${m}</span>`).join("")}</div>` : ""}
+        <div class="book-meta" style="margin-top:4px;">
           ${book.condition ? `<span class="condition-badge ${condClass}">${esc(book.condition)}</span>` : ""}
           ${book.readingStatus ? `<span class="condition-badge ${statusClass}">${esc(book.readingStatus)}</span>` : ""}
         </div>
-        ${readingDates.length ? `<div class="book-meta">${readingDates.map((item) => `<span>${esc(item)}</span>`).join("")}</div>` : ""}
-        ${rating ? `<div class="rating-display" aria-label="${rating} out of 5 stars">${stars} ${rating}/5</div>` : ""}
-        ${book.subjects ? `<div class="book-meta">Subjects: ${esc(book.subjects)}</div>` : ""}
-        ${book.notes ? `<div class="book-notes">${esc(book.notes)}</div>` : ""}
-        ${book.personalNotes ? `<div class="book-personal-notes"><strong>Your notes:</strong> ${esc(book.personalNotes)}</div>` : ""}
-        ${hasBriefing ? `<div class="book-research-meta">Briefing cached ${(researchCache[book.id].generated_at || "").slice(0, 10)}</div>` : ""}
-      </div>
-      <div class="book-actions">
-        <button class="btn btn-secondary btn-sm" type="button" onclick="openBriefing('${escapeAttribute(book.id)}')">${hasBriefing ? "Open Briefing" : "View Briefing"}</button>
-        <button class="btn btn-light btn-sm" type="button" data-action="edit-book" data-book-id="${escapeAttribute(book.id)}">Edit</button>
-        <button class="btn btn-danger btn-sm" type="button" onclick="deleteBook('${escapeAttribute(book.id)}')">Remove</button>
+        ${rating ? `<div class="rating-display" aria-label="${rating} out of 5 stars">${stars}</div>` : ""}
+        ${hasBriefing ? `<div class="book-research-meta" style="margin-top:4px;">&#10003; Briefing</div>` : ""}
       </div>
     </div>`;
 }
@@ -2247,6 +2479,7 @@ async function deleteBook(id) {
   if (selectedBookId === id) {
     selectedBookId = null;
     renderBriefingPanel();
+    if (window.innerWidth < 1024) setMobileSection("catalog");
   }
   renderCatalog();
 }
@@ -2308,28 +2541,71 @@ async function generateResearchForSelected(forceRefresh) {
 }
 
 function renderBriefingPanel() {
-  const title = document.getElementById("briefingTitle");
-  const subtitle = document.getElementById("briefingSubtitle");
+  const headerEl = document.getElementById("bookDetailHeader");
+  const actionsEl = document.getElementById("bookDetailActions");
   const content = document.getElementById("briefingContent");
   const book = selectedBookId ? findBook(selectedBookId) : null;
 
   if (!book) {
-    title.textContent = "Select a book";
-    subtitle.textContent = "Generate or open a briefing from any catalog card.";
-    content.innerHTML = `<div class="briefing-empty"><p>Choose a book to view or generate its discussion guide.</p></div>`;
+    headerEl.innerHTML = "";
+    actionsEl.style.display = "none";
+    content.innerHTML = `<div class="briefing-empty"><p>Choose a book to view its details and discussion guide.</p></div>`;
     document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
+    updateNavArrows();
     return;
   }
 
-  title.textContent = book.title;
-  subtitle.textContent = [book.author, book.year].filter(Boolean).join(" | ") || "Catalog entry";
+  // ── Render book detail header ──
+  const rating = Number(book.rating || 0);
+  const stars = rating ? `${"&#9733;".repeat(rating)}${"&#9734;".repeat(5 - rating)}` : "";
+  const condClass = book.condition ? `cond-${book.condition.toLowerCase()}` : "";
+  const statusClass = book.readingStatus ? `status-${book.readingStatus.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
+  const readingDates = [
+    book.startDate ? `Started ${book.startDate}` : "",
+    book.finishDate ? `Finished ${book.finishDate}` : ""
+  ].filter(Boolean);
+  const coverHtml = book.coverUrl
+    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)" onclick="showCoverLightbox('${escapeAttribute(book.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`
+    : `<div class="cover-add-btn" onclick="pickCoverForBook('${escapeAttribute(book.id)}')" title="Add cover image">${bookIconSVG()}<span class="cover-add-label">Add cover</span></div>`;
 
+  headerEl.innerHTML = `
+    <div class="book-detail-header">
+      <div class="book-detail-cover">${coverHtml}</div>
+      <div class="book-detail-info">
+        <div class="book-detail-title">${esc(book.title)}</div>
+        ${book.author ? `<div class="book-detail-author">${esc(book.author)}</div>` : ""}
+        <div class="book-detail-meta">
+          ${book.year ? `<span>Year ${esc(book.year)}</span>` : ""}
+          ${book.publisher ? `<span>${esc(book.publisher)}</span>` : ""}
+          ${book.isbn ? `<span>ISBN ${esc(book.isbn)}</span>` : ""}
+          ${book.edition ? `<span>${esc(book.edition)}</span>` : ""}
+          ${book.shelf ? `<span>Shelf ${esc(book.shelf)}</span>` : ""}
+        </div>
+        <div class="book-detail-meta">
+          ${book.condition ? `<span class="condition-badge ${condClass}">${esc(book.condition)}</span>` : ""}
+          ${book.readingStatus ? `<span class="condition-badge ${statusClass}">${esc(book.readingStatus)}</span>` : ""}
+        </div>
+        ${readingDates.length ? `<div class="book-detail-meta">${readingDates.map((d) => `<span>${esc(d)}</span>`).join("")}</div>` : ""}
+        ${rating ? `<div class="rating-display" style="margin-top:6px;" aria-label="${rating} out of 5 stars">${stars} ${rating}/5</div>` : ""}
+        ${book.subjects ? `<div class="book-detail-meta">Subjects: ${esc(book.subjects)}</div>` : ""}
+        ${book.notes ? `<div class="book-detail-notes">${esc(book.notes)}</div>` : ""}
+        ${book.personalNotes ? `<div class="book-detail-personal-notes"><strong>Your notes:</strong> ${esc(book.personalNotes)}</div>` : ""}
+      </div>
+    </div>`;
+
+  // ── Show action buttons and wire them ──
+  actionsEl.style.display = "";
+  document.getElementById("editBookDetailBtn").onclick = () => startEditBook(book.id);
+  document.getElementById("removeBookDetailBtn").onclick = () => deleteBook(book.id);
+
+  // ── Render briefing content ──
   const briefing = researchCache[book.id];
   if (!briefing) {
     content.innerHTML = `<div class="briefing-empty"><p>No briefing has been generated yet for this book.</p></div>`;
     document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
+    updateNavArrows();
     return;
   }
 
@@ -2393,6 +2669,29 @@ function renderBriefingPanel() {
       </div>
     </div>`;
   updateResearchButtons();
+  updateNavArrows();
+}
+
+function navigateBook(delta) {
+  if (!selectedBookId || !_filteredBookIds.length) return;
+  const idx = _filteredBookIds.indexOf(selectedBookId);
+  if (idx === -1) return;
+  const newIdx = idx + delta;
+  if (newIdx < 0 || newIdx >= _filteredBookIds.length) return;
+  openBriefing(_filteredBookIds[newIdx]);
+}
+
+function updateNavArrows() {
+  const prevBtn = document.getElementById("prevBookBtn");
+  const nextBtn = document.getElementById("nextBookBtn");
+  if (!prevBtn || !nextBtn) return;
+  const idx = _filteredBookIds.indexOf(selectedBookId);
+  const hasPrev = idx > 0;
+  const hasNext = idx !== -1 && idx < _filteredBookIds.length - 1;
+  prevBtn.disabled = !hasPrev;
+  prevBtn.style.opacity = hasPrev ? "1" : "0.4";
+  nextBtn.disabled = !hasNext;
+  nextBtn.style.opacity = hasNext ? "1" : "0.4";
 }
 
 function updateResearchButtons() {
@@ -2783,7 +3082,7 @@ function selectCandidate(index) {
   showReviewSection(reviewData);
 }
 
-function acceptReviewMatch() {
+async function acceptReviewMatch() {
   const match = reviewData && reviewData.bestMatch;
   const extracted = reviewData && reviewData.extracted;
   const source = match || extracted;
@@ -2815,6 +3114,9 @@ function acceptReviewMatch() {
     };
   }
 
+  // Capture photo file reference before dismissReview() clears photoFiles
+  const photoForCover = !pendingBook.coverUrl ? (photoFiles[0] || null) : null;
+
   // Also fill manual tab fields so the user can switch tabs if needed
   document.getElementById("manTitle").value = pendingBook.title;
   document.getElementById("manAuthor").value = pendingBook.author;
@@ -2832,6 +3134,19 @@ function acceptReviewMatch() {
 
   showLookupResult();
   dismissReview();
+
+  // Compress the photo in the background for use as cover if none was found
+  if (photoForCover) {
+    pendingCoverBlob = null;
+    try {
+      pendingCoverBlob = await compressImageForCover(photoForCover);
+      setStatus("lookupStatus",
+        `Found: "${pendingBook.title}"${pendingBook.author ? " by " + pendingBook.author : ""} (${pendingBook.source}) — photo saved as cover`,
+        "success");
+    } catch (e) {
+      console.warn("Photo compression failed:", e);
+    }
+  }
 }
 
 function dismissReview() {
@@ -2842,12 +3157,97 @@ function dismissReview() {
   setStatus("photoStatus", "", "");
 }
 
-document.getElementById("bookGrid").addEventListener("click", (event) => {
-  const editButton = event.target.closest('[data-action="edit-book"]');
-  if (!editButton) {
-    return;
+
+// ── Cover image upload helpers ──
+
+function compressImageForCover(file, maxPx = 900) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else        { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Image compression failed"));
+      }, "image/jpeg", 0.78);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error("Image load failed")); };
+    img.src = objUrl;
+  });
+}
+
+async function uploadCoverToStorage(bookId, blob) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  const ref = storage.ref(`users/${uid}/covers/${bookId}.jpg`);
+  await ref.put(blob, { contentType: "image/jpeg" });
+  return await ref.getDownloadURL();
+}
+
+function pickCoverForBook(bookId) {
+  _coverUploadBookId = bookId;
+  document.getElementById("coverUploadInput").click();
+}
+
+async function handleCoverUpload(input) {
+  const file = input.files[0];
+  input.value = "";
+  if (!file || !_coverUploadBookId) return;
+  const bookId = _coverUploadBookId;
+  _coverUploadBookId = null;
+  const book = findBook(bookId);
+  if (!book) return;
+  setResearchStatus("Uploading cover…", "");
+  try {
+    const blob = await compressImageForCover(file);
+    const url = await uploadCoverToStorage(bookId, blob);
+    book.coverUrl = url;
+    await saveBooks();
+    renderCatalog();
+    renderBriefingPanel();
+    setResearchStatus("", "");
+  } catch (e) {
+    setResearchStatus("Cover upload failed: " + e.message, "error");
   }
-  startEditBook(editButton.dataset.bookId || "");
+}
+
+// ── Swipe navigation on the book detail panel ──
+(function () {
+  let sx = 0, sy = 0;
+  const panel = document.getElementById("briefingPanel");
+  panel.addEventListener("touchstart", (e) => {
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+  }, { passive: true });
+  panel.addEventListener("touchend", (e) => {
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    // Only fire for mostly-horizontal swipes of at least 60px
+    if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 60) {
+      if (dx < 0) navigateBook(1);   // swipe left  → next
+      else         navigateBook(-1); // swipe right → previous
+    }
+  }, { passive: true });
+})();
+
+// ── Arrow-key navigation when detail panel is in focus ──
+window.addEventListener("keydown", (e) => {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  const bp = document.getElementById("briefingPanel");
+  const isDetailVisible = window.innerWidth >= 1024 || (bp && bp.classList.contains("mobile-active"));
+  if (!isDetailVisible || !selectedBookId) return;
+  if (e.key === "ArrowRight") { navigateBook(1);  e.preventDefault(); }
+  else if (e.key === "ArrowLeft") { navigateBook(-1); e.preventDefault(); }
 });
 
 function renderStats() {
