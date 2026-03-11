@@ -1,15 +1,18 @@
 # TomeShelf
 
-A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes to add books, manage your collection, and generate structured discussion guides using Google Gemini — all synced to the cloud via Firebase.
+A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes or photograph whole bookshelves to add books, organise your collection into named shelves, and generate structured discussion guides using Google Gemini — all synced to the cloud via Firebase.
 
 ## Features
 
 - **Book Catalog** — Add, edit, and search books with title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading status, dates, rating, and notes
+- **TomeShelves** — Organise books into multiple named shelves (e.g. Reading List, Cookbooks, Old books from mom & dad); create, rename, and delete shelves; last-viewed shelf restored on next open
+- **Bulk Load (beta)** — Photograph a bookshelf; AI identifies the titles and searches for each book automatically; review and correct before adding
 - **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
-- **Cover Lookup** — Find covers via Open Library by ISBN, title search, or photo
+- **Cover Lookup** — Finds covers via Open Library and Google Books across all entry methods (ISBN scan, manual search, bulk load, CSV import)
 - **AI Research Briefings** — Generate college-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash
 - **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per Google account
-- **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library)
+- **Account Settings** — Click your Google avatar to access Sign Out or Account Settings; Account Settings lets you export a JSON backup or permanently delete your account and all associated data
+- **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
 
@@ -89,7 +92,7 @@ firebase deploy --only hosting
 
 ## Data Storage
 
-All catalog data and briefing cache are stored in **Cloud Firestore** under each user's Google account (`users/{uid}/catalog/data`). No data is stored locally beyond an in-memory cache while the app is open.
+All catalog data, briefing cache, and shelf definitions are stored in **Cloud Firestore** under each user's Google account (`users/{uid}/catalog/data`). The active shelf selection is persisted to `localStorage` per user. No other data is stored locally.
 
 ## License
 

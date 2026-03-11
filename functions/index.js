@@ -8,6 +8,9 @@ const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const MODEL = "gemini-2.5-flash";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
+const BULK_MODEL = "gemini-3.1-pro-preview";
+const BULK_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${BULK_MODEL}:generateContent`;
+
 const researchSchema = {
   type: "object",
   properties: {
@@ -503,3 +506,96 @@ function wordOverlap(a, b) {
   }
   return overlap / Math.max(aWords.size, bWords.size);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Bulk Load — identify every book visible in a shelf/stack photo
+// ═══════════════════════════════════════════════════════════════
+
+const bulkBooksSchema = {
+  type: "object",
+  properties: {
+    books: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title:  { type: "string" },
+          author: { type: "string" }
+        },
+        required: ["title", "author"]
+      }
+    }
+  },
+  required: ["books"]
+};
+
+exports.identifyBooksInImage = onCall({
+  secrets: [geminiApiKey],
+  maxInstances: 5,
+  timeoutSeconds: 90
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const image = request.data && request.data.image;
+  if (!image || !image.data) {
+    throw new HttpsError("invalid-argument", "An image is required.");
+  }
+
+  const payload = {
+    contents: [{
+      role: "user",
+      parts: [
+        { inline_data: { mime_type: image.mimeType || "image/jpeg", data: image.data } },
+        {
+          text: [
+            "Examine this image carefully and identify every book you can see.",
+            "For each book, extract the title and the author's name.",
+            "Include every book visible — even if partially obscured — as long as you can read the title.",
+            "If the author name is not visible for a book, use an empty string for author.",
+            "Return ONLY a JSON object: { \"books\": [ { \"title\": \"...\", \"author\": \"...\" } ] }.",
+            "If no books are identifiable, return { \"books\": [] }.",
+            "Do not include any other text outside the JSON."
+          ].join(" ")
+        }
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 2048,
+      responseMimeType: "application/json",
+      responseJsonSchema: bulkBooksSchema
+    }
+  };
+
+  let res;
+  try {
+    res = await fetch(BULK_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    throw new HttpsError("unavailable", "Unable to reach Gemini API.");
+  }
+
+  const rawText = await res.text();
+  if (!res.ok) {
+    console.error("Gemini bulk ID error", res.status, rawText.slice(0, 500));
+    throw new HttpsError("internal", `Gemini request failed (HTTP ${res.status}).`);
+  }
+
+  let parsed;
+  try {
+    parsed = parseResearchJson(extractCandidateText(JSON.parse(rawText)));
+  } catch (err) {
+    console.error("Gemini bulk ID parse error:", err.message);
+    throw new HttpsError("internal", "Could not parse Gemini response.");
+  }
+
+  const books = Array.isArray(parsed.books)
+    ? parsed.books.filter((b) => b && String(b.title || "").trim())
+    : [];
+  return { books };
+});
