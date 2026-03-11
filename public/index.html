@@ -4212,12 +4212,35 @@ async function deleteShelf(id) {
   if (!shelf) return;
   const count = books.filter(function(b) { return (b.listShelfId || "default") === id; }).length;
   const other = shelves.find(function(s) { return s.id !== id; });
-  const msg = count > 0
-    ? `Delete "${shelf.name}"? Its ${count} book${count === 1 ? "" : "s"} will be moved to "${other.name}".`
-    : `Delete "${shelf.name}"?`;
-  if (!confirm(msg)) return;
-  // Move books to another shelf
-  books.forEach(function(b) { if ((b.listShelfId || "default") === id) b.listShelfId = other.id; });
+
+  let deleteBooks = false;
+  if (count > 0) {
+    // First confirmation — OK = delete books, Cancel = move books (safer path)
+    const proceedWithDelete = confirm(
+      `Delete shelf "${shelf.name}"?\n\n` +
+      `Its ${count} book${count === 1 ? "" : "s"} will be permanently deleted.\n\n` +
+      `Click OK to delete all books too.\n` +
+      `Click Cancel to move them to "${other.name}" instead.`
+    );
+    if (proceedWithDelete) {
+      // Second confirmation — make absolutely clear this is irreversible
+      const confirmed = confirm(
+        `Are you sure? This will permanently delete all ${count} book${count === 1 ? "" : "s"} on "${shelf.name}".\n\n` +
+        `This cannot be undone.`
+      );
+      if (!confirmed) return;
+      deleteBooks = true;
+    }
+    // If user clicked Cancel at first dialog: fall through to move books (deleteBooks stays false)
+  } else {
+    if (!confirm(`Delete empty shelf "${shelf.name}"?`)) return;
+  }
+
+  if (deleteBooks) {
+    books = books.filter(function(b) { return (b.listShelfId || "default") !== id; });
+  } else {
+    books.forEach(function(b) { if ((b.listShelfId || "default") === id) b.listShelfId = other.id; });
+  }
   shelves = shelves.filter(function(s) { return s.id !== id; });
   if (currentShelfId === id) {
     currentShelfId = shelves[0].id;
