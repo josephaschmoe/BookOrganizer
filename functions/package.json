@@ -1,0 +1,16 @@
+{
+  "name": "book-organizer-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud Functions for Book Organizer — Gemini briefing proxy",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.0.0"
+  }
+}

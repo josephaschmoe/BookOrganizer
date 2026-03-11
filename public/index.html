@@ -2,14 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Library Catalog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TomeShelf</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Courier+Prime:wght@400;700&family=EB+Garamond:wght@400;600&display=swap" rel="stylesheet">
 <!-- Firebase SDK (compat) — check https://firebase.google.com/docs/web/setup for latest version -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
+<!-- Barcode scanning fallback for browsers without native BarcodeDetector -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <!--
   ═══════════════════════════════════════════════════════════════
   FIREBASE SETUP
@@ -23,14 +25,14 @@
   ═══════════════════════════════════════════════════════════════
 -->
 <script>
-  const firebaseConfig = {
-    apiKey:            "YOUR_API_KEY",
-    authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId:         "YOUR_PROJECT_ID",
-    storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId:             "YOUR_APP_ID"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyDs5NToY8F_aOZhNLv_KKF517AjUlfi5a4",
+  authDomain: "schmoeslibrary-ff6c2.firebaseapp.com",
+  projectId: "schmoeslibrary-ff6c2",
+  storageBucket: "schmoeslibrary-ff6c2.firebasestorage.app",
+  messagingSenderId: "988288822165",
+  appId: "1:988288822165:web:13b457d9c73384bdeda49c"
+};
   firebase.initializeApp(firebaseConfig);
   const auth      = firebase.auth();
   const db        = firebase.firestore();
@@ -57,20 +59,37 @@
     color: var(--ink);
     font-family: 'EB Garamond', Georgia, serif;
     min-height: 100vh;
-    background-image: repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(201, 185, 154, 0.3) 27px, rgba(201, 185, 154, 0.3) 28px);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   button, input, select, textarea { font: inherit; }
 
   header {
-    background: var(--dark);
+    background: #5a3e28;
     color: var(--cream);
-    padding: 24px 32px 20px;
+    padding: 12px 32px;
     border-bottom: 4px solid var(--gold);
     display: flex;
-    align-items: baseline;
-    gap: 16px;
+    align-items: center;
+    gap: 14px;
     flex-wrap: wrap;
+  }
+
+  .header-logo {
+    height: 42px;
+    width: auto;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #fff;
+    padding: 5px 10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.25);
+  }
+
+  .header-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
   }
 
   header h1 {
@@ -93,12 +112,12 @@
   .count-badge,
   .api-badge {
     border: 1px solid var(--gold);
-    color: var(--gold);
+    color: #fff;
     padding: 4px 10px;
     border-radius: 2px;
   }
 
-  .count-badge { margin-left: auto; }
+  .count-badge { margin-left: 4px; }
   .api-badge.offline { border-color: #7d6650; color: #7d6650; }
   .api-badge.online { border-color: #c8dfb8; color: #c8dfb8; }
 
@@ -130,6 +149,19 @@
   }
 
   .panel-body { padding: 16px; }
+
+  /* Back button in Briefing panel header — only shown on mobile nav layout */
+  .briefing-back-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--cream);
+    cursor: pointer;
+    padding: 2px 4px;
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+  .briefing-back-btn:hover { opacity: 1; }
 
   .tabs {
     display: flex;
@@ -198,6 +230,45 @@
   .isbn-row input,
   .search-input { flex: 1; }
 
+  .spoiler-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 0.82em;
+    font-family: var(--mono);
+    color: var(--brown);
+    font-weight: 600;
+    margin-left: 8px;
+    user-select: none;
+  }
+  .spoiler-toggle input { display: none; }
+  .toggle-slider {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    background: var(--brown);
+    border-radius: 9px;
+    transition: background 0.2s;
+  }
+  .toggle-slider::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: var(--parchment);
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .spoiler-toggle input:checked + .toggle-slider {
+    background: var(--gold);
+  }
+  .spoiler-toggle input:checked + .toggle-slider::after {
+    transform: translateX(14px);
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
@@ -230,7 +301,7 @@
   .lookup-status,
   .helper-text,
   .research-status {
-    min-height: 18px;
+    min-height: 0;
     margin-top: 6px;
     font-size: 0.84rem;
     color: var(--brown);
@@ -284,8 +355,8 @@
 
   .cover-preview {
     text-align: center;
-    margin-top: 12px;
-    min-height: 20px;
+    margin-top: 4px;
+    min-height: 0;
   }
 
   .cover-preview img {
@@ -410,6 +481,38 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
+
+  .star-rating-widget {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-top: 2px;
+  }
+  .star-rating-widget button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--tan);
+    transition: color 0.1s, transform 0.1s;
+  }
+  .star-rating-widget button:hover,
+  .star-rating-widget button.filled { color: var(--gold); }
+  .star-rating-widget button:hover { transform: scale(1.15); }
+  .star-rating-widget .clear-rating {
+    font-size: 0.75rem;
+    color: var(--tan);
+    font-family: var(--mono);
+    margin-left: 6px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    display: none;
+  }
+  .star-rating-widget .clear-rating.visible { display: inline; }
 
   .book-actions {
     display: flex;
@@ -537,6 +640,132 @@
     color: var(--dark);
   }
 
+  /* About modal must sit above the auth overlay (z-index 200) */
+  #aboutModal { z-index: 250; }
+
+  /* ── About Modal ── */
+  .about-modal {
+    width: 520px;
+    max-width: 95vw;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 0;
+    border: 2px solid var(--gold);
+  }
+
+  .about-header {
+    background: #5a3e28;
+    padding: 28px 28px 20px;
+    text-align: center;
+    position: relative;
+    border-bottom: 3px solid var(--gold);
+  }
+
+  .about-header img {
+    height: 120px;
+    width: auto;
+    display: block;
+    margin: 0 auto 14px;
+    background: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+  }
+
+  .about-tagline {
+    color: var(--cream);
+    font-family: 'EB Garamond', Georgia, serif;
+    font-style: italic;
+    font-size: 1.05rem;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+
+  .about-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    background: none;
+    border: none;
+    color: var(--tan);
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px 6px;
+  }
+  .about-close:hover { color: var(--cream); }
+
+  .about-body {
+    padding: 24px 28px 28px;
+  }
+
+  .about-intro {
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--ink);
+    margin-bottom: 22px;
+    border-left: 3px solid var(--gold);
+    padding-left: 14px;
+  }
+
+  .about-section-title {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--brown);
+    margin-bottom: 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--tan);
+  }
+
+  .about-features {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+
+  .about-feature {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .about-feature-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .about-feature strong {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.97rem;
+    color: var(--dark);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .about-feature p {
+    font-size: 0.88rem;
+    color: #5a4030;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .about-footer {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--tan);
+    text-align: center;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--brown);
+  }
+
   #cameraFeed {
     width: 100%;
     border: 2px solid var(--tan);
@@ -561,22 +790,109 @@
     50% { transform: translateY(80px); opacity: 0.9; }
   }
 
-  @media (max-width: 1120px) {
+  /* Hidden by default; shown via media query on mobile */
+  .mobile-nav { display: none; }
+
+  /* Intermediate desktop: 1024-1280px gets 2-column instead of 3 */
+  @media (min-width: 1024px) and (max-width: 1280px) {
     .main { grid-template-columns: 340px minmax(0, 1fr); }
     .research-panel { grid-column: 1 / -1; position: static; }
     .briefing-scroll { max-height: none; }
   }
 
-  @media (max-width: 760px) {
-    header { padding: 22px 18px 18px; }
-    .count-badge { margin-left: 0; }
-    .main { grid-template-columns: 1fr; padding: 18px; }
+  /* Mobile nav layout: phones, landscape phones, tablets (< 1024px) */
+  @media (max-width: 1023px) {
+    /* Header: tighten padding, hide subtitle to reduce clutter */
+    header { padding: 16px 16px 14px; }
+    .subtitle { display: none; }
+    .briefing-back-btn { display: inline-flex; align-items: center; }
+
+    /* Layout: single column, leave room at bottom for mobile nav */
+    .main {
+      grid-template-columns: 1fr;
+      padding: 16px;
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+    }
+    body { padding-bottom: 0; } /* mobile-nav handles safe area */
+
+    /* Panel switching: only the active panel is shown */
+    .main > div { display: none; }
+    .main > div.mobile-active { display: block; }
+
+    /* Mobile bottom nav */
+    .mobile-nav {
+      display: flex;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--dark);
+      border-top: 2px solid var(--gold);
+      z-index: 50;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .mobile-nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 10px 8px;
+      background: none;
+      border: none;
+      color: var(--tan);
+      font-family: 'Courier Prime', monospace;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      min-height: 56px;
+    }
+    .mobile-nav-btn.active { color: var(--gold); }
+
     .catalog-toolbar { flex-direction: column; align-items: stretch; }
     .sort-select { width: 100%; }
+
+    /* Book cards: cover+info stack vertically; actions go horizontal */
     .book-card { flex-direction: column; }
-    .book-actions { width: 100%; min-width: 0; }
+    .book-actions {
+      width: 100%;
+      min-width: 0;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    /* Touch targets — minimum 44px height across all interactive elements */
+    .btn { min-height: 44px; }
+    .btn-sm { min-height: 40px; padding: 8px 12px; font-size: 0.75rem; }
+    .filter-pill { min-height: 40px; padding: 8px 14px; }
+    .tab { min-height: 44px; padding: 10px 14px; }
+
+    /* ISBN row: keep on one line so buttons don't orphan to a half-empty line */
     .button-row { flex-wrap: wrap; }
-    .isbn-row { flex-wrap: wrap; }
+  }
+
+  /* Portrait phone: count badge drops to its own second line so the
+     user avatar stays on the same row as the logo and title */
+  @media (max-width: 480px) {
+    header { padding: 10px 16px 0; gap: 10px; }
+    header h1 { font-size: 1.7rem; }
+    .count-badge {
+      order: 10;
+      flex-basis: 100%;
+      text-align: center;
+      margin: 0;
+      border-left: none;
+      border-right: none;
+      border-radius: 0;
+      border-top: 1px dashed rgba(184, 150, 46, 0.4);
+      border-bottom: none;
+      padding: 5px 0 6px;
+      font-size: 0.68rem;
+      color: rgba(255, 255, 255, 0.75);
+    }
   }
 
   .stats-bar {
@@ -624,21 +940,73 @@
 
   .catalog-actions {
     display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-bottom: 10px;
   }
 
-  .catalog-actions label.btn { cursor: pointer; }
+  .data-menu-wrap { position: relative; display: inline-block; }
 
-  #signOutBtn { color: var(--tan); border-color: var(--tan); }
-  #signOutBtn:hover { color: var(--cream); border-color: var(--cream); }
+  .data-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    background: var(--parchment);
+    border: 1px solid var(--tan);
+    box-shadow: 3px 4px 14px var(--shadow);
+    z-index: 30;
+    min-width: 160px;
+    border-radius: 2px;
+  }
+  .data-menu.open { display: block; }
+
+  .data-menu button,
+  .data-menu label {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--tan);
+    cursor: pointer;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink);
+    box-sizing: border-box;
+  }
+  .data-menu button:last-child,
+  .data-menu label:last-child { border-bottom: none; }
+  .data-menu button:hover,
+  .data-menu label:hover { background: #f0e8d4; }
+
+  #userEmailIcon {
+    display: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--tan);
+    cursor: pointer;
+    opacity: 0.85;
+    flex-shrink: 0;
+  }
+  #userEmailIcon:hover { opacity: 1; border-color: var(--gold); }
+  #userEmailText {
+    display: none;
+    color: var(--tan);
+    font-size: 0.78rem;
+    font-family: 'Courier Prime', monospace;
+    cursor: pointer;
+  }
+  #userEmailText:hover { color: var(--cream); }
 
   .auth-overlay {
     position: fixed;
     inset: 0;
     background: var(--cream);
-    background-image: repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(201, 185, 154, 0.3) 27px, rgba(201, 185, 154, 0.3) 28px);
     z-index: 200;
     display: flex;
     align-items: center;
@@ -668,7 +1036,7 @@
     font-size: 0.76rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--tan);
+    color: var(--brown);
     margin-bottom: 28px;
   }
 
@@ -716,13 +1084,169 @@
   .skeleton-line { height: 13px; margin-bottom: 9px; }
 
   .book-cover-thumb svg { color: var(--brown); opacity: 0.45; }
+
+  /* ── Photo Lookup ── */
+  .photo-lookup-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--tan);
+  }
+
+  .photo-lookup-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .photo-lookup-row .helper-text {
+    font-size: 0.78rem;
+    color: var(--brown);
+    font-style: italic;
+  }
+
+  .photo-preview-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-top: 4px;
+  }
+
+  .photo-thumb {
+    position: relative;
+    width: 64px;
+    height: 80px;
+  }
+
+  .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+  }
+
+  .photo-thumb button {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--brown);
+    background: var(--parchment);
+    color: var(--red);
+    font-size: 10px;
+    line-height: 1;
+    padding: 0;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  /* ── Review Section ── */
+  .review-section {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--cream);
+    border: 1px solid var(--tan);
+    border-left: 3px solid var(--green);
+    border-radius: 2px;
+  }
+
+  .review-card-inner {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .review-cover {
+    width: 60px;
+    min-width: 60px;
+    height: 80px;
+    object-fit: cover;
+    border: 1px solid var(--tan);
+  }
+
+  .review-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--dark);
+    margin-bottom: 4px;
+  }
+
+  .review-meta {
+    font-size: 0.82rem;
+    color: var(--brown);
+    margin-bottom: 2px;
+  }
+
+  .review-source {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tan);
+    margin-top: 4px;
+  }
+
+  .candidate-list { margin-top: 10px; }
+
+  .candidate-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    background: var(--parchment);
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: 'EB Garamond', serif;
+    font-size: 0.88rem;
+  }
+
+  .candidate-item:hover {
+    border-color: var(--brown);
+    background: #f0e8d4;
+  }
+
+  .candidate-item strong {
+    display: block;
+    color: var(--dark);
+    margin-bottom: 2px;
+  }
+
+  .candidate-item span {
+    font-size: 0.78rem;
+    color: var(--brown);
+  }
+
+  .section-label {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--brown);
+    margin-bottom: 8px;
+  }
+
+  /* html5-qrcode fallback region */
+  #html5qrScanRegion {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  #html5qrScanRegion video {
+    max-height: 240px;
+    object-fit: cover;
+  }
 </style>
 </head>
 <body>
 
 <div id="authOverlay" class="auth-overlay">
   <div class="auth-box">
-    <h1>My Library</h1>
+    <img src="TomeShelf-Logo.png" alt="TomeShelf" style="height:72px;margin-bottom:4px;cursor:pointer;" onclick="openAbout()" title="About TomeShelf">
     <p class="auth-subtitle">Personal Catalog &amp; Reading Briefings</p>
     <button class="btn btn-primary" type="button" onclick="signInWithGoogle()" style="width: auto; padding: 10px 28px;">
       Sign in with Google
@@ -732,15 +1256,17 @@
 </div>
 
 <header>
-  <h1>My Library</h1>
-  <span class="subtitle">Personal Catalog and Reading Briefings</span>
-  <span class="count-badge" id="countBadge">0 volumes</span>
-  <span class="api-badge offline" id="apiBadge">Research offline</span>
-  <button class="btn btn-light btn-sm" id="signOutBtn" type="button" onclick="signOutUser()">Sign out</button>
+  <img class="header-logo" src="TomeShelf-Logo.png" alt="TomeShelf" onclick="openAbout()" title="About TomeShelf" style="cursor:pointer;">
+  <h1>TomeShelf</h1>
+  <span class="count-badge" id="countBadge">0 tomes</span>
+  <div class="header-user">
+    <img id="userEmailIcon" src="" alt="Account" referrerpolicy="no-referrer" onclick="signOutUser()">
+    <span id="userEmailText" onclick="signOutUser()"></span>
+  </div>
 </header>
 
 <div class="main">
-  <div>
+  <div id="addPanel">
     <div class="panel">
       <div class="panel-header">Add to Catalog</div>
       <div class="panel-body">
@@ -760,6 +1286,29 @@
           </div>
           <div class="lookup-status" id="lookupStatus">Enter an ISBN and click Look up, or use Scan.</div>
           <div class="cover-preview" id="coverPreview"></div>
+
+          <div class="photo-lookup-section" id="photoLookupSection">
+            <div class="section-label">Or use photos</div>
+            <div class="photo-lookup-row">
+              <button class="btn btn-accent" type="button" onclick="startPhotoCamera()">Camera</button>
+              <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
+              <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
+              <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
+              <span class="helper-text">Title page or copyright page work best</span>
+            </div>
+            <div class="photo-preview-row" id="photoPreviewRow"></div>
+            <div class="lookup-status" id="photoStatus"></div>
+          </div>
+
+          <div class="review-section" id="reviewSection" style="display:none;">
+            <div class="section-label">Review match</div>
+            <div id="reviewCard"></div>
+            <div class="candidate-list" id="candidateList"></div>
+            <div class="button-row" style="margin-top: 10px;">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="acceptReviewMatch()">Use This Match</button>
+              <button class="btn btn-light btn-sm" type="button" onclick="dismissReview()">Dismiss</button>
+            </div>
+          </div>
         </div>
 
         <div id="tabManual" style="display: none;">
@@ -840,15 +1389,15 @@
           <textarea id="bookPersonalNotes" placeholder="What you thought, favorite parts, things to revisit..."></textarea>
         </div>
         <div class="form-group">
-          <label for="bookRating">Your Rating</label>
-          <select id="bookRating">
-            <option value="">Not rated</option>
-            <option value="1">1 star</option>
-            <option value="2">2 stars</option>
-            <option value="3">3 stars</option>
-            <option value="4">4 stars</option>
-            <option value="5">5 stars</option>
-          </select>
+          <label>Your Rating</label>
+          <div class="star-rating-widget" id="starRatingWidget">
+            <button type="button" class="star-btn" data-value="1" onclick="setFormRating(1)" title="1 star">&#9733;</button>
+            <button type="button" class="star-btn" data-value="2" onclick="setFormRating(2)" title="2 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="3" onclick="setFormRating(3)" title="3 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="4" onclick="setFormRating(4)" title="4 stars">&#9733;</button>
+            <button type="button" class="star-btn" data-value="5" onclick="setFormRating(5)" title="5 stars">&#9733;</button>
+            <button type="button" class="clear-rating" id="clearRatingBtn" onclick="setFormRating(0)" title="Clear rating">✕ clear</button>
+          </div>
         </div>
 
         <div class="button-row">
@@ -860,7 +1409,7 @@
     </div>
   </div>
 
-  <div>
+  <div id="catalogPanel">
     <div class="catalog-toolbar">
       <input class="search-input" id="searchInput" type="text" placeholder="Search titles, authors, subjects, notes..." oninput="renderCatalog()">
       <select class="sort-select" id="sortSelect" onchange="renderCatalog()">
@@ -877,21 +1426,31 @@
       <button class="filter-pill" type="button" data-status="Want to Read" onclick="setFilter('Want to Read')">Want to Read</button>
       <button class="filter-pill" type="button" data-status="Currently Reading" onclick="setFilter('Currently Reading')">Reading</button>
       <button class="filter-pill" type="button" data-status="Read" onclick="setFilter('Read')">Read</button>
-      <button class="filter-pill" type="button" data-status="Did Not Finish" onclick="setFilter('Did Not Finish')">DNF</button>
+      <button class="filter-pill" type="button" data-status="Did Not Finish" onclick="setFilter('Did Not Finish')" title="Did Not Finish">DNF</button>
     </div>
     <div class="catalog-actions">
-      <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()">Export JSON</button>
-      <button class="btn btn-light btn-sm" type="button" onclick="exportCSV()">Export CSV</button>
-      <label class="btn btn-light btn-sm">
-        Import JSON/CSV
-        <input type="file" id="importInput" accept=".json,.csv,text/csv,application/json" style="display: none;" onchange="importCatalog(this)">
-      </label>
+      <div class="data-menu-wrap">
+        <button class="btn btn-light btn-sm" type="button" onclick="toggleDataMenu()" title="Import / Export data" style="gap:6px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Data &#9663;
+        </button>
+        <div class="data-menu" id="dataMenu">
+          <button type="button" onclick="exportJSON(); toggleDataMenu()">Export JSON</button>
+          <button type="button" onclick="exportCSV(); toggleDataMenu()">Export CSV</button>
+          <label>Import JSON/CSV<input type="file" id="importInput" accept=".json,.csv,text/csv,application/json" style="display:none" onchange="importCatalog(this)"></label>
+        </div>
+      </div>
     </div>
     <div class="book-grid" id="bookGrid"></div>
   </div>
 
-  <div class="research-panel panel">
-    <div class="panel-header">Book Briefing</div>
+  <div id="briefingPanel" class="research-panel panel">
+    <div class="panel-header" style="display:flex;align-items:center;gap:10px;">
+      <button class="briefing-back-btn" onclick="setMobileSection('catalog')" title="Back to Library">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      Book Briefing
+    </div>
     <div class="panel-body">
       <div class="research-header">
         <div>
@@ -900,10 +1459,14 @@
         </div>
         <div class="button-row">
           <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
-          <button class="btn btn-light btn-sm" type="button" id="refreshBriefingBtn" onclick="generateResearchForSelected(true)" disabled>Refresh</button>
+          <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
+            <input type="checkbox" id="spoilerToggle" onchange="renderBriefingPanel()">
+            <span class="toggle-slider"></span>
+            <span class="toggle-text">Show Spoilers</span>
+          </label>
         </div>
       </div>
-      <div class="research-status" id="briefingStatus">Research uses Gemini through the local server so the API key stays out of the browser.</div>
+      <div class="research-status" id="briefingStatus"></div>
       <div class="briefing-scroll" id="briefingContent">
         <div class="briefing-empty">
           <p>Choose a book to view or generate its discussion guide.</p>
@@ -913,11 +1476,88 @@
   </div>
 </div>
 
+<nav class="mobile-nav" id="mobileNav" aria-label="Main sections">
+  <button class="mobile-nav-btn" data-section="add" onclick="setMobileSection('add')">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span>Add</span>
+  </button>
+  <button class="mobile-nav-btn active" data-section="catalog" onclick="setMobileSection('catalog')">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    <span>Library</span>
+  </button>
+</nav>
+
+<div class="modal-overlay" id="aboutModal" onclick="closeAbout(event)">
+  <div class="modal about-modal" onclick="event.stopPropagation()">
+    <div class="about-header">
+      <button class="about-close" onclick="closeAbout()" aria-label="Close">&#10005;</button>
+      <img src="TomeShelf-Logo.png" alt="TomeShelf">
+      <p class="about-tagline">Your personal library, beautifully organized.</p>
+    </div>
+    <div class="about-body">
+      <p class="about-intro">TomeShelf transforms your book collection into a living, searchable catalog — with AI-powered identification and research briefings to deepen your reading experience.</p>
+
+      <div class="about-section-title">Features</div>
+      <div class="about-features">
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128222;</div>
+          <div>
+            <strong>Instant Barcode Scanning</strong>
+            <p>Point your camera at any book's ISBN barcode and TomeShelf instantly retrieves the title, author, cover art, and publication details — no typing required.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128247;</div>
+          <div>
+            <strong>AI Photo Identification</strong>
+            <p>No barcode? No problem. Photograph the title page or copyright page and let AI identify your book automatically, even for older or obscure editions.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128270;</div>
+          <div>
+            <strong>Book Briefings</strong>
+            <p>Generate rich, AI-powered discussion guides for any book in your catalog — covering themes, historical context, key questions, and more. Spoiler controls let you read safely.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#11088;</div>
+          <div>
+            <strong>Reading Tracker</strong>
+            <p>Log reading status, start and finish dates, personal notes, and star ratings. Track what you've read, what's on your shelf, and what's next.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128193;</div>
+          <div>
+            <strong>Smart Catalog</strong>
+            <p>Search, sort, and filter your entire library by title, author, reading status, condition, shelf location, and more. Your collection, always at your fingertips.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128196;</div>
+          <div>
+            <strong>Portable Data</strong>
+            <p>Export your catalog as JSON or CSV for safekeeping or analysis. Import from Goodreads exports or your own backups. Your data is always yours.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="about-footer">Your books &nbsp;&bull;&nbsp; Your data &nbsp;&bull;&nbsp; Always private</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="coverLightbox" onclick="closeCoverLightbox()" style="cursor:zoom-out;">
+  <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:90vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);" onclick="event.stopPropagation()">
+</div>
+
 <div class="modal-overlay" id="cameraModal">
   <div class="modal">
     <h3>Scan Barcode</h3>
     <video id="cameraFeed" autoplay playsinline muted></video>
     <div class="scan-line"></div>
+    <div id="html5qrScanRegion" style="display:none;"></div>
     <div class="helper-text" id="scanStatus">Point the camera at an ISBN barcode on the spine or back cover.</div>
     <div class="modal-actions">
       <button class="btn btn-light" type="button" onclick="closeCamera()">Cancel</button>
@@ -928,6 +1568,7 @@
 <script>
 let books = [];
 let researchCache = {};
+let _booksOwnedByUid = null; // tracks which user the in-memory books belong to
 let pendingBook = null;
 let cameraStream = null;
 let scanInterval = null;
@@ -940,7 +1581,12 @@ let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
 let filterStatus = "";
+let _formRating = 0;
 let catalogLoading = true;
+let photoFiles = [];
+let photoLookupInFlight = false;
+let reviewData = null;
+let html5QrScanner = null;
 
 function safeLoad(key, fallback) {
   try {
@@ -951,15 +1597,16 @@ function safeLoad(key, fallback) {
   }
 }
 
-function syncLocalCache() {
-  localStorage.setItem("myLibraryBooks", JSON.stringify(books));
-  localStorage.setItem("myLibraryResearch", JSON.stringify(researchCache));
-}
-
 async function persistCatalog() {
-  syncLocalCache();
   const user = auth.currentUser;
+  console.log("[persistCatalog] uid:", user ? user.uid : "null", "booksOwner:", _booksOwnedByUid, "books:", books.length,
+    "titles:", books.map(function(b) { return b.title; }));
   if (!user) { return; }
+  // GUARD: never write books that were loaded for a different user
+  if (_booksOwnedByUid && user.uid !== _booksOwnedByUid) {
+    console.error("[persistCatalog] BLOCKED cross-user write! auth uid:", user.uid, "but books belong to:", _booksOwnedByUid);
+    return;
+  }
   try {
     await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache });
   } catch (error) {
@@ -978,9 +1625,17 @@ async function saveResearchCache() {
 
 async function loadCatalogData() {
   const user = auth.currentUser;
+  console.log("[loadCatalogData] uid:", user ? user.uid : "null");
   if (!user) { return; }
+  const uid = user.uid;
   try {
-    const snap = await db.collection("users").doc(user.uid).collection("catalog").doc("data").get({ source: "server" });
+    const snap = await db.collection("users").doc(uid).collection("catalog").doc("data").get({ source: "server" });
+    // If auth changed while we were waiting (race condition), discard stale results.
+    if (!auth.currentUser || auth.currentUser.uid !== uid) {
+      console.log("[loadCatalogData] user changed during fetch — discarding results for", uid);
+      return;
+    }
+    console.log("[loadCatalogData] snap.exists:", snap.exists, "for uid:", uid);
     if (snap.exists) {
       const data = snap.data();
       books = Array.isArray(data.books) ? data.books.map(normalizeBook) : [];
@@ -989,9 +1644,10 @@ async function loadCatalogData() {
       books = [];
       researchCache = {};
     }
-    syncLocalCache();
+    _booksOwnedByUid = uid;
+    console.log("[loadCatalogData] books after load:", books.length, "owner set to:", uid);
   } catch (error) {
-    console.error(error);
+    console.error("[loadCatalogData] error:", error);
     setStatus("addStatus", "Cloud sync failed.", "error");
   }
 }
@@ -1031,6 +1687,54 @@ function normalizeDateInput(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : "";
 }
 
+function openAbout() {
+  document.getElementById("aboutModal").classList.add("open");
+}
+
+function closeAbout(e) {
+  if (!e || e.target === document.getElementById("aboutModal")) {
+    document.getElementById("aboutModal").classList.remove("open");
+  }
+}
+
+function toggleDataMenu() {
+  document.getElementById("dataMenu").classList.toggle("open");
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".data-menu-wrap")) {
+    const m = document.getElementById("dataMenu");
+    if (m) m.classList.remove("open");
+  }
+});
+
+function setMobileSection(name) {
+  if (window.innerWidth >= 1024) return;
+  const map = { add: "addPanel", catalog: "catalogPanel", briefing: "briefingPanel" };
+  Object.values(map).forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("mobile-active", id === map[name]);
+  });
+  // Briefing is a sub-view of Library — keep the Library button highlighted
+  const navName = name === "briefing" ? "catalog" : name;
+  document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.section === navName);
+  });
+  // Push a history entry when entering briefing so the phone back button returns here
+  if (name === "briefing") {
+    history.pushState({ tomeshelfSection: "briefing" }, "");
+  }
+}
+
+// Intercept the phone/browser back button while briefing is open
+window.addEventListener("popstate", function (e) {
+  if (window.innerWidth >= 1024) return;
+  const briefingPanel = document.getElementById("briefingPanel");
+  if (briefingPanel && briefingPanel.classList.contains("mobile-active")) {
+    setMobileSection("catalog");
+  }
+});
+
 function switchTab(tab) {
   if (tab === "isbn" && editingBookId) {
     stopEditing();
@@ -1053,9 +1757,6 @@ function switchTab(tab) {
 
 async function loadApiConfig() {
   researchEnabled = Boolean(auth.currentUser);
-  const badge = document.getElementById("apiBadge");
-  badge.textContent = researchEnabled ? "Research ready" : "Research offline";
-  badge.className = `api-badge ${researchEnabled ? "online" : "offline"}`;
   if (!researchEnabled) {
     setResearchStatus("Sign in to enable book briefings.", "error");
   }
@@ -1290,7 +1991,7 @@ async function addBook() {
   const startDate = document.getElementById("bookStartDate").value;
   const finishDate = document.getElementById("bookFinishDate").value;
   const personalNotes = document.getElementById("bookPersonalNotes").value.trim();
-  const rating = Number(document.getElementById("bookRating").value || 0);
+  const rating = _formRating;
   const isEditing = Boolean(editingBook);
   const selectedManualResult = manualSelectedResult;
 
@@ -1359,6 +2060,7 @@ async function addBook() {
   renderCatalog();
   setStatus("addStatus", isEditing ? `Updated "${book.title}".` : `Added "${book.title}" to the catalog.`, "success");
   setTimeout(() => setStatus("addStatus", "", ""), 3000);
+  setMobileSection("catalog");
 }
 
 function clearForm() {
@@ -1371,10 +2073,16 @@ function clearForm() {
   });
   document.getElementById("bookCondition").value = "";
   document.getElementById("bookReadingStatus").value = "";
-  document.getElementById("bookRating").value = "";
+  setFormRating(0);
   document.getElementById("coverPreview").innerHTML = "";
   pendingBook = null;
   setStatus("lookupStatus", "Enter an ISBN and click Look up, or use Scan.", "");
+  // Clear photo lookup / review state
+  photoFiles = [];
+  reviewData = null;
+  document.getElementById("photoPreviewRow").innerHTML = "";
+  document.getElementById("reviewSection").style.display = "none";
+  setStatus("photoStatus", "", "");
 }
 
 function startEditBook(id) {
@@ -1398,12 +2106,13 @@ function startEditBook(id) {
   document.getElementById("bookStartDate").value = book.startDate || "";
   document.getElementById("bookFinishDate").value = book.finishDate || "";
   document.getElementById("bookPersonalNotes").value = book.personalNotes || "";
-  document.getElementById("bookRating").value = book.rating ? String(book.rating) : "";
+  setFormRating(book.rating || 0);
   document.getElementById("coverPreview").innerHTML = book.coverUrl ? `<img src="${escapeAttribute(book.coverUrl)}" alt="Book cover">` : "";
   clearManualSearch(false);
   setStatus("lookupStatus", `Editing "${book.title}". Save to update this entry.`, "success");
   document.getElementById("saveBookBtn").textContent = "Save Changes";
   document.getElementById("cancelEditBtn").style.display = "inline-flex";
+  setMobileSection("add");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1441,7 +2150,7 @@ function renderCatalog() {
 
   renderStats();
 
-  document.getElementById("countBadge").textContent = `${books.length} volume${books.length === 1 ? "" : "s"}`;
+  document.getElementById("countBadge").textContent = `${books.length} tome${books.length === 1 ? "" : "s"}`;
 
   const grid = document.getElementById("bookGrid");
   if (catalogLoading && !books.length) {
@@ -1468,7 +2177,7 @@ function renderBookCard(book) {
   const rating = Number(book.rating || 0);
   const stars = rating ? `${"&#9733;".repeat(rating)}${"&#9734;".repeat(5 - rating)}` : "";
   const thumb = book.coverUrl
-    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)">`
+    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)" onclick="showCoverLightbox('${escapeAttribute(book.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`
     : bookIconSVG();
 
   return `
@@ -1494,7 +2203,6 @@ function renderBookCard(book) {
       </div>
       <div class="book-actions">
         <button class="btn btn-secondary btn-sm" type="button" onclick="openBriefing('${escapeAttribute(book.id)}')">${hasBriefing ? "Open Briefing" : "View Briefing"}</button>
-        <button class="btn btn-light btn-sm" type="button" onclick="generateResearch('${escapeAttribute(book.id)}', false)">${hasBriefing ? "Regenerate" : "Generate"}</button>
         <button class="btn btn-light btn-sm" type="button" data-action="edit-book" data-book-id="${escapeAttribute(book.id)}">Edit</button>
         <button class="btn btn-danger btn-sm" type="button" onclick="deleteBook('${escapeAttribute(book.id)}')">Remove</button>
       </div>
@@ -1523,6 +2231,7 @@ function openBriefing(id) {
   selectedBookId = id;
   renderCatalog();
   renderBriefingPanel();
+  setMobileSection("briefing");
 }
 
 async function generateResearch(id, forceRefresh) {
@@ -1545,7 +2254,6 @@ async function generateResearchForSelected(forceRefresh) {
   }
   if (researchCache[book.id] && !forceRefresh) {
     renderBriefingPanel();
-    setResearchStatus("Using cached briefing.", "success");
     return;
   }
 
@@ -1581,6 +2289,7 @@ function renderBriefingPanel() {
     title.textContent = "Select a book";
     subtitle.textContent = "Generate or open a briefing from any catalog card.";
     content.innerHTML = `<div class="briefing-empty"><p>Choose a book to view or generate its discussion guide.</p></div>`;
+    document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
     return;
   }
@@ -1591,9 +2300,27 @@ function renderBriefingPanel() {
   const briefing = researchCache[book.id];
   if (!briefing) {
     content.innerHTML = `<div class="briefing-empty"><p>No briefing has been generated yet for this book.</p></div>`;
+    document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
     return;
   }
+
+  const isFiction = (briefing.genre || "").toLowerCase() !== "non-fiction";
+  const spoilerToggle = document.getElementById("spoilerToggleLabel");
+  spoilerToggle.style.display = isFiction ? "" : "none";
+  const showSpoilers = isFiction && document.getElementById("spoilerToggle").checked;
+
+  // Pick the right field variant based on genre and spoiler toggle
+  const summaryText    = isFiction ? (showSpoilers ? briefing.summary_spoiler : briefing.summary_safe) : briefing.summary;
+  const keyElems       = isFiction ? (showSpoilers ? briefing.key_elements_spoiler : briefing.key_elements_safe) : briefing.key_elements;
+  const craftText      = isFiction ? (showSpoilers ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : briefing.craft_analysis;
+  const discussionList = isFiction ? (showSpoilers ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : briefing.discussion_questions;
+
+  const takeawaysHtml = !isFiction && briefing.key_takeaways && briefing.key_takeaways.length
+    ? `<div class="briefing-section">
+        <h3>Key Takeaways</h3>
+        ${renderList(briefing.key_takeaways, "briefing-list")}
+      </div>` : "";
 
   content.innerHTML = `
     <div class="briefing-section">
@@ -1601,32 +2328,33 @@ function renderBriefingPanel() {
       <p>${esc(briefing.quick_take)}</p>
     </div>
     <div class="briefing-section">
-      <h3>Plot Summary</h3>
-      <p>${paragraphize(briefing.plot_summary)}</p>
+      <h3>${isFiction ? "Plot Summary" : "Overview"}</h3>
+      <p>${paragraphize(summaryText)}</p>
     </div>
     <div class="briefing-section">
       <h3>Major Themes</h3>
       ${renderList(briefing.major_themes, "briefing-list")}
     </div>
     <div class="briefing-section">
-      <h3>Character Focus</h3>
-      ${renderList(briefing.character_focus, "briefing-list")}
+      <h3>${isFiction ? "Characters" : "Key Concepts &amp; Figures"}</h3>
+      ${renderList(keyElems, "briefing-list")}
     </div>
     <div class="briefing-section">
       <h3>Historical and Cultural Context</h3>
       <p>${paragraphize(briefing.historical_context)}</p>
     </div>
     <div class="briefing-section">
-      <h3>Literary Analysis</h3>
-      <p>${paragraphize(briefing.literary_analysis)}</p>
+      <h3>${isFiction ? "Literary Analysis" : "Analysis &amp; Methodology"}</h3>
+      <p>${paragraphize(craftText)}</p>
     </div>
+    ${takeawaysHtml}
     <div class="briefing-section">
-      <h3>Emotional and Social Impact</h3>
-      <p>${paragraphize(briefing.emotional_social_impact)}</p>
+      <h3>Impact</h3>
+      <p>${paragraphize(briefing.impact)}</p>
     </div>
     <div class="briefing-section">
       <h3>Discussion Questions</h3>
-      ${renderList(briefing.discussion_questions, "questions-list")}
+      ${renderList(discussionList, "questions-list")}
     </div>
     <div class="briefing-section">
       <h3>Confidence Note</h3>
@@ -1641,13 +2369,40 @@ function renderBriefingPanel() {
 
 function updateResearchButtons() {
   const book = selectedBookId ? findBook(selectedBookId) : null;
-  const generateButton = document.getElementById("generateBriefingBtn");
-  const refreshButton = document.getElementById("refreshBriefingBtn");
-  const disabled = !book || researchRequestInFlight;
-  generateButton.disabled = disabled;
-  refreshButton.disabled = disabled;
-  generateButton.textContent = researchRequestInFlight ? "Working" : researchCache[book && book.id] ? "Open/Use Cache" : "Generate";
-  refreshButton.textContent = researchRequestInFlight ? "Working" : "Refresh";
+  const btn = document.getElementById("generateBriefingBtn");
+  const hasCache = book && researchCache[book.id];
+  btn.disabled = !book || researchRequestInFlight;
+  if (researchRequestInFlight) {
+    btn.textContent = "Working…";
+    btn.onclick = null;
+  } else if (hasCache) {
+    btn.textContent = "Regenerate";
+    btn.onclick = confirmRegenerate;
+  } else {
+    btn.textContent = "Generate";
+    btn.onclick = () => generateResearchForSelected(false);
+  }
+}
+
+function setFormRating(n) {
+  _formRating = (_formRating === n && n !== 0) ? 0 : n;
+  renderStarRating();
+}
+
+function renderStarRating() {
+  document.querySelectorAll("#starRatingWidget .star-btn").forEach((btn) => {
+    btn.classList.toggle("filled", Number(btn.dataset.value) <= _formRating);
+  });
+  const clearBtn = document.getElementById("clearRatingBtn");
+  if (clearBtn) { clearBtn.classList.toggle("visible", _formRating > 0); }
+}
+
+function confirmRegenerate() {
+  const book = selectedBookId ? findBook(selectedBookId) : null;
+  const title = book ? `"${book.title}"` : "this book";
+  if (confirm(`Regenerate the briefing for ${title}? This will replace the cached version.`)) {
+    generateResearchForSelected(true);
+  }
 }
 
 function renderList(items, className) {
@@ -1686,49 +2441,368 @@ function escapeAttribute(value) {
 }
 
 async function openCamera() {
-  if (!("BarcodeDetector" in window)) {
-    alert("Barcode scanning is not supported in this browser. You can still type ISBNs manually.");
-    return;
-  }
-
   document.getElementById("cameraModal").classList.add("open");
-  document.getElementById("scanStatus").textContent = "Point the camera at an ISBN barcode on the spine or back cover.";
+  document.getElementById("scanStatus").textContent = "Opening camera\u2026";
 
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    const video = document.getElementById("cameraFeed");
-    video.srcObject = cameraStream;
-    const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "isbn"] });
-    scanInterval = setInterval(async () => {
+  if ("BarcodeDetector" in window) {
+    // Native BarcodeDetector (Chrome, Edge)
+    document.getElementById("cameraFeed").style.display = "";
+    document.querySelector("#cameraModal .scan-line").style.display = "";
+    document.getElementById("html5qrScanRegion").style.display = "none";
+
+    try {
+      // Try rear camera first, fall back to any camera
       try {
-        const barcodes = await detector.detect(video);
-        for (const barcode of barcodes) {
-          const value = String(barcode.rawValue || "").replace(/[^0-9X]/gi, "");
-          if (value.length === 10 || value.length === 13) {
-            document.getElementById("scanStatus").textContent = `Scanned ${value}`;
-            closeCamera();
-            document.getElementById("isbnInput").value = value;
-            switchTab("isbn");
-            await lookupISBN(value);
-            return;
-          }
-        }
-      } catch (error) {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      } catch {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
       }
-    }, 400);
-  } catch (error) {
-    document.getElementById("scanStatus").textContent = "Camera permission denied.";
+      const video = document.getElementById("cameraFeed");
+      video.srcObject = cameraStream;
+      const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8"] });
+      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026";
+      scanInterval = setInterval(async () => {
+        try {
+          const barcodes = await detector.detect(video);
+          for (const barcode of barcodes) {
+            const value = String(barcode.rawValue || "").replace(/[^0-9X]/gi, "");
+            if (value.length === 10 || value.length === 13) {
+              document.getElementById("scanStatus").textContent = `ISBN found: ${value}`;
+              closeCamera();
+              document.getElementById("isbnInput").value = value;
+              switchTab("isbn");
+              await lookupISBN(value);
+              return;
+            }
+          }
+        } catch {}
+      }, 400);
+    } catch (err) {
+      console.error("Camera error:", err);
+      document.getElementById("scanStatus").textContent =
+        err.name === "NotAllowedError" ? "Camera permission denied. In Chrome: tap the lock icon in the address bar → Site settings → Camera → Allow, then reload."
+        : err.name === "NotFoundError" ? "No camera found on this device."
+        : `Camera error: ${err.message}`;
+    }
+
+  } else if (typeof Html5Qrcode !== "undefined") {
+    // Fallback: html5-qrcode library (Safari, Firefox, etc.)
+    document.getElementById("cameraFeed").style.display = "none";
+    document.querySelector("#cameraModal .scan-line").style.display = "none";
+    document.getElementById("html5qrScanRegion").style.display = "";
+
+    try {
+      html5QrScanner = new Html5Qrcode("html5qrScanRegion");
+      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026";
+      let scanHandled = false;
+      await html5QrScanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.5 },
+        (decodedText) => {
+          if (scanHandled) return;
+          const value = decodedText.replace(/[^0-9X]/gi, "");
+          if (value.length === 10 || value.length === 13) {
+            scanHandled = true;
+            document.getElementById("scanStatus").textContent = `ISBN found: ${value}`;
+            // Defer close/lookup so we're not stopping the scanner inside its own callback
+            setTimeout(() => {
+              closeCamera();
+              document.getElementById("isbnInput").value = value;
+              switchTab("isbn");
+              lookupISBN(value);
+            }, 100);
+          }
+        },
+        () => {} // per-frame scan miss — ignore
+      );
+    } catch {
+      document.getElementById("scanStatus").textContent = "Camera access failed. Try Photo Lookup instead.";
+    }
+
+  } else {
+    document.getElementById("scanStatus").textContent = "Barcode scanning not available in this browser. Use Photo Lookup instead.";
   }
 }
 
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeCoverLightbox();
+    document.getElementById("aboutModal").classList.remove("open");
+    if (document.getElementById("cameraModal").classList.contains("open")) {
+      closeCamera();
+    }
+  }
+});
+
+function showCoverLightbox(url) {
+  // Upgrade to -L size for the lightbox (Open Library: -S / -M / -L)
+  const largeUrl = url.replace(/-[SM]\.jpg(\?|$)/, "-L.jpg$1");
+  document.getElementById("coverLightboxImg").src = largeUrl;
+  document.getElementById("coverLightbox").classList.add("open");
+}
+
+function closeCoverLightbox() {
+  document.getElementById("coverLightbox").classList.remove("open");
+  document.getElementById("coverLightboxImg").src = "";
+}
+
 function closeCamera() {
+  // Close modal immediately so the user sees it dismiss
+  document.getElementById("cameraModal").classList.remove("open");
+
+  // Native BarcodeDetector cleanup
   clearInterval(scanInterval);
   scanInterval = null;
   if (cameraStream) {
     cameraStream.getTracks().forEach((track) => track.stop());
     cameraStream = null;
   }
-  document.getElementById("cameraModal").classList.remove("open");
+  // html5-qrcode fallback cleanup — stop() is async, so chain clear() after it
+  if (html5QrScanner) {
+    const scanner = html5QrScanner;
+    html5QrScanner = null;
+    scanner.stop().then(() => scanner.clear()).catch(() => {});
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Photo Lookup — capture/select images → Cloud Function → review
+// ═══════════════════════════════════════════════════════════════
+
+function startPhotoCamera() {
+  document.getElementById("photoCameraInput").click();
+}
+
+function startPhotoLookup() {
+  document.getElementById("photoInput").click();
+}
+
+function handlePhotoSelection(input) {
+  const files = Array.from(input.files || []).slice(0, 3);
+  if (!files.length) return;
+  photoFiles = files;
+  renderPhotoThumbnails();
+  input.value = "";
+}
+
+function renderPhotoThumbnails() {
+  const container = document.getElementById("photoPreviewRow");
+  if (!photoFiles.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = photoFiles.map((file, i) => {
+    const url = URL.createObjectURL(file);
+    return `<div class="photo-thumb">
+      <img src="${url}" alt="Photo ${i + 1}">
+      <button type="button" onclick="removePhoto(${i})" title="Remove">\u2715</button>
+    </div>`;
+  }).join("") +
+    (photoFiles.length < 3
+      ? `<button class="btn btn-light btn-sm" type="button" onclick="startPhotoLookup()" title="Add another photo">+</button> `
+      : "") +
+    `<button class="btn btn-secondary btn-sm" type="button" onclick="submitPhotoLookup()">Analyze</button>`;
+}
+
+function removePhoto(index) {
+  photoFiles.splice(index, 1);
+  renderPhotoThumbnails();
+  if (!photoFiles.length) {
+    setStatus("photoStatus", "", "");
+  }
+}
+
+function resizeImage(file, maxDim) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      resolve({
+        data: dataUrl.split(",")[1],
+        mimeType: "image/jpeg"
+      });
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(null);
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function submitPhotoLookup() {
+  if (!photoFiles.length || photoLookupInFlight) return;
+
+  photoLookupInFlight = true;
+  setStatus("photoStatus", "Analyzing images\u2026", "");
+
+  try {
+    const images = (await Promise.all(photoFiles.map((f) => resizeImage(f, 1600)))).filter(Boolean);
+    if (!images.length) {
+      setStatus("photoStatus", "Could not read the selected images.", "error");
+      return;
+    }
+
+    setStatus("photoStatus", "Searching book databases\u2026", "");
+
+    const analyzePhotoFn = functions.httpsCallable("analyzeBookPhoto");
+    const result = await analyzePhotoFn({ images });
+    const data = result.data;
+
+    reviewData = data;
+    showReviewSection(data);
+    setStatus("photoStatus", data.message, data.bestMatch ? "success" : "");
+  } catch (error) {
+    setStatus("photoStatus", error.message || "Photo analysis failed.", "error");
+  } finally {
+    photoLookupInFlight = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Review Section — show match results, let user pick a candidate
+// ═══════════════════════════════════════════════════════════════
+
+function showReviewSection(data) {
+  const section = document.getElementById("reviewSection");
+  const card = document.getElementById("reviewCard");
+  const list = document.getElementById("candidateList");
+
+  if (!data || (!data.bestMatch && !data.candidates.length && !(data.extracted && data.extracted.title))) {
+    section.style.display = "none";
+    return;
+  }
+
+  section.style.display = "";
+  const display = data.bestMatch || (data.candidates.length > 0 ? data.candidates[0] : null);
+
+  if (display) {
+    card.innerHTML = renderReviewCard(display);
+  } else if (data.extracted && data.extracted.title) {
+    card.innerHTML = renderExtractedCard(data.extracted);
+  }
+
+  // Show other candidates if multiple
+  if (data.candidates.length > 1) {
+    list.innerHTML = `<div class="section-label" style="margin-top:10px;">Other matches</div>` +
+      data.candidates.slice(1, 6).map((c, i) =>
+        `<button class="candidate-item" type="button" onclick="selectCandidate(${i + 1})">
+          <strong>${esc(c.title)}</strong>
+          <span>${[c.authors.join(", "), c.publishedDate, c.source.replace(/_/g, " ")].filter(Boolean).map(esc).join(" | ")}</span>
+        </button>`
+      ).join("");
+    list.style.display = "";
+  } else {
+    list.innerHTML = "";
+    list.style.display = "none";
+  }
+}
+
+function renderReviewCard(match) {
+  const cover = match.coverUrl
+    ? `<img src="${escapeAttribute(match.coverUrl)}" alt="Cover" class="review-cover">`
+    : "";
+  return `
+    <div class="review-card-inner">
+      ${cover}
+      <div>
+        <div class="review-title">${esc(match.title)}${match.subtitle ? ": " + esc(match.subtitle) : ""}</div>
+        <div class="review-meta">${esc(match.authors.join(", "))}</div>
+        <div class="review-meta">${[match.publisher, match.publishedDate].filter(Boolean).map(esc).join(" | ")}</div>
+        <div class="review-meta">ISBN: ${esc(match.isbn_13 || match.isbn_10 || "N/A")}</div>
+        <div class="review-source">Source: ${esc(match.source.replace(/_/g, " "))}</div>
+      </div>
+    </div>`;
+}
+
+function renderExtractedCard(extracted) {
+  return `
+    <div class="review-card-inner">
+      <div>
+        <div class="review-title">${esc(extracted.title || "Unknown Title")}${extracted.subtitle ? ": " + esc(extracted.subtitle) : ""}</div>
+        <div class="review-meta">${esc((extracted.authors || []).join(", ") || "Unknown Author")}</div>
+        ${extracted.publisher ? `<div class="review-meta">${esc(extracted.publisher)}</div>` : ""}
+        ${extracted.published_year ? `<div class="review-meta">Year: ${esc(extracted.published_year)}</div>` : ""}
+        <div class="review-source">Extracted from photos (no database match)</div>
+      </div>
+    </div>`;
+}
+
+function selectCandidate(index) {
+  if (!reviewData || !reviewData.candidates[index]) return;
+  reviewData.bestMatch = reviewData.candidates[index];
+  showReviewSection(reviewData);
+}
+
+function acceptReviewMatch() {
+  const match = reviewData && reviewData.bestMatch;
+  const extracted = reviewData && reviewData.extracted;
+  const source = match || extracted;
+  if (!source) return;
+
+  if (match) {
+    pendingBook = {
+      isbn: match.isbn_13 || match.isbn_10 || "",
+      title: match.title + (match.subtitle ? ": " + match.subtitle : ""),
+      author: match.authors.join(", "),
+      publisher: match.publisher || "",
+      year: (match.publishedDate || "").match(/\d{4}/)?.[0] || "",
+      subjects: (match.categories || []).join("; "),
+      edition: "",
+      coverUrl: match.coverUrl || "",
+      source: match.source === "google_books" ? "Google Books" : "Open Library"
+    };
+  } else {
+    pendingBook = {
+      isbn: extracted.isbn_13 || extracted.isbn_10 || "",
+      title: (extracted.title || "") + (extracted.subtitle ? ": " + extracted.subtitle : ""),
+      author: (extracted.authors || []).join(", "),
+      publisher: extracted.publisher || "",
+      year: extracted.published_year || "",
+      subjects: "",
+      edition: extracted.edition || "",
+      coverUrl: "",
+      source: "Photo Lookup"
+    };
+  }
+
+  // Also fill manual tab fields so the user can switch tabs if needed
+  document.getElementById("manTitle").value = pendingBook.title;
+  document.getElementById("manAuthor").value = pendingBook.author;
+  document.getElementById("manPublisher").value = pendingBook.publisher;
+  document.getElementById("manYear").value = pendingBook.year;
+  document.getElementById("manEdition").value = pendingBook.edition;
+  document.getElementById("manSubjects").value = pendingBook.subjects;
+
+  // Update ISBN field and cover preview
+  document.getElementById("isbnInput").value = pendingBook.isbn;
+  if (pendingBook.coverUrl) {
+    document.getElementById("coverPreview").innerHTML =
+      `<img src="${escapeAttribute(pendingBook.coverUrl)}" alt="Book cover">`;
+  }
+
+  showLookupResult();
+  dismissReview();
+}
+
+function dismissReview() {
+  document.getElementById("reviewSection").style.display = "none";
+  reviewData = null;
+  photoFiles = [];
+  document.getElementById("photoPreviewRow").innerHTML = "";
+  setStatus("photoStatus", "", "");
 }
 
 document.getElementById("bookGrid").addEventListener("click", (event) => {
@@ -1754,7 +2828,7 @@ function renderStats() {
     read ? `<span><strong>${read}</strong> read</span>` : "",
     reading ? `<span><strong>${reading}</strong> reading</span>` : "",
     want ? `<span><strong>${want}</strong> want to read</span>` : "",
-    dnf ? `<span><strong>${dnf}</strong> dnf</span>` : ""
+    dnf ? `<span title="Did Not Finish"><strong>${dnf}</strong> dnf</span>` : ""
   ].filter(Boolean);
   bar.innerHTML = parts.join("");
 }
@@ -2174,6 +3248,7 @@ function renderSkeletonCards(count = 3) {
 }
 
 async function initializeApp() {
+  setMobileSection("catalog");
   renderCatalog();
   renderBriefingPanel();
   updateResearchButtons();
@@ -2188,34 +3263,52 @@ async function initializeApp() {
 async function signInWithGoogle() {
   document.getElementById("authError").textContent = "";
   try {
-    await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await auth.signInWithPopup(provider);
   } catch (error) {
-    document.getElementById("authError").textContent = "Sign-in failed. Please try again.";
+    if (error.code !== "auth/popup-closed-by-user") {
+      document.getElementById("authError").textContent = "Sign-in failed. Please try again.";
+    }
   }
 }
 
 async function signOutUser() {
   if (!confirm("Sign out of My Library?")) { return; }
   await auth.signOut();
-  localStorage.removeItem("myLibraryBooks");
-  localStorage.removeItem("myLibraryResearch");
-  window.location.reload();
 }
 
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) {
-    window.location.reload();
-  }
-});
-
 auth.onAuthStateChanged(async (user) => {
+  console.log("[onAuthStateChanged] uid:", user ? user.uid : "null", "email:", user ? user.email : "null",
+    "prev booksOwner:", _booksOwnedByUid);
   document.getElementById("authOverlay").style.display = user ? "none" : "flex";
+  const icon = document.getElementById("userEmailIcon");
+  const emailText = document.getElementById("userEmailText");
+  if (user) {
+    if (user.photoURL) {
+      icon.src = user.photoURL;
+      icon.setAttribute("title", `Sign out (${user.email})`);
+      icon.style.display = "inline-block";
+      emailText.style.display = "none";
+    } else {
+      icon.style.display = "none";
+      emailText.textContent = user.email;
+      emailText.setAttribute("title", "Sign out");
+      emailText.style.display = "inline";
+    }
+  } else {
+    icon.style.display = "none";
+    icon.src = "";
+    emailText.style.display = "none";
+  }
   if (user) {
     catalogLoading = true;
+    _booksOwnedByUid = null; // reset until loadCatalogData sets it
     books = [];
     researchCache = {};
     await initializeApp();
   } else {
+    _booksOwnedByUid = null;
     books = [];
     researchCache = {};
     localStorage.removeItem("myLibraryBooks");

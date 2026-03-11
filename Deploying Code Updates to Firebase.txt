@@ -1,0 +1,6 @@
+  Subsequent deploys (after code changes)
+
+  firebase deploy
+  # or selectively:
+  firebase deploy --only hosting
+  firebase deploy --only functions

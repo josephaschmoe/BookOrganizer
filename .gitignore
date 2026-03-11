@@ -7,6 +7,15 @@ catalog-data.json
 # Node
 node_modules/
 
+# Firebase deploy cache
+.firebase/
+
+# Claude Code session files
+.claude/
+
+# Personal data files
+GH-Goodreads-Export.csv
+
 # OS
 .DS_Store
 Thumbs.db
