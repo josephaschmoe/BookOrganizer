@@ -4526,7 +4526,7 @@ async function runBulkAnalysis(file) {
                     author: Array.isArray(info.authors) ? info.authors.join(", ") : (author || ""),
                     publisher: info.publisher || "",
                     year: (info.publishedDate || "").match(/\d{4}/)?.[0] || "",
-                    edition: "",
+                    edition: info.contentVersion || "",
                     subjects: Array.isArray(info.categories) ? info.categories.join("; ") : "",
                     isbn: extractGoogleIsbn(info.industryIdentifiers || []),
                     coverUrl,
