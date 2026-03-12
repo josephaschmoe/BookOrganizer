@@ -59,6 +59,21 @@ const researchSchema = {
   ]
 };
 
+// ── Retry helper for transient API errors ────────────────────────────────────
+// Retries on 429 (rate-limit) and 5xx (transient server errors).
+// Returns the final Response object; caller decides whether it's ok.
+
+async function fetchWithRetry(url, options, { maxRetries = 2, baseDelayMs = 1200 } = {}) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, options);
+    const isTransient = res.status === 429 || res.status >= 500;
+    if (!isTransient || attempt === maxRetries) return res;
+    const wait = baseDelayMs * Math.pow(2, attempt); // 1.2s, 2.4s
+    console.warn(`[fetchWithRetry] HTTP ${res.status} on attempt ${attempt + 1}, retrying in ${wait}ms…`);
+    await new Promise(r => setTimeout(r, wait));
+  }
+}
+
 // ── Shared Gemini briefing helper ────────────────────────────────────────────
 
 async function callGeminiForBook(book, apiKey) {
@@ -88,7 +103,7 @@ async function callGeminiForBook(book, apiKey) {
     }
   };
 
-  const geminiResponse = await fetch(API_URL, {
+  const geminiResponse = await fetchWithRetry(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify(payload)
@@ -139,7 +154,7 @@ async function callPerplexityForBook(book, apiKey) {
     return_related_questions: false
   };
 
-  const response = await fetch(PERPLEXITY_API_URL, {
+  const response = await fetchWithRetry(PERPLEXITY_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify(payload)
@@ -447,20 +462,36 @@ exports.analyzeBookPhoto = onCall({
 
   let extracted;
   try {
-    const res = await fetch(API_URL, {
+    const res = await fetchWithRetry(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": geminiApiKey.value()
       },
       body: JSON.stringify(payload)
-    });
+    }, { maxRetries: 2, baseDelayMs: 800 });
     const rawText = await res.text();
     if (!res.ok) {
       console.error("Gemini extraction error", res.status, rawText.slice(0, 500));
       throw new Error(`HTTP ${res.status}`);
     }
-    extracted = parseResearchJson(extractCandidateText(JSON.parse(rawText)));
+    // Also retry on empty candidates (occasional safety filter false positive)
+    const parsed = JSON.parse(rawText);
+    const parts = (((parsed || {}).candidates || [])[0] || {}).content?.parts || [];
+    if (!parts.length) {
+      // One extra attempt on a blank candidate response
+      console.warn("[analyzeBookPhoto] Empty candidate on first try, retrying once…");
+      const res2 = await fetchWithRetry(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
+        body: JSON.stringify(payload)
+      }, { maxRetries: 1, baseDelayMs: 1000 });
+      const raw2 = await res2.text();
+      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+      extracted = parseResearchJson(extractCandidateText(JSON.parse(raw2)));
+    } else {
+      extracted = parseResearchJson(extractCandidateText(parsed));
+    }
   } catch (error) {
     console.error("Gemini extraction failed:", error.message);
     throw new HttpsError("internal", "Image analysis failed.");
@@ -755,7 +786,7 @@ exports.identifyBooksInImage = onCall({
 
   let res;
   try {
-    res = await fetch(apiUrl, {
+    res = await fetchWithRetry(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
       body: JSON.stringify(payload)
