@@ -692,6 +692,31 @@ const firebaseConfig = {
   }
   .star-rating-widget .clear-rating.visible { display: inline; }
 
+  /* ── Cover replace overlay ── */
+  .book-detail-cover { position: relative; }
+  .cover-replace-btn {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: none;
+    border-radius: 2px;
+    padding: 3px 6px;
+    font-size: 0.6rem;
+    font-family: 'Courier Prime', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .book-detail-cover:hover .cover-replace-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   /* ── Clickable cover placeholder ── */
   .cover-add-btn {
     width: 100%;
@@ -3453,7 +3478,7 @@ function renderBriefingPanel() {
     book.finishDate ? `Finished ${book.finishDate}` : ""
   ].filter(Boolean);
   const coverHtml = book.coverUrl
-    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)" onclick="showCoverLightbox('${escapeAttribute(book.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`
+    ? `<img src="${escapeAttribute(book.coverUrl)}" alt="" onerror="handleCoverError(this)" onclick="showCoverLightbox('${escapeAttribute(book.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge"><button class="cover-replace-btn" type="button" onclick="event.stopPropagation();pickCoverForBook('${escapeAttribute(book.id)}')" title="Replace cover">Replace</button>`
     : `<div class="cover-add-btn" onclick="pickCoverForBook('${escapeAttribute(book.id)}')" title="Add cover image">${bookIconSVG()}<span class="cover-add-label">Add cover</span></div>`;
 
   headerEl.innerHTML = `
