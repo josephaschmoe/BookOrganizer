@@ -4777,6 +4777,11 @@ function switchShelf(id) {
   });
   updateShelfLabel();
   updateShelfSelector();
+  // Sync add-form shelf dropdown to the newly active shelf (unless editing a book)
+  if (!editingBookId) {
+    const sel = document.getElementById("bookListShelfId");
+    if (sel) sel.value = currentShelfId;
+  }
   renderCatalog();
   closeShelvesModal();
 }
