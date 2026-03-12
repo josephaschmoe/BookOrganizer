@@ -1,17 +1,25 @@
 # TomeShelf
 
-A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes or photograph whole bookshelves to add books, organise your collection into named shelves, and generate structured discussion guides using Google Gemini — all synced to the cloud via Firebase.
+A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes, photograph books or entire bookshelves, or capture text listing titles to add books in bulk. Organise your collection into named shelves, generate structured discussion guides via Google Gemini, and sync everything to the cloud via Firebase.
+
+**Live:** https://tome-shelf.littleofinterest.com
 
 ## Features
 
 - **Book Catalog** — Add, edit, and search books with title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading status, dates, rating, and notes
-- **TomeShelves** — Organise books into multiple named shelves (e.g. Reading List, Cookbooks, Old books from mom & dad); create, rename, and delete shelves; last-viewed shelf restored on next open
-- **Bulk Load (beta)** — Photograph a bookshelf; AI identifies the titles and searches for each book automatically; review and correct before adding
+- **TomeShelves** — Organise books into multiple named shelves (e.g. Reading List, Cookbooks, Borrowed); create, rename, and delete shelves; last-viewed shelf restored on next open
 - **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
-- **Cover Lookup** — Finds covers via Open Library and Google Books across all entry methods (ISBN scan, manual search, bulk load, CSV import)
-- **AI Research Briefings** — Generate college-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash
-- **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per Google account
-- **Account Settings** — Click your Google avatar to access Sign Out or Account Settings; Account Settings lets you export a JSON backup or permanently delete your account and all associated data
+- **Photo Book Lookup** — Photograph a book's cover, spine, title page, or copyright page (up to 3 images); also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details
+- **Bulk Load** — Add many books at once from a single photo:
+  - **Books** — photograph a bookshelf, stack of covers, or any group of books; AI reads every visible spine and cover
+  - **Titles in Text** — photograph an article, reading list, or bibliography; AI extracts every book title mentioned in the text
+  - After AI identification, review a ✓/✗ card list before anything is added; Books mode includes a second-pass cover photo step and manual correction fallback for unmatched titles
+- **Cover Images** — Finds covers via Open Library and Google Books across all entry methods; automatic API key rotation when daily quota is reached
+- **Search Results** — Cover thumbnails appear inline in all search result lists; "Try Broader Search" button relaxes field-level query operators when initial results don't match
+- **AI Research Briefings** — Generate college-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) via Google Gemini 2.5 Flash; fiction briefings offer spoiler/safe toggle
+- **Guest Mode** — Try the full app without signing in; books are saved to Firestore under an anonymous account. Sign in with Google at any time to permanently link the library to your account
+- **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per account
+- **Account Settings** — Export a JSON backup or permanently delete your account and all associated data
 - **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
@@ -21,10 +29,19 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 | Layer | Technology |
 |---|---|
 | Hosting | Firebase Hosting |
-| Auth | Firebase Auth (Google Sign-In) |
+| Auth | Firebase Auth (Google Sign-In + Anonymous) |
 | Database | Cloud Firestore |
-| AI backend | Firebase Cloud Functions + Google Gemini 2.5 Flash |
+| AI backend | Firebase Cloud Functions (Node.js) + Google Gemini |
 | Frontend | Vanilla HTML/CSS/JS — single file, no build step |
+
+### AI Models
+
+| Function | Model |
+|---|---|
+| `generateBriefing` | gemini-2.5-flash |
+| `analyzeBookPhoto` (single book) | gemini-2.5-flash |
+| `identifyBooksInImage` — Books mode | gemini-3.1-pro-preview |
+| `identifyBooksInImage` — Titles in Text mode | gemini-2.5-flash |
 
 ## Setup
 
@@ -39,8 +56,9 @@ cd BookOrganizer
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com) and create a new project
 2. **Authentication** → Sign-in method → enable **Google**
-3. **Firestore Database** → Create database (start in production mode)
-4. **Project Settings** → Add a Web App → copy the config values
+3. **Authentication** → Sign-in method → enable **Anonymous** (required for guest mode)
+4. **Firestore Database** → Create database (start in production mode)
+5. **Project Settings** → Add a Web App → copy the config values
 
 ### 3. Add Firebase config to the app
 
@@ -65,9 +83,9 @@ firebase login
 firebase use --add   # select your project
 ```
 
-### 5. Enable AI briefings (optional)
+### 5. Enable AI features (optional)
 
-Research briefings require a [Google Gemini API key](https://aistudio.google.com/apikey) and a Firebase **Blaze (pay-as-you-go)** plan for Cloud Functions.
+Research briefings and photo lookup require a [Google Gemini API key](https://aistudio.google.com/apikey) and a Firebase **Blaze (pay-as-you-go)** plan for Cloud Functions.
 
 ```bash
 cd functions
@@ -76,7 +94,9 @@ cd ..
 firebase functions:secrets:set GEMINI_API_KEY   # paste your key when prompted
 ```
 
-The app works without this — the Generate button simply won't be available.
+**Google Books API** — cover images are fetched via the Google Books API. Create an API key at [Google Cloud Console](https://console.cloud.google.com), enable the Books API, and add the key to the `_gbKeys` array in `public/index.html`. Adding a second key from a separate project enables automatic rotation when the daily quota is reached.
+
+The app works without these keys — briefings and photo lookup won't be available, and some cover images may be missing.
 
 ### 6. Deploy
 
@@ -92,7 +112,7 @@ firebase deploy --only hosting
 
 ## Data Storage
 
-All catalog data, briefing cache, and shelf definitions are stored in **Cloud Firestore** under each user's Google account (`users/{uid}/catalog/data`). The active shelf selection is persisted to `localStorage` per user. No other data is stored locally.
+All catalog data, briefing cache, and shelf definitions are stored in **Cloud Firestore** under each user's account (`users/{uid}/catalog/data`). This applies to both Google-authenticated and anonymous guest users. The active shelf selection is persisted to `localStorage` per user.
 
 ## License
 

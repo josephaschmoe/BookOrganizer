@@ -539,26 +539,43 @@ exports.identifyBooksInImage = onCall({
   }
 
   const image = request.data && request.data.image;
+  const mode  = (request.data && request.data.mode) === "text" ? "text" : "books";
+
   if (!image || !image.data) {
     throw new HttpsError("invalid-argument", "An image is required.");
   }
+
+  // "text" mode: find book titles mentioned in an article / reading list / bibliography.
+  // "books" mode: identify book spines / covers visible in a photo.
+  const promptText = mode === "text"
+    ? [
+        "This image contains text — it may be an article, review, reading list, bibliography, or similar.",
+        "Find every book title and author name mentioned in the text.",
+        "Include a book even if only the title is visible; use an empty string for author when not given.",
+        "Focus on proper book titles, not incidental words.",
+        "Return ONLY a JSON object: { \"books\": [ { \"title\": \"...\", \"author\": \"...\" } ] }.",
+        "If no book titles are found, return { \"books\": [] }.",
+        "Do not include any other text outside the JSON."
+      ].join(" ")
+    : [
+        "Examine this image carefully and identify every book you can see.",
+        "For each book, extract the title and the author's name.",
+        "Include every book visible — even if partially obscured — as long as you can read the title.",
+        "If the author name is not visible for a book, use an empty string for author.",
+        "Return ONLY a JSON object: { \"books\": [ { \"title\": \"...\", \"author\": \"...\" } ] }.",
+        "If no books are identifiable, return { \"books\": [] }.",
+        "Do not include any other text outside the JSON."
+      ].join(" ");
+
+  // Text reading is well within gemini-2.5-flash; shelf photos need the heavier model.
+  const apiUrl = mode === "text" ? API_URL : BULK_API_URL;
 
   const payload = {
     contents: [{
       role: "user",
       parts: [
         { inline_data: { mime_type: image.mimeType || "image/jpeg", data: image.data } },
-        {
-          text: [
-            "Examine this image carefully and identify every book you can see.",
-            "For each book, extract the title and the author's name.",
-            "Include every book visible — even if partially obscured — as long as you can read the title.",
-            "If the author name is not visible for a book, use an empty string for author.",
-            "Return ONLY a JSON object: { \"books\": [ { \"title\": \"...\", \"author\": \"...\" } ] }.",
-            "If no books are identifiable, return { \"books\": [] }.",
-            "Do not include any other text outside the JSON."
-          ].join(" ")
-        }
+        { text: promptText }
       ]
     }],
     generationConfig: {
@@ -571,7 +588,7 @@ exports.identifyBooksInImage = onCall({
 
   let res;
   try {
-    res = await fetch(BULK_API_URL, {
+    res = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
       body: JSON.stringify(payload)

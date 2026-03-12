@@ -456,6 +456,12 @@ const firebaseConfig = {
     margin-bottom: 14px;
   }
   .bulk-photo-btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .bulk-mode-btn-row  { display: flex; gap: 8px; margin-bottom: 6px; }
+  .bulk-mode-btn      { flex: 1; }
+  .bulk-expand-row {
+    display: flex; gap: 8px; padding: 8px 10px; margin-bottom: 8px;
+    background: var(--parchment); border: 1px solid var(--tan); border-radius: 2px;
+  }
   .bulk-book-cards { display: flex; flex-direction: column; gap: 7px; margin: 10px 0; }
   .bulk-book-card {
     display: flex;
@@ -518,6 +524,25 @@ const firebaseConfig = {
   .bulk-ai-saw {
     font-family: 'Courier Prime', monospace; font-size: 0.68rem;
     text-transform: uppercase; letter-spacing: 0.06em; color: var(--tan); margin-bottom: 4px;
+  }
+  .bulk-pull-hint {
+    font-family: 'Courier Prime', monospace; font-size: 0.65rem;
+    color: var(--red); letter-spacing: 0.03em; margin-top: 3px;
+  }
+  .bulk-second-pass-list { margin: 8px 0 14px; display: flex; flex-direction: column; gap: 5px; }
+  .bulk-second-pass-card {
+    padding: 7px 10px;
+    background: var(--cream);
+    border: 1px solid var(--tan);
+    border-left: 3px solid var(--brown);
+    border-radius: 1px;
+  }
+  .bulk-second-pass-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.9rem; font-weight: 700; color: var(--dark);
+  }
+  .bulk-second-pass-author {
+    font-size: 0.78rem; color: var(--brown); font-style: italic; margin-top: 1px;
   }
 
   .catalog-toolbar {
@@ -1326,6 +1351,23 @@ const firebaseConfig = {
     font-style: italic;
   }
 
+  /* ── Guest mode banner ────────────────────────────────────── */
+  #guestBanner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 16px;
+    background: #fffbe6;
+    border-bottom: 1px solid #e8c840;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.78rem;
+    color: var(--dark);
+    flex-wrap: wrap;
+  }
+  #guestBanner .guest-banner-text { flex: 1; min-width: 0; }
+  #guestBanner .guest-banner-btn  { white-space: nowrap; flex-shrink: 0; }
+
   .book-card.selected {
     border-left-color: var(--gold);
     background: #ddeaf5;
@@ -1644,6 +1686,14 @@ const firebaseConfig = {
     <p style="margin-top: 18px; font-family: 'Courier Prime', monospace; font-size: 0.72rem; color: var(--brown); line-height: 1.6; opacity: 0.85;">
       TomeShelf only uses Google to verify your identity — your password and credentials are never seen or stored by this app. You can delete your account and all data at any time from Account Settings.
     </p>
+    <div style="margin-top:16px;border-top:1px dashed var(--tan);padding-top:16px;">
+      <button class="btn btn-light" type="button" onclick="tryAsGuest()" style="width:auto;padding:8px 20px;font-size:0.82rem;">
+        Try it out without signing in
+      </button>
+      <p style="margin-top:10px;font-family:'Courier Prime',monospace;font-size:0.7rem;color:var(--brown);line-height:1.5;opacity:0.8;">
+        Your library will be saved on this device only and may be lost if you clear your browser data.
+      </p>
+    </div>
     <button class="btn btn-light" type="button" onclick="openAbout()" style="margin-top: 12px; width: auto; padding: 8px 20px; font-size: 0.75rem;">
       About TomeShelf
     </button>
@@ -1658,11 +1708,17 @@ const firebaseConfig = {
     <img id="userEmailIcon" src="" alt="Account" referrerpolicy="no-referrer" onclick="toggleAccountMenu()">
     <span id="userEmailText" onclick="toggleAccountMenu()"></span>
     <div class="account-menu" id="accountMenu">
+      <button type="button" id="accountMenuSignIn" style="display:none;font-weight:600;" onclick="signInFromGuest()">Sign In with Google</button>
       <button type="button" onclick="signOutUser()">Sign Out</button>
       <button type="button" onclick="openAccountSettings()">Account Settings</button>
     </div>
   </div>
 </header>
+
+<div id="guestBanner">
+  <span class="guest-banner-text">📚 <strong>Guest mode</strong> — your library is saved on this device only. Sign in with Google to keep it permanently.</span>
+  <button class="btn btn-light btn-sm guest-banner-btn" type="button" onclick="signInFromGuest()">Sign In with Google</button>
+</div>
 
 <div class="main">
   <div id="addPanel">
@@ -1715,7 +1771,7 @@ const firebaseConfig = {
                 <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
                 <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
                 <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
-                <span class="helper-text">Title page or copyright page work best</span>
+                <span class="helper-text">Title page or copyright page work best — or photograph any text that mentions the book</span>
               </div>
               <div class="photo-preview-row" id="photoPreviewRow"></div>
               <div class="lookup-status" id="photoStatus"></div>
@@ -1771,16 +1827,29 @@ const firebaseConfig = {
             <!-- Intro: explanation + photo picker -->
             <div id="bulkIntroSection">
               <p class="bulk-explanation">
-                <strong>Bulk Load</strong> lets you photograph a bookshelf, a stack of covers, or any collection of books.
-                TomeShelf sends the image to AI, identifies every title it can see, searches each one, and presents
-                a list for you to confirm — then adds them all at once.<br><br>
-                Book covers work best. For a shelf, make sure spines are readable.
+                <strong>Bulk Load</strong> — add multiple books at once using your camera or photo library.<br><br>
+                <strong>📷 Books</strong> — photograph a bookshelf, a stack of covers, or any group of books.
+                AI reads the spines and covers to identify each title.<br><br>
+                <strong>📋 Titles in Text</strong> — photograph an article, review, reading list, or bibliography
+                that mentions book titles. AI scans the text and extracts every title it finds.
               </p>
-              <div class="bulk-photo-btn-row">
-                <button class="btn btn-accent" type="button" onclick="startBulkCamera()">📷 Camera</button>
-                <button class="btn btn-accent" type="button" onclick="startBulkGallery()">🖼 Gallery</button>
-                <input type="file" id="bulkCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this)">
-                <input type="file" id="bulkGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this)">
+              <div class="bulk-mode-btn-row">
+                <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnBook" type="button" onclick="toggleBulkPhotoMode('book')">📷 Books</button>
+                <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnText" type="button" onclick="toggleBulkPhotoMode('text')">📋 Titles in Text</button>
+              </div>
+              <!-- Camera / Gallery options for Book Cover mode -->
+              <div id="bulkBookModeExpand" class="bulk-expand-row" style="display:none;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkCamera()">📷 Camera</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkGallery()">🖼 Gallery</button>
+                <input type="file" id="bulkCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this, false)">
+                <input type="file" id="bulkGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this, false)">
+              </div>
+              <!-- Camera / Gallery options for Titles in Text mode -->
+              <div id="bulkTextModeExpand" class="bulk-expand-row" style="display:none;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkTextCamera()">📷 Camera</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkTextGallery()">🖼 Gallery</button>
+                <input type="file" id="bulkTextCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this, true)">
+                <input type="file" id="bulkTextGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this, true)">
               </div>
               <div class="lookup-status" id="bulkStatus"></div>
             </div>
@@ -1789,20 +1858,33 @@ const firebaseConfig = {
             <div id="bulkResultsSection" style="display:none;">
               <div class="bulk-results-hdr" id="bulkResultsHdr"></div>
               <div class="bulk-book-cards" id="bulkBookCards"></div>
-              <!-- Fix prompt shown after adding correct books (if any marked incorrect) -->
-              <div id="bulkFixPrompt" class="bulk-fix-prompt" style="display:none;">
-                <span id="bulkFixPromptText"></span>
-                <div class="button-row" style="margin-top:8px;">
-                  <button class="btn btn-light btn-sm" type="button" onclick="resetBulkLoad()">No, Done</button>
-                  <button class="btn btn-primary btn-sm" type="button" id="bulkFixBtn" onclick="startBulkCorrection()">Yes, Fix Them →</button>
-                </div>
-              </div>
-              <!-- Normal action row (hidden once fix prompt is shown) -->
               <div class="button-row" id="bulkActionRow">
                 <button class="btn btn-light btn-sm" type="button" onclick="resetBulkLoad()">Start Over</button>
                 <button class="btn btn-primary" type="button" id="bulkAddCorrectBtn" onclick="addCorrectBulkBooks()">Add Books</button>
               </div>
               <div class="lookup-status" id="bulkResultStatus"></div>
+            </div>
+
+            <!-- Second Pass: cover photo prompt for unresolved books -->
+            <div id="bulkSecondPassSection" style="display:none;">
+              <div class="bulk-results-hdr" id="bulkSecondPassHdr"></div>
+              <div class="bulk-second-pass-list" id="bulkSecondPassList"></div>
+              <p class="bulk-explanation">
+                Take a <strong>cover photo</strong> of each book listed above. You can include any other books too —
+                just photograph their covers and they'll be added. Take as many photos as you need,
+                then tap <strong>I'm Done</strong> when finished.
+              </p>
+              <div class="bulk-photo-btn-row">
+                <button class="btn btn-accent" type="button" onclick="startBulkSecondPassCamera()">📷 Camera</button>
+                <button class="btn btn-accent" type="button" onclick="startBulkSecondPassGallery()">🖼 Gallery</button>
+                <input type="file" id="bulkSecondPassCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkSecondPassPhoto(this)">
+                <input type="file" id="bulkSecondPassGalleryInput" accept="image/*" style="display:none" onchange="handleBulkSecondPassPhoto(this)">
+              </div>
+              <div class="lookup-status" id="bulkSecondPassStatus"></div>
+              <div class="button-row" style="margin-top:8px;">
+                <button class="btn btn-light btn-sm" type="button" onclick="startBulkCorrection()">Switch to Manual Mode</button>
+                <button class="btn btn-primary btn-sm" type="button" onclick="endBulkSecondPass()">I'm Done →</button>
+              </div>
             </div>
 
             <!-- Correction: manual search for incorrect / unmatched books, one at a time -->
@@ -1824,7 +1906,7 @@ const firebaseConfig = {
               <div class="lookup-status" id="bulkCorrStatus"></div>
               <div class="search-results" id="bulkCorrSearchResults" style="display:none;"></div>
               <div class="button-row" style="margin-top:4px;">
-                <button class="btn btn-light" type="button" onclick="bulkCorrectionSkip()">Skip →</button>
+                <button class="btn btn-light" type="button" id="bulkCorrSkipBtn" onclick="bulkCorrectionSkip()">Skip →</button>
                 <button class="btn btn-primary" type="button" id="bulkCorrAddBtn" onclick="addBulkCorrectionBook()" disabled>Add to Catalog</button>
               </div>
               <div class="lookup-status" id="bulkCorrAddStatus"></div>
@@ -2101,7 +2183,28 @@ const firebaseConfig = {
   <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
     <h3 style="margin-bottom:8px;">Account Settings</h3>
     <p id="accountSettingsEmail" style="font-family:'Courier Prime',monospace;font-size:0.82rem;color:var(--brown);margin-bottom:20px;"></p>
-    <div style="border-top:1px solid var(--tan);padding-top:16px;">
+
+    <!-- Guest section — shown for anonymous users -->
+    <div id="accountSettingsGuestSection" style="display:none;">
+      <div style="background:var(--parchment);border:1px solid var(--tan);border-radius:2px;padding:14px 16px;margin-bottom:16px;">
+        <p style="font-size:0.88rem;color:var(--ink);margin-bottom:8px;"><strong>Save your library permanently</strong></p>
+        <p style="font-size:0.82rem;color:#666;margin-bottom:14px;line-height:1.5;">
+          Sign in with Google to sync your library to the cloud. Everything you've added will be kept.
+        </p>
+        <button class="btn btn-primary" type="button" onclick="signInFromGuest();closeAccountSettings();" style="width:100%;">
+          Sign In with Google
+        </button>
+      </div>
+      <div style="border-top:1px solid var(--tan);padding-top:14px;">
+        <p style="font-size:0.82rem;color:#666;margin-bottom:12px;line-height:1.5;">Export a backup of your current guest library before signing in.</p>
+        <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()" style="width:100%;">
+          Export JSON Backup
+        </button>
+      </div>
+    </div>
+
+    <!-- Signed-in section — shown for Google users -->
+    <div id="accountSettingsUserSection" style="border-top:1px solid var(--tan);padding-top:16px;">
       <p style="font-size:0.88rem;color:var(--ink);margin-bottom:12px;"><strong>Delete Account &amp; All Data</strong></p>
       <p style="font-size:0.82rem;color:#666;margin-bottom:16px;line-height:1.5;">
         This permanently deletes your TomeShelf account, all books, all shelves, all research briefings, and all cover images. This cannot be undone.
@@ -2116,6 +2219,7 @@ const firebaseConfig = {
         </button>
       </div>
     </div>
+
     <div class="modal-actions" style="margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-light" type="button" onclick="closeAccountSettings()">Close</button>
     </div>
@@ -2169,6 +2273,9 @@ let bulkIncorrectQueue  = []; // [{aiTitle, aiAuthor}] for correction flow
 let bulkCorrectionIdx   = 0;
 let bulkCorrSearchResults  = [];
 let bulkCorrSelectedResult = null;
+let bulkSecondPassActive   = false;  // true while in Phase 3 second-pass mode
+let bulkSecondPassFailures = [];     // failures accumulated across second-pass photos
+let bulkTextMode           = false;  // true when photo came from "Titles in Text" (no second-pass/correction)
 
 function safeLoad(key, fallback) {
   try {
@@ -2397,17 +2504,11 @@ async function lookupISBN(isbn) {
       // Open Library has the record but no cover — try Google Books for just the image
       if (!coverUrl) {
         try {
-          const gbRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`);
-          if (gbRes.status === 429) {
-            setStatus("lookupStatus", "Book found (no cover — Google Books rate limit reached; try again later).", "");
-          } else if (gbRes.ok) {
-            const gbData = await gbRes.json();
-            if (gbData.totalItems > 0) {
-              const links = (gbData.items[0].volumeInfo || {}).imageLinks || {};
-              const raw_url = links.thumbnail || links.smallThumbnail || "";
-              // Google Books returns http:// URLs — force https to avoid mixed-content block
-              coverUrl = raw_url.replace(/^http:\/\//, "https://");
-            }
+          const gbData = await fetchGbJson(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}&maxResults=1`);
+          if (gbData && gbData.totalItems > 0) {
+            const links = (gbData.items[0].volumeInfo || {}).imageLinks || {};
+            const raw_url = links.thumbnail || links.smallThumbnail || "";
+            coverUrl = raw_url.replace(/^http:\/\//, "https://");
           }
         } catch (e) { /* no cover is fine */ }
       }
@@ -2426,14 +2527,9 @@ async function lookupISBN(isbn) {
       showLookupResult();
       return;
     }
-    const google = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`);
-    if (google.status === 429) {
-      setStatus("lookupStatus", "Google Books rate limit reached. Try again later, or use Manual Search.", "error");
-      return;
-    }
-    const googleData = await google.json();
+    const googleData = await fetchGbJson(`https://www.googleapis.com/books/v1/volumes?q=isbn:${raw}&maxResults=8`);
 
-    if (googleData.totalItems > 0) {
+    if (googleData && googleData.totalItems > 0) {
       const v = googleData.items[0].volumeInfo || {};
       pendingBook = {
         isbn: raw,
@@ -2467,7 +2563,7 @@ function showLookupResult() {
   );
 }
 
-async function searchManualBook() {
+async function searchManualBook(broad = false) {
   const title = document.getElementById("manTitle").value.trim();
   const author = document.getElementById("manAuthor").value.trim();
 
@@ -2475,32 +2571,40 @@ async function searchManualBook() {
     return setStatus("manualSearchStatus", "Enter a title or author to search.", "error");
   }
 
-  setStatus("manualSearchStatus", "Searching catalog sources...", "");
+  setStatus("manualSearchStatus", broad ? "Trying broader search…" : "Searching catalog sources...", "");
   renderManualSearchResults([]);
 
   try {
     const [openLibraryResults, googleResults] = await Promise.all([
-      searchOpenLibrary(title, author),
-      searchGoogleBooks(title, author)
+      searchOpenLibrary(title, author, broad),
+      searchGoogleBooks(title, author, broad)
     ]);
     const merged = dedupeManualResults([...openLibraryResults, ...googleResults]).slice(0, 12);
     manualSearchResults = merged;
 
     if (!merged.length) {
-      return setStatus("manualSearchStatus", "No matches found. You can still enter the book manually.", "error");
+      return setStatus("manualSearchStatus",
+        broad ? "No matches found even with a broader search. Try editing the title or author."
+              : "No matches found. You can still enter the book manually.", "error");
     }
 
-    renderManualSearchResults(merged);
-    setStatus("manualSearchStatus", `Found ${merged.length} possible match${merged.length === 1 ? "" : "es"}. Choose one to fill the form.`, "success");
+    renderManualSearchResults(merged, broad);
+    setStatus("manualSearchStatus",
+      broad ? `Broader search: ${merged.length} possible match${merged.length === 1 ? "" : "es"}. Choose one to fill the form.`
+            : `Found ${merged.length} possible match${merged.length === 1 ? "" : "es"}. Choose one to fill the form.`, "success");
   } catch (error) {
     setStatus("manualSearchStatus", "Search failed. You can still enter the book manually.", "error");
   }
 }
 
-async function searchOpenLibrary(title, author) {
+async function searchOpenLibrary(title, author, broad = false) {
   const params = new URLSearchParams();
-  if (title) params.set("title", title);
-  if (author) params.set("author", author);
+  if (broad) {
+    params.set("q", [title, author].filter(Boolean).join(" "));
+  } else {
+    if (title) params.set("title", title);
+    if (author) params.set("author", author);
+  }
   params.set("limit", "8");
 
   const response = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
@@ -2521,20 +2625,53 @@ async function searchOpenLibrary(title, author) {
   }));
 }
 
-async function searchGoogleBooks(title, author) {
+// ── Google Books API key rotation ──────────────────────────────────────────
+// When one key hits its daily quota (403/429), the next key is tried automatically.
+// Add a second key below to enable rotation. Keys reset at midnight Pacific time.
+const _gbKeys = [
+  "AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg",  // key 1
+  "AIzaSyAO92owqis5fAAJhrrJmpgKEHndAyDTBmE"   // key 2 (separate project)
+];
+let _gbActiveKey = 0;
+
+// Fetch Google Books JSON with automatic key rotation on 403 / 429.
+// Pass the full URL *without* a key parameter — the key is appended here.
+async function fetchGbJson(urlWithoutKey) {
+  const startKey = _gbActiveKey;  // snapshot so mutations inside the loop don't skew subsequent keyIdx
+  for (let attempt = 0; attempt < _gbKeys.length; attempt++) {
+    const keyIdx = (startKey + attempt) % _gbKeys.length;
+    if (!_gbKeys[keyIdx]) continue;
+    const res = await fetch(`${urlWithoutKey}&key=${_gbKeys[keyIdx]}`).catch(() => null);
+    if (!res) continue;
+    if (res.status === 403 || res.status === 429) {
+      // Log the full error body so we can read the 'reason' field
+      const errBody = await res.clone().text().catch(() => "");
+      console.error(`[GB key${keyIdx + 1}] HTTP ${res.status} —`, errBody);
+      _gbActiveKey = (keyIdx + 1) % _gbKeys.length;  // rotate for all subsequent calls
+      continue;
+    }
+    if (!res.ok) return null;
+    return res.json().catch(() => null);
+  }
+  return null;  // all keys exhausted
+}
+// ───────────────────────────────────────────────────────────────────────────
+
+async function searchGoogleBooks(title, author, broad = false) {
   const terms = [];
-  if (title) terms.push(`intitle:${title}`);
-  if (author) terms.push(`inauthor:${author}`);
+  if (broad) {
+    if (title) terms.push(title);
+    if (author) terms.push(author);
+  } else {
+    if (title) terms.push(`intitle:${title}`);
+    if (author) terms.push(`inauthor:${author}`);
+  }
   if (!terms.length) {
     return [];
   }
 
-  const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(terms.join(" "))}&maxResults=8&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`);
-  if (response.status === 429) {
-    throw new Error("Google Books rate limit reached. Try again later.");
-  }
-  const data = await response.json();
-  const items = Array.isArray(data.items) ? data.items : [];
+  const data = await fetchGbJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(terms.join(" "))}&maxResults=8`);
+  const items = Array.isArray(data && data.items) ? data.items : [];
 
   return items.slice(0, 8).map((item) => {
     const info = item.volumeInfo || {};
@@ -2547,9 +2684,11 @@ async function searchGoogleBooks(title, author) {
       edition: "",
       subjects: Array.isArray(info.categories) ? info.categories.join("; ") : "",
       isbn: extractGoogleIsbn(info.industryIdentifiers || []),
-      coverUrl: info.imageLinks
-        ? (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail || "").replace(/^http:\/\//, "https://")
-        : (item.id ? `https://books.google.com/books/content?id=${item.id}&printsec=frontcover&img=1&zoom=1&source=gbs_api` : ""),
+      coverUrl: (() => {
+        const il = info.imageLinks || {};
+        return (il.thumbnail || il.smallThumbnail || "").replace(/^http:\/\//, "https://")
+          || (item.id ? `https://books.google.com/books/content?id=${item.id}&printsec=frontcover&img=1&zoom=1&source=gbs_api` : "");
+      })(),
       source: "Google Books"
     };
   });
@@ -2582,7 +2721,7 @@ function dedupeManualResults(results) {
   return out;
 }
 
-function renderManualSearchResults(results) {
+function renderManualSearchResults(results, broad = false) {
   const container = document.getElementById("manualSearchResults");
   manualSearchResults = results;
   manualSelectedResult = null;
@@ -2594,14 +2733,23 @@ function renderManualSearchResults(results) {
   }
 
   container.style.display = "";
-  container.innerHTML = results.map((result, index) => `
-    <button class="search-result-item" type="button" onclick="selectManualSearchResult(${index})">
-      <div class="search-result-title">${esc(result.title || "Untitled")}</div>
-      <div class="search-result-meta">
-        ${[result.author, result.year, result.publisher, result.source].filter(Boolean).map((item) => esc(item)).join(" | ")}
+  container.innerHTML = results.map((result, index) => {
+    const meta  = [result.author, result.year, result.publisher, result.source].filter(Boolean).map((item) => esc(item)).join(" | ");
+    const thumb = result.coverUrl ? `<img src="${escapeAttribute(result.coverUrl)}" alt="">` : "📖";
+    return `
+    <button class="search-result-item" type="button" onclick="selectManualSearchResult(${index})" style="display:flex;gap:8px;align-items:center;">
+      <div class="bulk-book-thumb" style="flex-shrink:0;">${thumb}</div>
+      <div style="min-width:0;flex:1;text-align:left;">
+        <div class="search-result-title">${esc(result.title || "Untitled")}</div>
+        <div class="search-result-meta">${meta}</div>
       </div>
-    </button>
-  `).join("");
+    </button>`;
+  }).join("");
+  if (!broad) {
+    container.innerHTML += `<div style="padding:5px 12px 4px;text-align:right;border-top:1px dashed var(--tan);">
+      <button class="btn btn-light btn-sm" type="button" onclick="searchManualBook(true)" style="font-size:0.75rem;">None of these? Try broader search →</button>
+    </div>`;
+  }
 }
 
 function selectManualSearchResult(index) {
@@ -3971,14 +4119,11 @@ async function fetchOpenLibraryImportMatch(book) {
       const q = lookupIsbn
         ? `isbn:${lookupIsbn}`
         : encodeURIComponent([match.title || book.title, match.author || book.author].filter(Boolean).join(" "));
-      const gbRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`);
-      if (gbRes.ok) {
-        const gbData = await gbRes.json();
-        if ((gbData.totalItems || 0) > 0) {
-          const links = ((gbData.items[0].volumeInfo || {}).imageLinks) || {};
-          const rawUrl = links.thumbnail || links.smallThumbnail || "";
-          if (rawUrl) match.coverUrl = rawUrl.replace(/^http:\/\//, "https://");
-        }
+      const gbData = await fetchGbJson(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1`);
+      if (gbData && (gbData.totalItems || 0) > 0) {
+        const links = ((gbData.items[0].volumeInfo || {}).imageLinks) || {};
+        const rawUrl = links.thumbnail || links.smallThumbnail || "";
+        if (rawUrl) match.coverUrl = rawUrl.replace(/^http:\/\//, "https://");
       }
     } catch (e) { /* no cover is fine */ }
   }
@@ -4355,6 +4500,41 @@ async function signInWithGoogle() {
   }
 }
 
+async function tryAsGuest() {
+  document.getElementById("authError").textContent = "";
+  try {
+    await auth.signInAnonymously();
+  } catch (error) {
+    document.getElementById("authError").textContent = "Could not start guest session. Please try again.";
+  }
+}
+
+// Called from the guest banner or Account Settings — links the anonymous session to Google.
+// If the Google account already has TomeShelf data, offers to sign in and discard guest data.
+async function signInFromGuest() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  try {
+    await auth.currentUser.linkWithPopup(provider);
+    // Linking succeeded: UID unchanged, Firestore data carries over automatically.
+    // onAuthStateChanged fires and updates the header / hides banner.
+  } catch (error) {
+    if (error.code === "auth/credential-already-in-use") {
+      const proceed = confirm(
+        "This Google account already has a TomeShelf library.\n\n" +
+        "Signing in will load your existing library. Books added during this guest session won't be transferred.\n\n" +
+        "Sign in anyway?"
+      );
+      if (proceed) {
+        // Sign in with the Google credential from the failed link attempt
+        await auth.signInWithCredential(error.credential);
+      }
+    } else if (error.code !== "auth/popup-closed-by-user") {
+      alert("Sign-in failed. Please try again.");
+    }
+  }
+}
+
 // ── Account menu ──────────────────────────────────────────────
 function toggleAccountMenu() {
   const menu = document.getElementById("accountMenu");
@@ -4368,15 +4548,27 @@ function closeAccountMenu() {
 
 async function signOutUser() {
   closeAccountMenu();
-  if (!confirm("Sign out of TomeShelf?")) { return; }
+  const user = auth.currentUser;
+  const isGuest = user && user.isAnonymous;
+  const msg = isGuest
+    ? "Leave guest session?\n\nAny books you've added will be lost unless you sign in with Google first."
+    : "Sign out of TomeShelf?";
+  if (!confirm(msg)) return;
+  if (isGuest) {
+    // Clean up orphaned anonymous Firestore data before signing out
+    try { await db.collection("users").doc(user.uid).collection("catalog").doc("data").delete(); } catch (_) {}
+  }
   await auth.signOut();
 }
 
 function openAccountSettings() {
   closeAccountMenu();
   const user = auth.currentUser;
+  const isGuest = user && user.isAnonymous;
   const emailEl = document.getElementById("accountSettingsEmail");
-  if (emailEl && user) emailEl.textContent = user.email || user.displayName || "";
+  if (emailEl) emailEl.textContent = isGuest ? "Guest session — not signed in" : (user && (user.email || user.displayName) || "");
+  document.getElementById("accountSettingsGuestSection").style.display = isGuest ? "" : "none";
+  document.getElementById("accountSettingsUserSection").style.display  = isGuest ? "none" : "";
   document.getElementById("accountSettingsModal").classList.add("open");
 }
 
@@ -4460,11 +4652,36 @@ async function confirmDeleteAccount() {
 
 function startBulkCamera()  { document.getElementById("bulkCameraInput").click(); }
 function startBulkGallery() { document.getElementById("bulkGalleryInput").click(); }
+function startBulkTextCamera()  { document.getElementById("bulkTextCameraInput").click(); }
+function startBulkTextGallery() { document.getElementById("bulkTextGalleryInput").click(); }
 
-function handleBulkPhotoSelection(input) {
+function toggleBulkPhotoMode(mode) {
+  const bookExpand = document.getElementById("bulkBookModeExpand");
+  const textExpand = document.getElementById("bulkTextModeExpand");
+  if (mode === "book") {
+    const open = bookExpand.style.display === "none";
+    bookExpand.style.display = open ? "" : "none";
+    textExpand.style.display = "none";
+  } else {
+    const open = textExpand.style.display === "none";
+    textExpand.style.display = open ? "" : "none";
+    bookExpand.style.display = "none";
+  }
+}
+
+function handleBulkPhotoSelection(input, textMode = false) {
   const file = input.files && input.files[0];
   input.value = "";
   if (!file) return;
+  // Always a fresh start — clear any state left over from a prior session
+  bulkFoundBooks = [];
+  bulkIncorrectQueue = [];
+  bulkSecondPassActive = false;
+  bulkSecondPassFailures = [];
+  bulkTextMode = textMode;
+  // Collapse both expand rows
+  document.getElementById("bulkBookModeExpand").style.display = "none";
+  document.getElementById("bulkTextModeExpand").style.display = "none";
   runBulkAnalysis(file);
 }
 
@@ -4481,9 +4698,9 @@ async function runBulkAnalysis(file) {
       return;
     }
 
-    setBulkStatus("Sending image to AI — identifying books…", "");
+    setBulkStatus(bulkTextMode ? "Sending image to AI — scanning for titles…" : "Sending image to AI — identifying books…", "");
     const identifyFn = functions.httpsCallable("identifyBooksInImage");
-    const result = await identifyFn({ image });
+    const result = await identifyFn({ image, mode: bulkTextMode ? "text" : "books" });
     const aiBooks = (result.data.books || []).filter(b => b.title);
 
     if (!aiBooks.length) {
@@ -4510,9 +4727,8 @@ async function runBulkAnalysis(file) {
         // — handles cases where the AI returns a different author name format than GB expects
         if (!searchResult || !searchResult.coverUrl) {
           const plainQ = encodeURIComponent([title, author].filter(Boolean).join(" "));
-          const plainRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${plainQ}&maxResults=5&key=AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg`).catch(() => null);
-          if (plainRes && plainRes.ok) {
-            const plainData = await plainRes.json();
+          const plainData = await fetchGbJson(`https://www.googleapis.com/books/v1/volumes?q=${plainQ}&maxResults=5`);
+          if (plainData) {
             const plainItems = Array.isArray(plainData.items) ? plainData.items : [];
             for (const item of plainItems) {
               const info = item.volumeInfo || {};
@@ -4559,15 +4775,17 @@ async function runBulkAnalysis(file) {
 function setBulkStatus(msg, type) { setStatus("bulkStatus", msg, type); }
 
 function showBulkSection(section) {
-  document.getElementById("bulkIntroSection").style.display     = section === "intro"      ? "" : "none";
-  document.getElementById("bulkResultsSection").style.display   = section === "results"    ? "" : "none";
-  document.getElementById("bulkCorrectionSection").style.display = section === "correction" ? "" : "none";
+  document.getElementById("bulkIntroSection").style.display      = section === "intro"       ? "" : "none";
+  document.getElementById("bulkResultsSection").style.display    = section === "results"     ? "" : "none";
+  document.getElementById("bulkSecondPassSection").style.display = section === "secondpass"  ? "" : "none";
+  document.getElementById("bulkCorrectionSection").style.display = section === "correction"  ? "" : "none";
 }
 
 function renderBulkResults() {
   const correctCount = bulkFoundBooks.filter(b => b.correct).length;
-  document.getElementById("bulkResultsHdr").textContent =
-    `${bulkFoundBooks.length} book${bulkFoundBooks.length !== 1 ? "s" : ""} identified — toggle any that are incorrect`;
+  document.getElementById("bulkResultsHdr").textContent = bulkTextMode
+    ? `${bulkFoundBooks.length} book${bulkFoundBooks.length !== 1 ? "s" : ""} found in text — toggle any to exclude`
+    : `${bulkFoundBooks.length} book${bulkFoundBooks.length !== 1 ? "s" : ""} identified — toggle any that are incorrect`;
 
   document.getElementById("bulkBookCards").innerHTML = bulkFoundBooks.map((b, i) => {
     const r = b.result;
@@ -4581,6 +4799,7 @@ function renderBulkResults() {
         <div class="bulk-book-title">${title}</div>
         <div class="bulk-book-author">${author}</div>
         <div class="bulk-book-meta">${esc(meta)}</div>
+        ${(!bulkSecondPassActive && !bulkTextMode) ? `<div class="bulk-pull-hint" id="bulkHint${i}"${b.correct ? ' style="display:none"' : ''}>← pull this book for cover photo</div>` : ''}
       </div>
       <div class="bulk-toggle-btns">
         <button class="bulk-toggle-btn${b.correct ? " active-correct" : ""}" onclick="toggleBulkBook(${i},true)"  title="Correct">✓</button>
@@ -4590,7 +4809,6 @@ function renderBulkResults() {
   }).join("");
 
   updateBulkAddBtn();
-  document.getElementById("bulkFixPrompt").style.display = "none";
   document.getElementById("bulkActionRow").style.display = "";
 }
 
@@ -4601,6 +4819,10 @@ function toggleBulkBook(index, correct) {
   const [btnOk, btnNo] = card.querySelectorAll(".bulk-toggle-btn");
   btnOk.className = `bulk-toggle-btn${correct  ? " active-correct" : ""}`;
   btnNo.className = `bulk-toggle-btn${!correct ? " active-incorrect" : ""}`;
+  if (!bulkSecondPassActive) {
+    const hint = document.getElementById(`bulkHint${index}`);
+    if (hint) hint.style.display = correct ? "none" : "";
+  }
   updateBulkAddBtn();
 }
 
@@ -4641,8 +4863,7 @@ async function addCorrectBulkBooks() {
 
   if (addedCount > 0) { await saveBooks(); renderCatalog(); }
 
-  // Build correction queue: incorrect books + correct-but-unmatched books
-  bulkIncorrectQueue = [
+  const failures = [
     ...incorrect.map(b => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor })),
     ...noMatch.map(b  => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor }))
   ];
@@ -4650,20 +4871,61 @@ async function addCorrectBulkBooks() {
   let statusMsg = `Added ${addedCount} book${addedCount !== 1 ? "s" : ""} to TomeShelf.`;
   if (skippedCount) statusMsg += ` (${skippedCount} already in catalog.)`;
 
-  if (bulkIncorrectQueue.length > 0) {
-    const n = bulkIncorrectQueue.length;
-    document.getElementById("bulkResultsHdr").textContent = statusMsg;
-    document.getElementById("bulkFixPromptText").textContent =
-      `${n} book${n !== 1 ? "s were" : " was"} marked incorrect or couldn't be matched. ` +
-      `Search for ${n !== 1 ? "them" : "it"} manually?`;
-    document.getElementById("bulkActionRow").style.display = "none";
-    document.getElementById("bulkFixPrompt").style.display = "";
+  if (bulkTextMode) {
+    // Text mode: add and done — no second pass or manual correction
+    setStatus("bulkResultStatus", statusMsg, "success");
+    setTimeout(() => { setStatus("bulkResultStatus", "", ""); resetBulkLoad(); }, 2500);
+  } else if (bulkSecondPassActive) {
+    // Second-pass mode: accumulate failures and return to second-pass section
+    bulkSecondPassFailures.push(...failures);
+    setStatus("bulkSecondPassStatus", statusMsg, "success");
+    showBulkSection("secondpass");
+  } else if (failures.length > 0) {
+    // First pass with failures: enter second-pass mode
+    bulkIncorrectQueue = failures;
+    bulkSecondPassActive = true;
+    showBulkSecondPassSection(statusMsg);
   } else {
     setStatus("bulkResultStatus", statusMsg, "success");
-    setTimeout(() => {
-      setStatus("bulkResultStatus", "", "");
-      resetBulkLoad();
-    }, 2500);
+    setTimeout(() => { setStatus("bulkResultStatus", "", ""); resetBulkLoad(); }, 2500);
+  }
+}
+
+// ── Second-pass flow ──
+
+function showBulkSecondPassSection(statusMsg) {
+  const n = bulkIncorrectQueue.length;
+  document.getElementById("bulkSecondPassHdr").textContent =
+    `${n} book${n !== 1 ? "s" : ""} need${n === 1 ? "s" : ""} another look`;
+  document.getElementById("bulkSecondPassList").innerHTML = bulkIncorrectQueue.map(b =>
+    `<div class="bulk-second-pass-card">
+      <div class="bulk-second-pass-title">${esc(b.aiTitle)}</div>
+      ${b.aiAuthor ? `<div class="bulk-second-pass-author">${esc(b.aiAuthor)}</div>` : ""}
+    </div>`
+  ).join("");
+  setStatus("bulkSecondPassStatus", statusMsg, "success");
+  showBulkSection("secondpass");
+}
+
+function startBulkSecondPassCamera()  { document.getElementById("bulkSecondPassCameraInput").click(); }
+function startBulkSecondPassGallery() { document.getElementById("bulkSecondPassGalleryInput").click(); }
+
+function handleBulkSecondPassPhoto(input) {
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  runBulkAnalysis(file);
+}
+
+function endBulkSecondPass() {
+  bulkIncorrectQueue = bulkSecondPassFailures;
+  bulkSecondPassActive = false;
+  if (bulkIncorrectQueue.length > 0) {
+    startBulkCorrection();
+  } else {
+    setBulkStatus("All done! Your library has been updated.", "success");
+    resetBulkLoad();
+    setTimeout(() => setBulkStatus("", ""), 3000);
   }
 }
 
@@ -4673,6 +4935,9 @@ function resetBulkLoad() {
   bulkCorrectionIdx = 0;
   bulkCorrSearchResults = [];
   bulkCorrSelectedResult = null;
+  bulkSecondPassActive = false;
+  bulkSecondPassFailures = [];
+  bulkTextMode = false;
   setBulkStatus("", "");
   showBulkSection("intro");
 }
@@ -4680,6 +4945,11 @@ function resetBulkLoad() {
 // ── Correction flow ──
 
 function startBulkCorrection() {
+  if (bulkSecondPassActive) {
+    // Combine original first-pass failures with any second-pass failures so far
+    bulkIncorrectQueue = [...bulkIncorrectQueue, ...bulkSecondPassFailures];
+    bulkSecondPassActive = false;
+  }
   bulkCorrectionIdx = 0;
   renderBulkCorrectionForm();
   showBulkSection("correction");
@@ -4705,46 +4975,59 @@ function renderBulkCorrectionForm() {
   setStatus("bulkCorrStatus", "", "");
   setStatus("bulkCorrAddStatus", "", "");
 
-  const skipBtn = document.querySelector("#bulkCorrectionSection .button-row .btn-light");
+  const skipBtn = document.getElementById("bulkCorrSkipBtn");
   if (skipBtn) skipBtn.textContent = curr < total - 1 ? "Skip →" : "Skip (Done)";
 }
 
-async function bulkCorrectionSearch() {
+async function bulkCorrectionSearch(broad = false) {
   const title  = document.getElementById("bulkCorrTitle").value.trim();
   const author = document.getElementById("bulkCorrAuthor").value.trim();
   if (!title && !author) {
     return setStatus("bulkCorrStatus", "Enter a title or author to search.", "error");
   }
-  setStatus("bulkCorrStatus", "Searching…", "");
+  setStatus("bulkCorrStatus", broad ? "Trying broader search…" : "Searching…", "");
   document.getElementById("bulkCorrSearchResults").style.display = "none";
   bulkCorrSelectedResult = null;
   document.getElementById("bulkCorrAddBtn").disabled = true;
 
   try {
     const [olResults, gbResults] = await Promise.all([
-      searchOpenLibrary(title, author),
-      searchGoogleBooks(title, author)
+      searchOpenLibrary(title, author, broad),
+      searchGoogleBooks(title, author, broad)
     ]);
     bulkCorrSearchResults = dedupeManualResults([...olResults, ...gbResults]).slice(0, 10);
     if (!bulkCorrSearchResults.length) {
-      return setStatus("bulkCorrStatus", "No matches found. Edit the title/author and try again, or skip.", "error");
+      return setStatus("bulkCorrStatus",
+        broad ? "No matches even with broader search. Edit the title/author or skip."
+              : "No matches found. Edit the title/author and try again, or skip.", "error");
     }
-    renderBulkCorrResults();
-    setStatus("bulkCorrStatus", `${bulkCorrSearchResults.length} result${bulkCorrSearchResults.length !== 1 ? "s" : ""} — pick one.`, "success");
+    renderBulkCorrResults(broad);
+    setStatus("bulkCorrStatus",
+      broad ? `Broader: ${bulkCorrSearchResults.length} result${bulkCorrSearchResults.length !== 1 ? "s" : ""} — pick one.`
+            : `${bulkCorrSearchResults.length} result${bulkCorrSearchResults.length !== 1 ? "s" : ""} — pick one.`, "success");
   } catch (err) {
     setStatus("bulkCorrStatus", "Search failed. Try again or skip.", "error");
   }
 }
 
-function renderBulkCorrResults() {
+function renderBulkCorrResults(broad = false) {
   const el = document.getElementById("bulkCorrSearchResults");
   el.innerHTML = bulkCorrSearchResults.map((r, i) => {
-    const meta = [r.author, r.year, r.publisher, r.source].filter(Boolean).join(" · ");
-    return `<div class="search-result-item" onclick="selectBulkCorrResult(${i})" style="cursor:pointer;">
-      <div class="search-result-title">${esc(r.title)}</div>
-      <div class="search-result-meta">${esc(meta)}</div>
+    const meta  = [r.author, r.year, r.publisher, r.source].filter(Boolean).join(" · ");
+    const thumb = r.coverUrl ? `<img src="${escapeAttribute(r.coverUrl)}" alt="">` : "📖";
+    return `<div class="search-result-item" onclick="selectBulkCorrResult(${i})" style="cursor:pointer;display:flex;gap:8px;align-items:center;">
+      <div class="bulk-book-thumb" style="flex-shrink:0;">${thumb}</div>
+      <div style="min-width:0;flex:1;">
+        <div class="search-result-title">${esc(r.title)}</div>
+        <div class="search-result-meta">${esc(meta)}</div>
+      </div>
     </div>`;
   }).join("");
+  if (!broad) {
+    el.innerHTML += `<div style="padding:5px 12px 4px;text-align:right;border-top:1px dashed var(--tan);">
+      <button class="btn btn-light btn-sm" type="button" onclick="bulkCorrectionSearch(true)" style="font-size:0.75rem;">None of these? Try broader search →</button>
+    </div>`;
+  }
   el.style.display = "";
 }
 
@@ -4804,37 +5087,76 @@ function finishBulkCorrection() {
   setTimeout(() => setBulkStatus("", ""), 3000);
 }
 
+// Debounce timer for transient null auth events (e.g. returning from native camera).
+// Firebase briefly fires null then re-fires the user when the app returns to foreground.
+// Without this guard, that null event wipes all state mid-workflow.
+let _pendingSignOut = null;
+
+function _doSignOut() {
+  document.getElementById("authOverlay").style.display = "flex";
+  document.getElementById("guestBanner").style.display = "none";
+  const icon = document.getElementById("userEmailIcon");
+  const emailText = document.getElementById("userEmailText");
+  icon.style.display = "none";
+  icon.src = "";
+  emailText.style.display = "none";
+  _booksOwnedByUid = null;
+  books = [];
+  researchCache = {};
+  shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
+  currentShelfId = "default";
+  localStorage.removeItem("myLibraryBooks");
+  localStorage.removeItem("myLibraryResearch");
+  catalogLoading = false;
+  selectedBookId = null;
+  updateShelfLabel();
+  updateShelfSelector();
+  renderCatalog();
+  renderBriefingPanel();
+  updateResearchButtons();
+  loadApiConfig();
+}
+
 auth.onAuthStateChanged(async (user) => {
   console.log("[onAuthStateChanged] uid:", user ? user.uid : "null", "email:", user ? user.email : "null",
     "prev booksOwner:", _booksOwnedByUid);
-  document.getElementById("authOverlay").style.display = user ? "none" : "flex";
-  const icon = document.getElementById("userEmailIcon");
-  const emailText = document.getElementById("userEmailText");
+
   if (user) {
-    if (user.photoURL) {
+    // Cancel any pending sign-out — this was a transient null (e.g. camera return)
+    if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
+
+    document.getElementById("authOverlay").style.display = "none";
+    const icon = document.getElementById("userEmailIcon");
+    const emailText = document.getElementById("userEmailText");
+    const guestBanner = document.getElementById("guestBanner");
+    const signInMenuItem = document.getElementById("accountMenuSignIn");
+
+    if (user.isAnonymous) {
+      icon.style.display = "none";
+      emailText.textContent = "Guest";
+      emailText.setAttribute("title", "Guest session — click to manage");
+      emailText.style.display = "inline";
+      guestBanner.style.display = "flex";
+      if (signInMenuItem) signInMenuItem.style.display = "";
+    } else if (user.photoURL) {
       icon.src = user.photoURL;
-      icon.setAttribute("title", `Sign out (${user.email})`);
+      icon.setAttribute("title", `Account (${user.email})`);
       icon.style.display = "inline-block";
       emailText.style.display = "none";
+      guestBanner.style.display = "none";
+      if (signInMenuItem) signInMenuItem.style.display = "none";
     } else {
       icon.style.display = "none";
       emailText.textContent = user.email;
-      emailText.setAttribute("title", "Sign out");
+      emailText.setAttribute("title", "Account");
       emailText.style.display = "inline";
+      guestBanner.style.display = "none";
+      if (signInMenuItem) signInMenuItem.style.display = "none";
     }
-  } else {
-    icon.style.display = "none";
-    icon.src = "";
-    emailText.style.display = "none";
-  }
-  if (user) {
+
     // If this is the same user already loaded, don't wipe and re-initialize
-    // (Firebase re-fires onAuthStateChanged on token refresh and when returning
-    //  from background activities like the camera — without this guard it causes
-    //  a full reload that briefly shows the auth overlay and clears the catalog)
-    if (user.uid === _booksOwnedByUid) {
-      return;
-    }
+    if (user.uid === _booksOwnedByUid) return;
+
     catalogLoading = true;
     _booksOwnedByUid = null; // reset until loadCatalogData sets it
     books = [];
@@ -4842,22 +5164,24 @@ auth.onAuthStateChanged(async (user) => {
     shelves = [];
     currentShelfId = "default";
     await initializeApp();
+
   } else {
-    _booksOwnedByUid = null;
-    books = [];
-    researchCache = {};
-    shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
-    currentShelfId = "default";
-    localStorage.removeItem("myLibraryBooks");
-    localStorage.removeItem("myLibraryResearch");
-    catalogLoading = false;
-    selectedBookId = null;
-    updateShelfLabel();
-    updateShelfSelector();
-    renderCatalog();
-    renderBriefingPanel();
-    updateResearchButtons();
-    loadApiConfig();
+    // user = null: could be transient (camera / background return) or a real logout.
+    // If a user was loaded, wait briefly before resetting — a real logout won't be
+    // followed by a user event, but a camera return will cancel the timer.
+    const icon = document.getElementById("userEmailIcon");
+    const emailText = document.getElementById("userEmailText");
+    icon.style.display = "none";
+    icon.src = "";
+    emailText.style.display = "none";
+
+    if (_booksOwnedByUid) {
+      if (!_pendingSignOut) {
+        _pendingSignOut = setTimeout(() => { _pendingSignOut = null; _doSignOut(); }, 1500);
+      }
+    } else {
+      _doSignOut();
+    }
   }
 });
 </script>
