@@ -8,10 +8,20 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
 
-const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const geminiApiKey      = defineSecret("GEMINI_API_KEY");
+const perplexityApiKey  = defineSecret("PERPLEXITY_API_KEY");
 
 const MODEL = "gemini-2.5-flash";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+
+const PERPLEXITY_MODEL   = "sonar-pro";
+const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
+
+// Books published 2024 or later get Perplexity (web-grounded, post-cutoff)
+function isRecentBook(book) {
+  const year = parseInt(String(book.year || ""), 10);
+  return !isNaN(year) && year >= 2024;
+}
 
 const BULK_MODEL = "gemini-3.1-pro-preview";
 const BULK_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${BULK_MODEL}:generateContent`;
@@ -102,9 +112,71 @@ async function callGeminiForBook(book, apiKey) {
   return research;
 }
 
+// ── Perplexity Sonar briefing helper (web-grounded, for recent books) ────────
+
+async function callPerplexityForBook(book, apiKey) {
+  const payload = {
+    model: PERPLEXITY_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a precise book discussion assistant for both fiction and non-fiction.",
+          "Create a college-level book briefing.",
+          "Search the web for accurate, up-to-date information about this book.",
+          "First decide if the book is fiction or non-fiction, then populate the genre-appropriate fields.",
+          "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          "Separate factual claims from interpretation when uncertainty exists.",
+          "If the book is obscure, the title is ambiguous, or the details may be wrong, say so clearly in confidence_note.",
+          "Return valid JSON only — no markdown fences, no backticks, no extra text before or after the JSON object."
+        ].join(" ")
+      },
+      { role: "user", content: buildPrompt(book) }
+    ],
+    max_tokens: 6144,
+    temperature: 0.4,
+    return_images: false,
+    return_related_questions: false
+  };
+
+  const response = await fetch(PERPLEXITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify(payload)
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    let apiError = {};
+    try { apiError = JSON.parse(rawText); } catch { /* ignore */ }
+    console.error("Perplexity API error", response.status, JSON.stringify(apiError));
+    throw new Error(`Perplexity request failed (HTTP ${response.status})`);
+  }
+
+  let parsedApi;
+  try { parsedApi = JSON.parse(rawText); }
+  catch { throw new Error("Perplexity returned unreadable JSON"); }
+
+  const text = ((parsedApi.choices || [])[0] || {}).message?.content || "";
+  if (!text) throw new Error("No content in Perplexity response");
+
+  const research = parseResearchJson(text);
+  research.generated_at = new Date().toISOString();
+  research.model = `perplexity-${PERPLEXITY_MODEL}`;
+  return research;
+}
+
+// ── Route to the right model based on publication year ───────────────────────
+
+async function callBriefingForBook(book, geminiKey, pplxKey) {
+  return isRecentBook(book)
+    ? callPerplexityForBook(book, pplxKey)
+    : callGeminiForBook(book, geminiKey);
+}
+
 // ── onCall: manual generate (user-triggered) ─────────────────────────────────
 
-exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) => {
+exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -116,11 +188,8 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) =
 
   let research;
   try {
-    research = await callGeminiForBook(book, geminiApiKey.value());
+    research = await callBriefingForBook(book, geminiApiKey.value(), perplexityApiKey.value());
   } catch (error) {
-    if (error.message.includes("Unable to reach")) {
-      throw new HttpsError("unavailable", "Unable to reach Gemini API.");
-    }
     throw new HttpsError("internal", error.message);
   }
 
@@ -130,7 +199,7 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) =
 // ── Firestore trigger: auto-generate or queue on new books ───────────────────
 
 exports.onBooksChanged = onDocumentWritten(
-  { document: "users/{uid}/catalog/data", secrets: [geminiApiKey] },
+  { document: "users/{uid}/catalog/data", secrets: [geminiApiKey, perplexityApiKey] },
   async (event) => {
     const before = event.data.before.exists ? event.data.before.data() : {};
     const after  = event.data.after.exists  ? event.data.after.data()  : {};
@@ -153,7 +222,7 @@ exports.onBooksChanged = onDocumentWritten(
       const cache = { ...afterCache };
       for (const book of newBooks) {
         try {
-          const research = await callGeminiForBook(sanitizeBook(book), geminiApiKey.value());
+          const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
           cache[book.id] = research;
           await ref.update({ researchCache: cache });
         } catch (err) {
@@ -175,7 +244,7 @@ exports.onBooksChanged = onDocumentWritten(
 // ── Scheduled: drain the pending queue every 2 hours ─────────────────────────
 
 exports.processPendingBriefings = onSchedule(
-  { schedule: "every 2 hours", secrets: [geminiApiKey] },
+  { schedule: "every 2 hours", secrets: [geminiApiKey, perplexityApiKey] },
   async () => {
     // List all users and check each one's catalog for a pending queue
     const usersSnap = await db.collection("users").listDocuments();
@@ -205,7 +274,7 @@ exports.processPendingBriefings = onSchedule(
         }
 
         try {
-          cache[id] = await callGeminiForBook(sanitizeBook(book), geminiApiKey.value());
+          cache[id] = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
           remaining.splice(remaining.indexOf(id), 1);
           await catalogRef.update({ researchCache: cache, pendingBriefingIds: remaining });
         } catch (err) {

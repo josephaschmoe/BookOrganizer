@@ -2480,7 +2480,12 @@ let bulkTextMode           = false;  // true when photo came from "Titles in Tex
 let selectionMode    = false;
 let selectedBookIds  = new Set();
 let pendingBriefingIds = [];
-const BRIEFING_MODEL = "gemini-2.5-flash";
+// Return the expected briefing model for a given book.
+// Books published 2024+ use Perplexity Sonar (web-grounded); older books use Gemini.
+function expectedBriefingModel(book) {
+  const year = parseInt(String((book && book.year) || ""), 10);
+  return !isNaN(year) && year >= 2024 ? "perplexity-sonar-pro" : "gemini-2.5-flash";
+}
 let _catalogUnsubscribe = null; // snapshot listener teardown
 let _allowDuplicateOverride = false;
 
@@ -3669,11 +3674,11 @@ function updateResearchButtons() {
     btn.disabled = true;
     btn.textContent = "Queued…";
     btn.onclick = null;
-  } else if (briefing && briefing.model === BRIEFING_MODEL) {
-    // Briefing is current model — hide regenerate button
+  } else if (briefing && (briefing.model || "gemini-2.5-flash") === expectedBriefingModel(book)) {
+    // Briefing is current model for this book — hide regenerate button
     btn.style.display = "none";
   } else if (briefing) {
-    // Older model — offer regenerate
+    // Wrong model for this book (e.g. Gemini briefing on a 2024+ book) — offer regenerate
     btn.disabled = false;
     btn.textContent = "Regenerate";
     btn.onclick = confirmRegenerate;
