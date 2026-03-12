@@ -1646,6 +1646,23 @@ const firebaseConfig = {
     border: 1px solid var(--tan);
   }
 
+  /* Cover source picker in review card */
+  .cover-choice { display: flex; gap: 8px; flex-shrink: 0; }
+  .cover-choice-thumb {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    cursor: pointer; opacity: 0.45; transition: opacity 0.15s;
+  }
+  .cover-choice-thumb.selected { opacity: 1; outline: 2px solid var(--gold); outline-offset: 2px; }
+  .cover-choice-thumb:hover { opacity: 0.8; }
+  .cover-choice-thumb img {
+    width: 52px; height: 72px; object-fit: cover;
+    border: 1px solid var(--tan); display: block;
+  }
+  .cover-choice-thumb span {
+    font-size: 0.58rem; font-family: 'Courier Prime', monospace;
+    color: var(--brown); text-align: center; line-height: 1.2;
+  }
+
   .review-title {
     font-family: 'Playfair Display', serif;
     font-weight: 700;
@@ -2466,6 +2483,8 @@ let catalogLoading = true;
 let photoFiles = [];
 let photoLookupInFlight = false;
 let reviewData = null;
+let _photoObjectUrl = null;       // object URL of the first search photo, for cover picker
+let _selectedCoverSource = "database"; // "database" | "photo"
 let html5QrScanner = null;
 // Bulk Load state
 let bulkLoadInFlight = false;
@@ -4023,6 +4042,11 @@ function showReviewSection(data) {
     return;
   }
 
+  // Refresh photo object URL for cover picker (revoke stale one first)
+  if (_photoObjectUrl) { URL.revokeObjectURL(_photoObjectUrl); _photoObjectUrl = null; }
+  if (photoFiles.length > 0) { _photoObjectUrl = URL.createObjectURL(photoFiles[0]); }
+  _selectedCoverSource = "database";
+
   section.style.display = "";
   const display = data.bestMatch || (data.candidates.length > 0 ? data.candidates[0] : null);
 
@@ -4049,12 +4073,30 @@ function showReviewSection(data) {
 }
 
 function renderReviewCard(match) {
-  const cover = match.coverUrl
-    ? `<img src="${escapeAttribute(match.coverUrl)}" alt="Cover" class="review-cover" onclick="showCoverLightbox('${escapeAttribute(match.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`
-    : "";
+  const hasDatabaseCover = Boolean(match.coverUrl);
+  const hasPhoto = Boolean(_photoObjectUrl);
+  const showPicker = hasDatabaseCover && hasPhoto;
+
+  let coverHtml = "";
+  if (showPicker) {
+    coverHtml = `
+      <div class="cover-choice">
+        <div class="cover-choice-thumb selected" data-src="database" onclick="selectCoverSource('database')" title="Use database cover">
+          <img src="${escapeAttribute(match.coverUrl)}" alt="Database cover" onerror="this.style.visibility='hidden'">
+          <span>Database</span>
+        </div>
+        <div class="cover-choice-thumb" data-src="photo" onclick="selectCoverSource('photo')" title="Use my photo">
+          <img src="${escapeAttribute(_photoObjectUrl)}" alt="My photo">
+          <span>My Photo</span>
+        </div>
+      </div>`;
+  } else if (hasDatabaseCover) {
+    coverHtml = `<img src="${escapeAttribute(match.coverUrl)}" alt="Cover" class="review-cover" onclick="showCoverLightbox('${escapeAttribute(match.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`;
+  }
+
   return `
     <div class="review-card-inner">
-      ${cover}
+      ${coverHtml}
       <div>
         <div class="review-title">${esc(match.title)}${match.subtitle ? ": " + esc(match.subtitle) : ""}</div>
         <div class="review-meta">${esc(match.authors.join(", "))}</div>
@@ -4082,6 +4124,13 @@ function selectCandidate(index) {
   if (!reviewData || !reviewData.candidates[index]) return;
   reviewData.bestMatch = reviewData.candidates[index];
   showReviewSection(reviewData);
+}
+
+function selectCoverSource(src) {
+  _selectedCoverSource = src;
+  document.querySelectorAll(".cover-choice-thumb").forEach(el => {
+    el.classList.toggle("selected", el.dataset.src === src);
+  });
 }
 
 async function acceptReviewMatch() {
@@ -4116,8 +4165,11 @@ async function acceptReviewMatch() {
     };
   }
 
-  // Capture photo file reference before dismissReview() clears photoFiles
-  const photoForCover = !pendingBook.coverUrl ? (photoFiles[0] || null) : null;
+  // Capture photo file reference before dismissReview() clears photoFiles.
+  // Use photo if: user explicitly chose it, or no database cover exists.
+  const usePhoto = _selectedCoverSource === "photo" && photoFiles.length > 0;
+  if (usePhoto) pendingBook.coverUrl = ""; // override database cover with user's photo
+  const photoForCover = (usePhoto || !pendingBook.coverUrl) ? (photoFiles[0] || null) : null;
 
   // Also fill manual tab fields so the user can switch tabs if needed
   document.getElementById("manTitle").value = pendingBook.title;
@@ -4157,6 +4209,8 @@ function dismissReview() {
   photoFiles = [];
   document.getElementById("photoPreviewRow").innerHTML = "";
   setStatus("photoStatus", "", "");
+  if (_photoObjectUrl) { URL.revokeObjectURL(_photoObjectUrl); _photoObjectUrl = null; }
+  _selectedCoverSource = "database";
 }
 
 
