@@ -1915,6 +1915,8 @@ const firebaseConfig = {
           </div><!-- /tabBulk -->
         </div><!-- /addModeSection -->
 
+        <div id="bookMetaSection" style="display:none;">
+
         <hr class="form-divider">
 
         <!-- ── Personal / reading fields — in edit order ── -->
@@ -1990,6 +1992,8 @@ const firebaseConfig = {
           <button class="btn btn-primary" type="button" id="saveBookBtn" onclick="addBook()">Add to Catalog</button>
         </div>
         <div class="lookup-status" id="addStatus"></div>
+
+        </div><!-- /bookMetaSection -->
       </div>
     </div>
   </div>
@@ -2471,6 +2475,7 @@ function switchTab(tab) {
   if (tab !== "manual") {
     clearManualSearch(false);
   }
+  document.getElementById("bookMetaSection").style.display = tab === "manual" ? "" : "none";
 }
 
 async function loadApiConfig() {
@@ -2553,6 +2558,7 @@ async function lookupISBN(isbn) {
 }
 
 function showLookupResult() {
+  document.getElementById("bookMetaSection").style.display = "";
   if (pendingBook.coverUrl) {
     document.getElementById("coverPreview").innerHTML = `<img src="${escapeAttribute(pendingBook.coverUrl)}" alt="Book cover" onclick="showCoverLightbox('${escapeAttribute(pendingBook.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`;
   }
@@ -2903,6 +2909,8 @@ function clearForm() {
   document.getElementById("photoPreviewRow").innerHTML = "";
   document.getElementById("reviewSection").style.display = "none";
   setStatus("photoStatus", "", "");
+  // Hide metadata section unless user is actively on manual tab
+  document.getElementById("bookMetaSection").style.display = currentTab === "manual" ? "" : "none";
 }
 
 function startEditBook(id) {
@@ -2915,6 +2923,7 @@ function startEditBook(id) {
   document.getElementById("addModeSection").style.display = "none";
   document.getElementById("editModeHeader").style.display = "";
   document.getElementById("bookSubjectTagsGroup").style.display = "";
+  document.getElementById("bookMetaSection").style.display = "";
 
   // Populate read-only header
   const coverThumb = document.getElementById("editBookCoverThumb");
