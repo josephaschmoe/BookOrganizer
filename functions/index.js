@@ -1,7 +1,12 @@
 "use strict";
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
+const { onDocumentWritten }  = require("firebase-functions/v2/firestore");
+const { onSchedule }         = require("firebase-functions/v2/scheduler");
+const { defineSecret }       = require("firebase-functions/params");
+const admin = require("firebase-admin");
+admin.initializeApp();
+const db = admin.firestore();
 
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
@@ -10,6 +15,8 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL
 
 const BULK_MODEL = "gemini-3.1-pro-preview";
 const BULK_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${BULK_MODEL}:generateContent`;
+
+const THRESHOLD = 25; // generate immediately below this; queue above
 
 const researchSchema = {
   type: "object",
@@ -42,16 +49,9 @@ const researchSchema = {
   ]
 };
 
-exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
+// ── Shared Gemini briefing helper ────────────────────────────────────────────
 
-  const book = sanitizeBook(request.data && request.data.book);
-  if (!book.title) {
-    throw new HttpsError("invalid-argument", "Book title is required.");
-  }
-
+async function callGeminiForBook(book, apiKey) {
   const payload = {
     system_instruction: {
       parts: [{
@@ -78,48 +78,146 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) =
     }
   };
 
-  let geminiResponse;
-  try {
-    geminiResponse = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": geminiApiKey.value()
-      },
-      body: JSON.stringify(payload)
-    });
-  } catch (error) {
-    throw new HttpsError("unavailable", "Unable to reach Gemini API.");
-  }
+  const geminiResponse = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify(payload)
+  });
 
   const rawText = await geminiResponse.text();
   if (!geminiResponse.ok) {
     let apiError = {};
     try { apiError = JSON.parse(rawText); } catch { /* ignore */ }
     console.error("Gemini API error", geminiResponse.status, JSON.stringify(apiError));
-    throw new HttpsError("internal", `Gemini request failed (HTTP ${geminiResponse.status}).`);
+    throw new Error(`Gemini request failed (HTTP ${geminiResponse.status})`);
   }
 
   let parsedApi;
-  try {
-    parsedApi = JSON.parse(rawText);
-  } catch {
-    console.error("Gemini response was not valid JSON:", rawText.slice(0, 500));
-    throw new HttpsError("internal", "Gemini returned unreadable JSON.");
+  try { parsedApi = JSON.parse(rawText); }
+  catch { throw new Error("Gemini returned unreadable JSON"); }
+
+  const research = parseResearchJson(extractCandidateText(parsedApi));
+  research.generated_at = new Date().toISOString();
+  research.model = MODEL;
+  return research;
+}
+
+// ── onCall: manual generate (user-triggered) ─────────────────────────────────
+
+exports.generateBriefing = onCall({ secrets: [geminiApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const book = sanitizeBook(request.data && request.data.book);
+  if (!book.title) {
+    throw new HttpsError("invalid-argument", "Book title is required.");
   }
 
   let research;
   try {
-    research = parseResearchJson(extractCandidateText(parsedApi));
+    research = await callGeminiForBook(book, geminiApiKey.value());
   } catch (error) {
-    console.error("Failed to extract research JSON:", error.message);
-    throw new HttpsError("internal", "Gemini returned malformed research JSON.");
+    if (error.message.includes("Unable to reach")) {
+      throw new HttpsError("unavailable", "Unable to reach Gemini API.");
+    }
+    throw new HttpsError("internal", error.message);
   }
 
-  research.generated_at = new Date().toISOString();
-  research.model = MODEL;
   return { research };
 });
+
+// ── Firestore trigger: auto-generate or queue on new books ───────────────────
+
+exports.onBooksChanged = onDocumentWritten(
+  { document: "users/{uid}/catalog/data", secrets: [geminiApiKey] },
+  async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const after  = event.data.after.exists  ? event.data.after.data()  : {};
+
+    const beforeIds  = new Set((before.books || []).map(b => b.id));
+    const afterCache = after.researchCache || {};
+
+    // Only act on genuinely new books that have no briefing yet.
+    // This guard also prevents infinite loops when we write researchCache back.
+    const newBooks = (after.books || []).filter(
+      b => b.id && !beforeIds.has(b.id) && !afterCache[b.id]
+    );
+    if (!newBooks.length) return;
+
+    const uid = event.params.uid;
+    const ref = db.collection("users").doc(uid).collection("catalog").doc("data");
+
+    if (newBooks.length <= THRESHOLD) {
+      // Generate immediately, one at a time with a short delay
+      const cache = { ...afterCache };
+      for (const book of newBooks) {
+        try {
+          const research = await callGeminiForBook(sanitizeBook(book), geminiApiKey.value());
+          cache[book.id] = research;
+          await ref.update({ researchCache: cache });
+        } catch (err) {
+          console.error(`[onBooksChanged] Failed briefing for "${book.title}":`, err.message);
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    } else {
+      // Too many to generate inline — queue them for the scheduled function
+      const existing = Array.isArray(after.pendingBriefingIds) ? after.pendingBriefingIds : [];
+      const toQueue  = newBooks.map(b => b.id).filter(id => !existing.includes(id));
+      if (toQueue.length) {
+        await ref.update({ pendingBriefingIds: [...existing, ...toQueue] });
+      }
+    }
+  }
+);
+
+// ── Scheduled: drain the pending queue every 2 hours ─────────────────────────
+
+exports.processPendingBriefings = onSchedule(
+  { schedule: "every 2 hours", secrets: [geminiApiKey] },
+  async () => {
+    // List all users and check each one's catalog for a pending queue
+    const usersSnap = await db.collection("users").listDocuments();
+    for (const userRef of usersSnap) {
+      const catalogRef = userRef.collection("catalog").doc("data");
+      const snap = await catalogRef.get();
+      if (!snap.exists) continue;
+
+      const data    = snap.data();
+      const pending = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
+      if (!pending.length) continue;
+
+      const cache     = { ...(data.researchCache || {}) };
+      const remaining = [...pending];
+
+      for (const id of [...pending]) {
+        // Skip if already generated (e.g. user manually generated it)
+        if (cache[id]) {
+          remaining.splice(remaining.indexOf(id), 1);
+          continue;
+        }
+        // Skip if book no longer exists (was deleted while queued)
+        const book = (data.books || []).find(b => b.id === id);
+        if (!book) {
+          remaining.splice(remaining.indexOf(id), 1);
+          continue;
+        }
+
+        try {
+          cache[id] = await callGeminiForBook(sanitizeBook(book), geminiApiKey.value());
+          remaining.splice(remaining.indexOf(id), 1);
+          await catalogRef.update({ researchCache: cache, pendingBriefingIds: remaining });
+        } catch (err) {
+          console.error(`[processPendingBriefings] Failed for "${book.title}":`, err.message);
+        }
+        await new Promise(r => setTimeout(r, 3500));
+      }
+    }
+  }
+);
+
+// ────────────────────────────────────────────────────────────────────────────
 
 function buildPrompt(book) {
   return [

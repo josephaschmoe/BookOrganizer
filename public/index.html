@@ -636,6 +636,7 @@ const firebaseConfig = {
     font-family: 'Courier Prime', monospace;
     font-size: 0.72rem;
   }
+  .book-research-meta.pending { color: var(--brown); opacity: 0.75; }
 
   .book-notes {
     margin-top: 6px;
@@ -2418,6 +2419,9 @@ let bulkSecondPassFailures = [];     // failures accumulated across second-pass 
 let bulkTextMode           = false;  // true when photo came from "Titles in Text" (no second-pass/correction)
 let selectionMode    = false;
 let selectedBookIds  = new Set();
+let pendingBriefingIds = [];
+const BRIEFING_MODEL = "gemini-2.5-flash";
+let _catalogUnsubscribe = null; // snapshot listener teardown
 
 function safeLoad(key, fallback) {
   try {
@@ -2439,11 +2443,40 @@ async function persistCatalog() {
     return;
   }
   try {
-    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves });
+    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves, pendingBriefingIds });
   } catch (error) {
     console.error(error);
     setStatus("addStatus", "Saved locally, but cloud sync failed.", "error");
   }
+}
+
+function subscribeToBackgroundUpdates(uid) {
+  if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
+  _catalogUnsubscribe = db.collection("users").doc(uid).collection("catalog").doc("data")
+    .onSnapshot((snap) => {
+      if (!snap.exists) return;
+      // Guard against cross-user updates
+      if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+      const data = snap.data();
+      let changed = false;
+      const newCache = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
+      const newPending = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
+      if (JSON.stringify(newCache) !== JSON.stringify(researchCache)) {
+        researchCache = newCache;
+        changed = true;
+      }
+      if (JSON.stringify(newPending) !== JSON.stringify(pendingBriefingIds)) {
+        pendingBriefingIds = newPending;
+        changed = true;
+      }
+      if (changed) {
+        renderCatalog();
+        renderBriefingPanel();
+        updateResearchButtons();
+      }
+    }, (err) => {
+      console.error("[subscribeToBackgroundUpdates] snapshot error:", err);
+    });
 }
 
 async function saveBooks() {
@@ -2474,10 +2507,12 @@ async function loadCatalogData() {
       shelves = Array.isArray(data.shelves) && data.shelves.length
         ? data.shelves
         : [{ id: "default", name: "Reading List", createdAt: Date.now() }];
+      pendingBriefingIds = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
     } else {
       books = [];
       researchCache = {};
       shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
+      pendingBriefingIds = [];
     }
     // Restore last-viewed shelf for this user
     const savedShelfId = loadSavedShelfId(uid);
@@ -3180,7 +3215,7 @@ function renderBookCard(book) {
           ${book.readingStatus ? `<span class="condition-badge ${statusClass}">${esc(book.readingStatus)}</span>` : ""}
         </div>
         ${rating ? `<div class="rating-display" aria-label="${rating} out of 5 stars">${stars}</div>` : ""}
-        ${hasBriefing ? `<div class="book-research-meta" style="margin-top:4px;">&#10003; Briefing</div>` : ""}
+        ${hasBriefing ? `<div class="book-research-meta" style="margin-top:4px;">&#10003; Briefing</div>` : (pendingBriefingIds.includes(book.id) ? `<div class="book-research-meta pending" style="margin-top:4px;">&#8987; Queued</div>` : "")}
       </div>
     </div>`;
 }
@@ -3285,6 +3320,7 @@ async function deleteSelectedBooks() {
   if (!confirm(`Delete ${ids.length} book${ids.length === 1 ? "" : "s"} from your catalog? This cannot be undone.`)) return;
   books = books.filter(b => !ids.includes(b.id));
   ids.forEach(id => { delete researchCache[id]; });
+  pendingBriefingIds = pendingBriefingIds.filter(pid => !ids.includes(pid));
   await persistCatalog();
   if (ids.includes(selectedBookId)) {
     selectedBookId = null;
@@ -3324,6 +3360,7 @@ async function deleteBook(id) {
   }
   books = books.filter((book) => book.id !== id);
   delete researchCache[id];
+  pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== id);
   await persistCatalog();
   if (selectedBookId === id) {
     selectedBookId = null;
@@ -3376,6 +3413,7 @@ async function generateResearchForSelected(forceRefresh) {
     const generateBriefingFn = functions.httpsCallable("generateBriefing");
     const result = await generateBriefingFn({ book });
     researchCache[book.id] = result.data.research;
+    pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== book.id);
     await saveResearchCache();
     renderCatalog();
     renderBriefingPanel();
@@ -3451,7 +3489,10 @@ function renderBriefingPanel() {
   // ── Render briefing content ──
   const briefing = researchCache[book.id];
   if (!briefing) {
-    content.innerHTML = `<div class="briefing-empty"><p>No briefing has been generated yet for this book.</p></div>`;
+    const isPending = pendingBriefingIds.includes(book.id);
+    content.innerHTML = isPending
+      ? `<div class="briefing-empty"><p>&#8987; Briefing queued — will be generated automatically.</p></div>`
+      : `<div class="briefing-empty"><p>No briefing has been generated yet for this book.</p></div>`;
     document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
     updateNavArrows();
@@ -3546,15 +3587,28 @@ function updateNavArrows() {
 function updateResearchButtons() {
   const book = selectedBookId ? findBook(selectedBookId) : null;
   const btn = document.getElementById("generateBriefingBtn");
-  const hasCache = book && researchCache[book.id];
-  btn.disabled = !book || researchRequestInFlight;
+  const briefing = book && researchCache[book.id];
+  const isPending = book && pendingBriefingIds.includes(book.id);
+
+  btn.style.display = "";
   if (researchRequestInFlight) {
+    btn.disabled = true;
     btn.textContent = "Working…";
     btn.onclick = null;
-  } else if (hasCache) {
+  } else if (isPending && !briefing) {
+    btn.disabled = true;
+    btn.textContent = "Queued…";
+    btn.onclick = null;
+  } else if (briefing && briefing.model === BRIEFING_MODEL) {
+    // Briefing is current model — hide regenerate button
+    btn.style.display = "none";
+  } else if (briefing) {
+    // Older model — offer regenerate
+    btn.disabled = false;
     btn.textContent = "Regenerate";
     btn.onclick = confirmRegenerate;
   } else {
+    btn.disabled = !book;
     btn.textContent = "Generate";
     btn.onclick = () => generateResearchForSelected(false);
   }
@@ -4743,7 +4797,9 @@ async function deleteShelf(id) {
   }
 
   if (deleteBooks) {
+    const deletedIds = books.filter(b => (b.listShelfId || "default") === id).map(b => b.id);
     books = books.filter(function(b) { return (b.listShelfId || "default") !== id; });
+    pendingBriefingIds = pendingBriefingIds.filter(pid => !deletedIds.includes(pid));
   } else {
     books.forEach(function(b) { if ((b.listShelfId || "default") === id) b.listShelfId = other.id; });
   }
@@ -5380,6 +5436,7 @@ function finishBulkCorrection() {
 let _pendingSignOut = null;
 
 function _doSignOut() {
+  if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
   document.getElementById("authOverlay").style.display = "flex";
   document.getElementById("guestBanner").style.display = "none";
   const icon = document.getElementById("userEmailIcon");
@@ -5390,6 +5447,7 @@ function _doSignOut() {
   _booksOwnedByUid = null;
   books = [];
   researchCache = {};
+  pendingBriefingIds = [];
   shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
   currentShelfId = "default";
   localStorage.removeItem("myLibraryBooks");
@@ -5449,8 +5507,10 @@ auth.onAuthStateChanged(async (user) => {
     books = [];
     researchCache = {};
     shelves = [];
+    pendingBriefingIds = [];
     currentShelfId = "default";
     await initializeApp();
+    subscribeToBackgroundUpdates(user.uid);
 
   } else {
     // user = null: could be transient (camera / background return) or a real logout.
