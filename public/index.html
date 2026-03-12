@@ -693,6 +693,14 @@ const firebaseConfig = {
   }
   .star-rating-widget .clear-rating.visible { display: inline; }
 
+  /* ── Cover source modal ── */
+  .cover-source-modal { width: 480px; max-width: 96vw; max-height: 85vh; display: flex; flex-direction: column; }
+  .cover-source-modal .modal-title { font-family: 'Playfair Display', serif; font-size: 1.15rem; color: var(--dark); margin-bottom: 4px; }
+  .cover-search-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; overflow-y: auto; max-height: 55vh; padding: 4px 2px; }
+  .cover-search-item { aspect-ratio: 2/3; background: var(--tan); border: 1px solid var(--tan); border-radius: 2px; overflow: hidden; cursor: pointer; transition: border-color 0.15s; }
+  .cover-search-item:hover { border-color: var(--brown); }
+  .cover-search-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
   /* ── Cover replace overlay ── */
   .book-detail-cover { position: relative; }
   .cover-replace-btn {
@@ -2330,7 +2338,31 @@ const firebaseConfig = {
 </div>
 
 <div class="modal-overlay" id="coverLightbox" onclick="closeCoverLightbox()" style="cursor:zoom-out;">
-  <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:90vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);" onclick="event.stopPropagation()">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:14px;" onclick="event.stopPropagation()">
+    <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:80vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);">
+    <button id="coverLightboxSelectBtn" style="display:none;" class="btn btn-primary" onclick="selectCoverFromLightbox()">Use this Cover</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="coverSourceModal">
+  <div class="modal cover-source-modal" onclick="event.stopPropagation()">
+    <button class="about-close" onclick="closeCoverSourceModal()" aria-label="Close">&#10005;</button>
+    <div class="modal-title">Add Cover</div>
+    <div id="coverSourceStep1">
+      <p style="color:var(--brown);font-family:'EB Garamond',serif;margin:10px 0 18px;">How would you like to add a cover?</p>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button class="btn btn-secondary" onclick="pickCoverFromFile()">Upload Photo</button>
+        <button class="btn btn-primary" onclick="searchCoverImages()">Search Online</button>
+      </div>
+    </div>
+    <div id="coverSourceStep2" style="display:none;">
+      <div id="coverSearchStatus" class="lookup-status" style="margin-bottom:8px;"></div>
+      <div id="coverSearchGrid" class="cover-search-grid"></div>
+      <div style="text-align:center;margin-top:14px;">
+        <button class="btn btn-light" onclick="closeCoverSourceModal()">Dismiss</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="shelvesModal" onclick="closeShelvesModal(event)">
@@ -3220,7 +3252,6 @@ function renderCatalog() {
 }
 
 function renderBookCard(book) {
-  const hasBriefing = Boolean(researchCache[book.id]);
   const isSelected = book.id === selectedBookId;
   const condClass = book.condition ? `cond-${book.condition.toLowerCase()}` : "";
   const statusClass = book.readingStatus ? `status-${book.readingStatus.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
@@ -3252,7 +3283,7 @@ function renderBookCard(book) {
           ${book.readingStatus ? `<span class="condition-badge ${statusClass}">${esc(book.readingStatus)}</span>` : ""}
         </div>
         ${rating ? `<div class="rating-display" aria-label="${rating} out of 5 stars">${stars}</div>` : ""}
-        ${hasBriefing ? `<div class="book-research-meta" style="margin-top:4px;">&#10003; Briefing</div>` : (pendingBriefingIds.includes(book.id) ? `<div class="book-research-meta pending" style="margin-top:4px;">&#8987; Queued</div>` : "")}
+        ${pendingBriefingIds.includes(book.id) && !researchCache[book.id] ? `<div class="book-research-meta pending" style="margin-top:4px;">&#8987; Queued</div>` : ""}
       </div>
     </div>`;
 }
@@ -3793,13 +3824,18 @@ async function openCamera() {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    closeCoverLightbox();
-    document.getElementById("aboutModal").classList.remove("open");
-    if (document.getElementById("cameraModal").classList.contains("open")) {
-      closeCamera();
+    if (document.getElementById("coverLightbox").classList.contains("open")) {
+      closeCoverLightbox();
+    } else if (document.getElementById("coverSourceModal").classList.contains("open")) {
+      closeCoverSourceModal();
+    } else {
+      document.getElementById("aboutModal").classList.remove("open");
+      if (document.getElementById("cameraModal").classList.contains("open")) {
+        closeCamera();
+      }
+      if (selectionMode) exitSelectionMode();
+      closeMoveMenu();
     }
-    if (selectionMode) exitSelectionMode();
-    closeMoveMenu();
   }
 });
 
@@ -3835,6 +3871,7 @@ function showCoverLightbox(url) {
 
 function closeCoverLightbox() {
   document.getElementById("coverLightbox").classList.remove("open");
+  document.getElementById("coverLightboxSelectBtn").style.display = "none";
   const img = document.getElementById("coverLightboxImg");
   img.style.minWidth = "";
   img.src = "";
@@ -4154,7 +4191,72 @@ async function uploadCoverToStorage(bookId, blob) {
 
 function pickCoverForBook(bookId) {
   _coverUploadBookId = bookId;
+  document.getElementById("coverSourceStep1").style.display = "";
+  document.getElementById("coverSourceStep2").style.display = "none";
+  document.getElementById("coverSearchGrid").innerHTML = "";
+  document.getElementById("coverSearchStatus").textContent = "";
+  document.getElementById("coverSourceModal").classList.add("open");
+}
+
+function pickCoverFromFile() {
+  document.getElementById("coverSourceModal").classList.remove("open");
   document.getElementById("coverUploadInput").click();
+}
+
+function closeCoverSourceModal() {
+  document.getElementById("coverSourceModal").classList.remove("open");
+  _coverUploadBookId = null;
+}
+
+async function searchCoverImages() {
+  const book = findBook(_coverUploadBookId);
+  if (!book) return;
+  document.getElementById("coverSourceStep1").style.display = "none";
+  document.getElementById("coverSourceStep2").style.display = "";
+  const statusEl = document.getElementById("coverSearchStatus");
+  const grid = document.getElementById("coverSearchGrid");
+  statusEl.textContent = "Searching…";
+  grid.innerHTML = "";
+  try {
+    const [olResults, gbResults] = await Promise.all([
+      searchOpenLibrary(book.title, book.author || "", false),
+      searchGoogleBooks(book.title, book.author || "", false)
+    ]);
+    const merged = dedupeManualResults([...olResults, ...gbResults]);
+    const withCovers = merged.filter(r => r.coverUrl);
+    statusEl.textContent = "";
+    if (!withCovers.length) {
+      statusEl.textContent = "No covers found. Try uploading your own photo.";
+      return;
+    }
+    grid.innerHTML = withCovers.map(r =>
+      `<div class="cover-search-item" onclick="showCoverSearchLightbox('${escapeAttribute(r.coverUrl)}')" title="${esc(r.title || "")}">` +
+      `<img src="${escapeAttribute(r.coverUrl)}" alt="" onerror="this.closest('.cover-search-item').style.display='none'"></div>`
+    ).join("");
+  } catch (err) {
+    statusEl.textContent = "Search failed. Please try again.";
+    statusEl.className = "lookup-status error";
+  }
+}
+
+function showCoverSearchLightbox(url) {
+  const btn = document.getElementById("coverLightboxSelectBtn");
+  btn.style.display = "";
+  btn.dataset.url = url;
+  showCoverLightbox(url);
+}
+
+async function selectCoverFromLightbox() {
+  const url = document.getElementById("coverLightboxSelectBtn").dataset.url;
+  const bookId = _coverUploadBookId;
+  closeCoverLightbox();
+  closeCoverSourceModal();
+  const book = findBook(bookId);
+  if (!book || !url) return;
+  book.coverUrl = url;
+  await saveBooks();
+  renderCatalog();
+  renderBriefingPanel();
 }
 
 async function handleCoverUpload(input) {
