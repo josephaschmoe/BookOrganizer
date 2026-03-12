@@ -315,6 +315,7 @@ const firebaseConfig = {
   .research-status.error { color: var(--red); }
   .lookup-status.success,
   .research-status.success { color: var(--green); }
+  .lookup-status.warning { color: var(--brown); }
 
   .search-results {
     margin: 10px 0 14px;
@@ -2447,6 +2448,7 @@ let selectedBookIds  = new Set();
 let pendingBriefingIds = [];
 const BRIEFING_MODEL = "gemini-2.5-flash";
 let _catalogUnsubscribe = null; // snapshot listener teardown
+let _allowDuplicateOverride = false;
 
 function safeLoad(key, fallback) {
   try {
@@ -3033,9 +3035,13 @@ async function addBook() {
     return entry.title.toLowerCase() === book.title.toLowerCase() && (entry.author || "").toLowerCase() === (book.author || "").toLowerCase();
   });
 
-  if (duplicate) {
-    return setStatus("addStatus", "This book is already in the catalog.", "error");
+  if (duplicate && !_allowDuplicateOverride) {
+    const el = document.getElementById("addStatus");
+    el.className = "lookup-status warning";
+    el.innerHTML = `"${esc(duplicate.title)}" is already in your catalog. <button type="button" class="btn btn-light" style="padding:2px 10px;font-size:0.8rem;" onclick="allowDuplicateAdd()">Add Anyway</button>`;
+    return;
   }
+  _allowDuplicateOverride = false;
 
   book.condition = condition;
   book.shelf = shelf;
@@ -3084,7 +3090,13 @@ async function addBook() {
   setMobileSection("catalog");
 }
 
+function allowDuplicateAdd() {
+  _allowDuplicateOverride = true;
+  addBook();
+}
+
 function clearForm() {
+  _allowDuplicateOverride = false;
   stopEditing();
   ["isbnInput", "manTitle", "manAuthor", "manPublisher", "manYear", "manEdition", "manSubjects", "bookSubjectTags", "bookShelf", "bookNotes", "bookPersonalNotes", "bookStartDate", "bookFinishDate"].forEach((id) => {
     const element = document.getElementById(id);
