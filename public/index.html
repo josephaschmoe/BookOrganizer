@@ -4955,7 +4955,15 @@ function updateShelfSelector() {
   sel.innerHTML = shelves.map(function(s) {
     return `<option value="${escapeAttribute(s.id)}">${esc(s.name)}</option>`;
   }).join("");
-  sel.value = shelves.find(function(s) { return s.id === prev; }) ? prev : currentShelfId;
+  if (editingBookId) {
+    // Preserve the book's shelf assignment while in edit mode
+    sel.value = shelves.find(function(s) { return s.id === prev; }) ? prev : currentShelfId;
+  } else {
+    // Always track the active shelf for new-book mode.
+    // Without this, the selector stays on its HTML-default "Reading List" even
+    // when the user last had a different shelf active (restored from localStorage).
+    sel.value = currentShelfId;
+  }
 }
 
 function switchShelf(id) {
