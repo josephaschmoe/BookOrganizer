@@ -2395,6 +2395,8 @@ const firebaseConfig = {
           <button type="button" onclick="exportJSON(); toggleDataMenu()">Export JSON</button>
           <button type="button" onclick="exportCSV(); toggleDataMenu()">Export CSV</button>
           <label>Import JSON/CSV<input type="file" id="importInput" accept=".json,.csv,text/csv,application/json" style="display:none" onchange="importCatalog(this)"></label>
+          <hr style="border:none;border-top:1px solid var(--tan);margin:4px 0;">
+          <button type="button" id="queueAllBriefingsBtn" onclick="queueAllMissingBriefings(); toggleDataMenu()">Queue All Missing Briefings</button>
         </div>
       </div>
     </div>
@@ -4375,6 +4377,17 @@ function confirmRegenerate() {
   if (confirm(`Regenerate the briefing for ${title}? This will replace the cached version.`)) {
     generateResearchForSelected(true);
   }
+}
+
+async function queueAllMissingBriefings() {
+  if (!researchEnabled) { showToast("Sign in to enable briefings."); return; }
+  const missing = books.filter(b => !researchCache[b.id] && !pendingBriefingIds.includes(b.id));
+  if (!missing.length) { showToast("All books already have briefings or are queued."); return; }
+  pendingBriefingIds = [...pendingBriefingIds, ...missing.map(b => b.id)];
+  await persistCatalog();
+  renderCatalog();
+  updateResearchButtons();
+  showToast(`${missing.length} book${missing.length === 1 ? "" : "s"} queued for briefing generation.`);
 }
 
 function renderList(items, className) {
