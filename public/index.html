@@ -3847,9 +3847,17 @@ async function generateResearchForSelected(forceRefresh) {
   try {
     const generateBriefingFn = functions.httpsCallable("generateBriefing");
     const result = await generateBriefingFn({ book });
-    researchCache[book.id] = result.data.research;
+    const research = result.data && result.data.research;
+    if (!research || typeof research !== "object") {
+      throw new Error("The server returned an empty briefing. Please try again.");
+    }
+    researchCache[book.id] = research;
     pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== book.id);
     await saveResearchCache();
+    // Re-stamp after the await: an onSnapshot from a concurrent background
+    // write can arrive during the yield and overwrite researchCache with the
+    // older Firestore state (no briefing yet), clearing what we just set.
+    researchCache[book.id] = research;
     renderCatalog();
     renderBriefingPanel();
     setResearchStatus(`Briefing ready for \"${book.title}\".`, "success");
