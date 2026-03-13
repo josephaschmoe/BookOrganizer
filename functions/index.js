@@ -706,6 +706,89 @@ function wordOverlap(a, b) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Wikipedia article resolver — returns exact Wikipedia page titles
+// for a book and its primary author using Gemini knowledge
+// ═══════════════════════════════════════════════════════════════
+
+const wikiArticleSchema = {
+  type: "object",
+  properties: {
+    book_article:   { type: "string" },
+    author_article: { type: "string" }
+  },
+  required: ["book_article", "author_article"]
+};
+
+exports.resolveWikipediaArticles = onCall({ secrets: [geminiApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const title  = cleanText((request.data || {}).title  || "");
+  const author = cleanText((request.data || {}).author || "");
+  if (!title) throw new HttpsError("invalid-argument", "Book title is required.");
+
+  const prompt = [
+    `Book title: "${title}"`,
+    `Author: "${author}"`,
+    "",
+    "Return the exact Wikipedia article titles for:",
+    "1. book_article — the Wikipedia article specifically about this book.",
+    "   Return empty string if no dedicated article exists or you are not confident.",
+    "2. author_article — the Wikipedia article about the PRIMARY author.",
+    "   If multiple authors are listed, use only the first/main one.",
+    "   Return empty string if you are not confident.",
+    "",
+    "Rules:",
+    "- Use the exact title as it appears in Wikipedia, including capitalisation,",
+    "  punctuation, and any parenthetical disambiguation (e.g. \"The Road (novel)\",",
+    "  \"What Is Life?\", \"Lincoln (novel)\").",
+    "- Return empty string — never null — for any article you cannot confidently identify.",
+    "- Return JSON only."
+  ].join("\n");
+
+  const payload = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 128,
+      responseMimeType: "application/json",
+      responseJsonSchema: wikiArticleSchema,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  let res;
+  try {
+    res = await fetchWithRetry(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    throw new HttpsError("unavailable", "Unable to reach Gemini API.");
+  }
+
+  const rawText = await res.text();
+  if (!res.ok) {
+    console.error("resolveWikipediaArticles Gemini error", res.status, rawText.slice(0, 300));
+    throw new HttpsError("internal", `Gemini request failed (HTTP ${res.status}).`);
+  }
+
+  let parsed;
+  try {
+    parsed = parseResearchJson(extractCandidateText(JSON.parse(rawText)));
+  } catch (err) {
+    throw new HttpsError("internal", "Could not parse Gemini response.");
+  }
+
+  return {
+    book_article:   String(parsed.book_article   || "").trim(),
+    author_article: String(parsed.author_article || "").trim()
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════
 // Bulk Load — identify every book visible in a shelf/stack photo
 // ═══════════════════════════════════════════════════════════════
 

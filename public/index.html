@@ -941,6 +941,96 @@ const firebaseConfig = {
   /* Lightbox must sit above other modals (e.g. cover source modal) */
   #coverLightbox { z-index: 300; }
 
+  /* ── Wikipedia Modal ── */
+  .wiki-modal {
+    width: 580px;
+    max-width: 95vw;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 0;
+    border: 2px solid var(--brown);
+    position: relative;
+  }
+
+  .wiki-modal-header {
+    padding: 18px 44px 14px 18px;
+    border-bottom: 1px solid var(--tan);
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: #f5edd8;
+  }
+
+  .wiki-modal-thumb {
+    flex-shrink: 0;
+    width: 72px;
+    height: 100px;
+    object-fit: cover;
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+  }
+
+  .wiki-modal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--dark);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+
+  .wiki-modal-description {
+    font-family: 'EB Garamond', serif;
+    font-size: 0.88rem;
+    color: var(--brown);
+    font-style: italic;
+  }
+
+  .wiki-modal-body {
+    padding: 16px 20px;
+    font-family: 'EB Garamond', serif;
+    font-size: 0.97rem;
+    line-height: 1.7;
+    color: var(--ink);
+  }
+
+  .wiki-modal-body p { margin: 0 0 10px; }
+  .wiki-modal-body p:last-child { margin-bottom: 0; }
+
+  .wiki-modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid var(--tan);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: #f5edd8;
+  }
+
+  .wiki-attribution {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.68rem;
+    color: var(--brown);
+    opacity: 0.75;
+  }
+
+  .wiki-notice {
+    padding: 7px 18px;
+    background: #f0e4c8;
+    border-bottom: 1px solid var(--tan);
+    font-family: 'EB Garamond', serif;
+    font-size: 0.84rem;
+    color: var(--brown);
+    font-style: italic;
+  }
+
+  .wiki-not-found {
+    padding: 36px 20px;
+    text-align: center;
+    font-family: 'EB Garamond', serif;
+  }
+
   /* ── About Modal ── */
   .about-modal {
     width: 520px;
@@ -1698,10 +1788,12 @@ const firebaseConfig = {
   .candidate-list { margin-top: 10px; }
 
   .candidate-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     text-align: left;
-    padding: 8px 10px;
+    padding: 6px 10px;
     margin-bottom: 4px;
     background: var(--parchment);
     border: 1px solid var(--tan);
@@ -1715,6 +1807,27 @@ const firebaseConfig = {
     border-color: var(--brown);
     background: #f0e8d4;
   }
+
+  .candidate-item-thumb {
+    flex-shrink: 0;
+    width: 36px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    background: var(--tan);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .candidate-item-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .candidate-item-text { min-width: 0; flex: 1; }
 
   .candidate-item strong {
     display: block;
@@ -2257,6 +2370,7 @@ const firebaseConfig = {
       <div class="book-detail-action-row" id="bookDetailActions" style="display:none;">
         <button class="btn btn-light btn-sm" type="button" id="editBookDetailBtn">Edit</button>
         <button class="btn btn-danger btn-sm" type="button" id="removeBookDetailBtn">Remove</button>
+        <button class="btn btn-light btn-sm" type="button" id="wikiLookupBtn" onclick="lookupWikipedia()">Wikipedia</button>
         <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
         <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
           <input type="checkbox" id="spoilerToggle" onchange="renderBriefingPanel()">
@@ -2450,6 +2564,13 @@ const firebaseConfig = {
     <div class="modal-actions" style="margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-light" type="button" onclick="closeAccountSettings()">Close</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="wikiModal" onclick="closeWikipediaModal(event)">
+  <div class="modal wiki-modal" onclick="event.stopPropagation()">
+    <button class="about-close" onclick="closeWikipediaModal()" aria-label="Close">&#10005;</button>
+    <div id="wikiModalContent"></div>
   </div>
 </div>
 
@@ -3693,6 +3814,220 @@ function updateNavArrows() {
   nextBtn.style.opacity = hasNext ? "1" : "0.4";
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Wikipedia Lookup  — Pass A: direct REST, Pass B: Gemini resolve
+// ═══════════════════════════════════════════════════════════════
+
+// Wikidata short descriptions for book pages almost always contain one of these
+const _WIKI_BOOK_RE = /\b(novel|novella|nonfiction|non-fiction|memoir|autobiography|short stor|collection|anthology|graphic novel|play|screenplay|book|poem|poetry|essay|narrative|fiction)\b/i;
+
+// Normalise a string for loose title comparison
+function _wikiNorm(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Bidirectional title match — handles wiki pages that use only the short title.
+// e.g. wiki = "What Is Life?"  vs  book = "What Is Life? The Physical Aspect…"
+function _wikiTitleMatches(wikiTitle, term) {
+  const w = _wikiNorm(wikiTitle);
+  const t = _wikiNorm(term);
+  if (t.length <= 2 || w.length <= 2) return false;
+  if (w === t || w.includes(t)) return true;
+  // Reverse: search term starts with the wiki title (subtitle / colon case).
+  // Require wiki title ≥ 6 chars to avoid false positives on short common words.
+  if (w.length >= 6 && t.startsWith(w)) return true;
+  return false;
+}
+
+// Return the portion of a title before a subtitle separator (": " or "? ").
+// Used only for direct REST lookups (not sent to Gemini — full title is better there).
+// "What Is Life? The Physical Aspect…" → "What Is Life?"
+function _wikiMainTitle(title) {
+  return (title.replace(/\s*[?:]\s+.+$/, "").trim()) || title;
+}
+
+// Fetch the REST summary for a page title; returns null on failure or disambiguation
+async function _wikiGetSummary(pageTitle) {
+  if (!pageTitle) return null;
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+  const r = await fetch(url);
+  if (!r.ok) return null;
+  const d = await r.json();
+  return (d.type !== "disambiguation" && d.extract) ? d : null;
+}
+
+// Normalise text for author matching: strip accents, lowercase, alphanumeric + spaces only.
+function _wikiNormAuthor(s) {
+  return (s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // "Schrödinger" → "Schrodinger"
+    .toLowerCase().replace(/[^a-z0-9 ]/g, "");
+}
+
+// True if the primary author's surname appears in the page description or extract.
+// Uses the last word of the first listed author (handles "Erwin Schrödinger, Roger Penrose"
+// → checks for "schrodinger").  Falls back to true when no author is available.
+function _wikiAuthorInSummary(summary, author) {
+  if (!author) return true;
+  const primaryAuthor = author.split(/[,;]/)[0].trim();       // first author only
+  const lastName      = primaryAuthor.split(/\s+/).pop() || ""; // last word = surname
+  if (lastName.length < 3) return true;                        // too short to be useful
+  const needle   = _wikiNormAuthor(lastName);
+  const haystack = _wikiNormAuthor(
+    (summary.description || "") + " " + (summary.extract || "").slice(0, 600)
+  );
+  return haystack.includes(needle);
+}
+
+// Pass A: Try fetching Wikipedia directly by title (no search engine involved).
+// Wikipedia's REST API resolves redirects and handles minor case/punctuation variations.
+// Tries mainTitle first (e.g. "What Is Life?"), then full title if different.
+// Accepts only when BOTH the description signals a book type AND the author is confirmed —
+// e.g. "1944 science book by Erwin Schrödinger" passes; "1971 song by George Harrison" does not.
+async function _wikiDirectBookLookup(fullTitle, author) {
+  const mainTitle  = _wikiMainTitle(fullTitle);
+  const candidates = [...new Set([mainTitle, fullTitle])]; // de-dupe if no subtitle
+  for (const t of candidates) {
+    const s = await _wikiGetSummary(t);
+    if (!s) continue;
+    if (_WIKI_BOOK_RE.test(s.description || "") && _wikiAuthorInSummary(s, author)) {
+      return s;
+    }
+  }
+  return null;
+}
+
+// Pass B: Ask Gemini (via Cloud Function) for the exact Wikipedia article titles,
+// then fetch them directly. Full title is sent — subtitle helps Gemini identify the book.
+async function _wikiGeminiLookup(book) {
+  const resolveWikiFn = functions.httpsCallable("resolveWikipediaArticles");
+  let data;
+  try {
+    const result = await resolveWikiFn({ title: book.title, author: book.author || "" });
+    data = result.data || {};
+  } catch (err) {
+    console.error("[_wikiGeminiLookup] Cloud Function error:", err);
+    return null;
+  }
+
+  const { book_article, author_article } = data;
+
+  if (book_article) {
+    const s = await _wikiGetSummary(book_article);
+    if (s) return { summary: s, notice: "" };
+  }
+
+  if (author_article) {
+    const s = await _wikiGetSummary(author_article);
+    if (s) return {
+      summary: s,
+      notice: "No Wikipedia article was found for this book \u2014 showing the author\u2019s page instead."
+    };
+  }
+
+  return null;
+}
+
+async function lookupWikipedia() {
+  const book = selectedBookId ? findBook(selectedBookId) : null;
+  if (!book) return;
+
+  const modal   = document.getElementById("wikiModal");
+  const content = document.getElementById("wikiModalContent");
+
+  const loadingHtml = (msg) => `
+    <div style="padding:48px 20px;text-align:center;">
+      <div style="font-family:'EB Garamond',serif;font-size:1rem;color:var(--brown);">${msg}</div>
+    </div>`;
+
+  content.innerHTML = loadingHtml("Checking Wikipedia\u2026");
+  modal.classList.add("open");
+
+  try {
+    // Pass A: direct REST lookup by title + author verification — fast, no AI needed
+    const direct = await _wikiDirectBookLookup(book.title, book.author);
+    if (direct) {
+      content.innerHTML = renderWikiSummary(direct);
+      return;
+    }
+
+    // Pass B: Gemini identifies the exact Wikipedia article titles
+    content.innerHTML = loadingHtml("Asking AI to identify the Wikipedia page\u2026");
+    const gemini = await _wikiGeminiLookup(book);
+    if (gemini) {
+      content.innerHTML = renderWikiSummary(gemini.summary, gemini.notice);
+      return;
+    }
+
+    content.innerHTML = renderWikiNotFound(book);
+  } catch (err) {
+    console.error("[lookupWikipedia]", err);
+    content.innerHTML = `
+      <div class="wiki-not-found">
+        <div style="font-size:1.6rem;margin-bottom:10px;">\u26A0\uFE0F</div>
+        <div style="color:var(--dark);margin-bottom:6px;">Could not reach Wikipedia.</div>
+        <div style="color:var(--brown);font-size:0.88rem;margin-bottom:18px;">Please check your connection and try again.</div>
+        <button class="btn btn-light btn-sm" onclick="closeWikipediaModal()">Close</button>
+      </div>`;
+  }
+}
+
+function renderWikiSummary(data, notice = "") {
+  const thumb       = data.thumbnail ? data.thumbnail.source : null;
+  const thumbHtml   = thumb ? `<img class="wiki-modal-thumb" src="${escapeAttribute(thumb)}" alt="">` : "";
+  const title       = esc(data.title || "");
+  const description = esc(data.description || "");
+  const articleUrl  = (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page)
+                      || `https://en.wikipedia.org/wiki/${encodeURIComponent(data.title || "")}`;
+
+  const paragraphs  = (data.extract || "")
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${esc(p)}</p>`)
+    .join("");
+
+  const noticeHtml = notice ? `<div class="wiki-notice">${esc(notice)}</div>` : "";
+
+  return `
+    <div class="wiki-modal-header">
+      ${thumbHtml}
+      <div style="min-width:0;flex:1;">
+        <div class="wiki-modal-title">${title}</div>
+        ${description ? `<div class="wiki-modal-description">${description}</div>` : ""}
+      </div>
+    </div>
+    ${noticeHtml}
+    <div class="wiki-modal-body">${paragraphs}</div>
+    <div class="wiki-modal-footer">
+      <span class="wiki-attribution">Source: Wikipedia, the Free Encyclopedia</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(articleUrl)}" target="_blank" rel="noopener noreferrer">Read full article &#8594;</a>
+        <button class="btn btn-light btn-sm" onclick="closeWikipediaModal()">Close</button>
+      </div>
+    </div>`;
+}
+
+function renderWikiNotFound(book) {
+  const wikiSearchUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent([book.title, book.author].filter(Boolean).join(" "))}`;
+  return `
+    <div class="wiki-not-found">
+      <div style="font-size:2rem;margin-bottom:12px;">📚</div>
+      <div style="font-family:'Playfair Display',serif;color:var(--dark);font-size:1.05rem;margin-bottom:8px;">No Wikipedia page found for this book or author.</div>
+      <div style="font-family:'EB Garamond',serif;color:var(--brown);font-size:0.9rem;margin-bottom:20px;">
+        You can try searching Wikipedia directly — it may be listed under a different title.
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+        <a class="btn btn-secondary btn-sm" href="${escapeAttribute(wikiSearchUrl)}" target="_blank" rel="noopener noreferrer">Search Wikipedia &#8594;</a>
+        <button class="btn btn-light btn-sm" onclick="closeWikipediaModal()">Close</button>
+      </div>
+    </div>`;
+}
+
+function closeWikipediaModal(event) {
+  if (event && event.target !== document.getElementById("wikiModal")) return;
+  document.getElementById("wikiModal").classList.remove("open");
+}
+
 function updateResearchButtons() {
   const book = selectedBookId ? findBook(selectedBookId) : null;
   const btn = document.getElementById("generateBriefingBtn");
@@ -4114,12 +4449,18 @@ function showReviewSection(data) {
   // Show other candidates if multiple
   if (data.candidates.length > 1) {
     list.innerHTML = `<div class="section-label" style="margin-top:10px;">Other matches</div>` +
-      data.candidates.slice(1, 6).map((c, i) =>
-        `<button class="candidate-item" type="button" onclick="selectCandidate(${i + 1})">
-          <strong>${esc(c.title)}</strong>
-          <span>${[c.authors.join(", "), c.publishedDate, c.source.replace(/_/g, " ")].filter(Boolean).map(esc).join(" | ")}</span>
-        </button>`
-      ).join("");
+      data.candidates.slice(1).map((c, i) => {
+        const thumb = c.coverUrl
+          ? `<div class="candidate-item-thumb"><img src="${escapeAttribute(c.coverUrl)}" alt="" onerror="this.parentElement.textContent='📖'"></div>`
+          : `<div class="candidate-item-thumb">📖</div>`;
+        return `<button class="candidate-item" type="button" onclick="selectCandidate(${i + 1})">
+          ${thumb}
+          <div class="candidate-item-text">
+            <strong>${esc(c.title)}</strong>
+            <span>${[c.authors.join(", "), c.publishedDate, c.source.replace(/_/g, " ")].filter(Boolean).map(esc).join(" | ")}</span>
+          </div>
+        </button>`;
+      }).join("");
     list.style.display = "";
   } else {
     list.innerHTML = "";
@@ -4181,7 +4522,12 @@ function renderExtractedCard(extracted) {
 
 function selectCandidate(index) {
   if (!reviewData || !reviewData.candidates[index]) return;
-  reviewData.bestMatch = reviewData.candidates[index];
+  // Swap the chosen candidate into position 0 so the previous top pick
+  // stays visible in the "Other matches" list and can be re-selected.
+  const tmp = reviewData.candidates[0];
+  reviewData.candidates[0] = reviewData.candidates[index];
+  reviewData.candidates[index] = tmp;
+  reviewData.bestMatch = reviewData.candidates[0];
   showReviewSection(reviewData);
 }
 

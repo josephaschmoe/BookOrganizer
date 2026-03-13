@@ -10,7 +10,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **TomeShelves** — Organise books into multiple named shelves (e.g. Reading List, Cookbooks, Borrowed); create, rename, and delete shelves; last-viewed shelf restored on next open
 - **Multi-book Selection** — Select any or all books on a shelf; move the selection to another shelf or delete in bulk with confirmation
 - **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
-- **Photo Book Lookup** — Photograph a book's cover, spine, title page, or copyright page (up to 3 images); also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details
+- **Photo Book Lookup** — Photograph a book's cover, spine, title page, or copyright page (up to 3 images); also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details. When multiple candidates are found, all are shown with cover thumbnails; selecting an alternate candidate swaps it to the top while keeping the previous pick accessible
 - **Bulk Load** — Add many books at once from a single photo:
   - **Books** — photograph a bookshelf, stack of covers, or any group of books; AI reads every visible spine and cover
   - **Titles in Text** — photograph an article, reading list, or bibliography; AI extracts every book title mentioned in the text
@@ -18,6 +18,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Cover Images** — Finds covers via Open Library and Google Books across all entry methods; automatic API key rotation when daily quota is reached
 - **Cover Search** — When adding or replacing a cover, choose to upload a photo or search online; search fetches covers from Open Library and Google Books and presents them as a thumbnail grid; tap any thumbnail to open a full lightbox preview, then apply the cover with one tap
 - **Search Results** — Cover thumbnails appear inline in all search result lists; "Try Broader Search" button relaxes field-level query operators when initial results don't match
+- **Wikipedia Lookup** — On any book's detail page, tap the Wikipedia button to pull up an in-app modal showing the Wikipedia article summary, thumbnail, and Wikidata description for the book. Uses a two-pass strategy: first a direct REST lookup verified against the book type and author name (fast, no AI cost); if that finds nothing, falls back to a Gemini Cloud Function that identifies the exact Wikipedia article titles for both the book and author. Shows the book article if one exists; falls back to the author's page with a notice; shows a "Search Wikipedia" link if neither is found
 - **Auto-Generated Briefings** — College-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) are generated automatically in the background when books are added:
   - Small batches (≤ 25 books) generate immediately via a Firestore trigger; larger batches are queued for a scheduled function that runs every 2 hours
   - Books published before 2024 use **Google Gemini 2.5 Flash**; books published 2024 or later use **Perplexity Sonar Pro** (web-grounded, post-cutoff knowledge)
@@ -50,6 +51,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 | `analyzeBookPhoto` (single book) | gemini-2.5-flash |
 | `identifyBooksInImage` — Books mode | gemini-3.1-pro-preview |
 | `identifyBooksInImage` — Titles in Text mode | gemini-2.5-flash |
+| `resolveWikipediaArticles` — Wikipedia lookup fallback | gemini-2.5-flash |
 
 ## Setup
 
