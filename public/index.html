@@ -3927,6 +3927,10 @@ function closeCamera() {
 // ═══════════════════════════════════════════════════════════════
 
 function startPhotoCamera() {
+  // Record the timestamp so onAuthStateChanged can detect a camera-return null event.
+  // On iOS, opening the native camera can cause a full page reload on return, which
+  // briefly fires auth null before Firebase restores the cached session.
+  try { localStorage.setItem("_cameraActive", Date.now().toString()); } catch(e) {}
   document.getElementById("photoCameraInput").click();
 }
 
@@ -3934,12 +3938,30 @@ function startPhotoLookup() {
   document.getElementById("photoInput").click();
 }
 
-function handlePhotoSelection(input) {
-  const files = Array.from(input.files || []).slice(0, 3);
-  if (!files.length) return;
-  photoFiles = files;
-  renderPhotoThumbnails();
+async function handlePhotoSelection(input) {
+  const fileList = Array.from(input.files || []).slice(0, 3);
+  if (!fileList.length) {
+    // User cancelled (e.g. dismissed camera without taking a photo)
+    try { localStorage.removeItem("_cameraActive"); } catch(e) {}
+    return;
+  }
+  // Immediately buffer each file's raw bytes into a memory-backed Blob BEFORE
+  // clearing input.value.  On iOS/WebKit, File objects can silently lose access
+  // to their underlying data once the file input is reset, causing URL.createObjectURL
+  // and createImageBitmap to fail.  Reading via arrayBuffer() copies the data into
+  // JS heap memory, making the resulting Blob stable for the lifetime of this page.
+  const buffered = await Promise.all(fileList.map(async (f) => {
+    try {
+      const buf = await f.arrayBuffer();
+      return new Blob([buf], { type: f.type || "image/jpeg" });
+    } catch (e) {
+      return f; // fallback: keep original File if buffering fails
+    }
+  }));
+  try { localStorage.removeItem("_cameraActive"); } catch(e) {}
   input.value = "";
+  photoFiles = buffered;
+  renderPhotoThumbnails();
 }
 
 function renderPhotoThumbnails() {
@@ -3969,7 +3991,29 @@ function removePhoto(index) {
   }
 }
 
-function resizeImage(file, maxDim, _attempt = 0) {
+async function resizeImage(file, maxDim) {
+  // Primary path: createImageBitmap works directly with File/Blob objects without
+  // needing an objectURL, and is more reliable on iOS/WebKit than the img-element approach.
+  if (typeof createImageBitmap !== "undefined") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      let { width, height } = bitmap;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+      bitmap.close();
+      return { data: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], mimeType: "image/jpeg" };
+    } catch (e) {
+      console.warn("[resizeImage] createImageBitmap failed, falling back to img element:", e.message);
+    }
+  }
+  // Fallback: img element + objectURL
   return new Promise((resolve) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -3984,22 +4028,12 @@ function resizeImage(file, maxDim, _attempt = 0) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
       URL.revokeObjectURL(objectUrl);
-      resolve({
-        data: dataUrl.split(",")[1],
-        mimeType: "image/jpeg"
-      });
+      resolve({ data: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], mimeType: "image/jpeg" });
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      if (_attempt < 1) {
-        // Retry once after a short pause — handles transient decode failures
-        // that occur when iOS restores the page after closing the camera
-        setTimeout(() => resizeImage(file, maxDim, 1).then(resolve), 600);
-      } else {
-        resolve(null);
-      }
+      resolve(null);
     };
     img.src = objectUrl;
   });
@@ -5680,6 +5714,8 @@ auth.onAuthStateChanged(async (user) => {
   if (user) {
     // Cancel any pending sign-out — this was a transient null (e.g. camera return)
     if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
+    // Clear the camera-active flag now that auth is confirmed
+    try { localStorage.removeItem("_cameraActive"); } catch(e) {}
 
     document.getElementById("authOverlay").style.display = "none";
     const icon = document.getElementById("userEmailIcon");
@@ -5733,9 +5769,19 @@ auth.onAuthStateChanged(async (user) => {
     icon.src = "";
     emailText.style.display = "none";
 
-    if (_booksOwnedByUid) {
+    // Check whether the native camera was recently opened.  On iOS, the camera
+    // can trigger a full page reload on return, resetting _booksOwnedByUid to null.
+    // The localStorage timestamp lets us detect this case even after a reload.
+    const _cameraTs = (() => {
+      try { return parseInt(localStorage.getItem("_cameraActive") || "0", 10); } catch(e) { return 0; }
+    })();
+    const _recentCamera = _cameraTs > 0 && (Date.now() - _cameraTs < 120000); // within 2 min
+
+    if (_booksOwnedByUid || _recentCamera) {
+      // Either a transient null after having a user (bfcache restore) or a camera-return
+      // full-reload where Firebase will re-authenticate from cached credentials.
       if (!_pendingSignOut) {
-        _pendingSignOut = setTimeout(() => { _pendingSignOut = null; _doSignOut(); }, 5000);
+        _pendingSignOut = setTimeout(() => { _pendingSignOut = null; _doSignOut(); }, 8000);
       }
     } else {
       _doSignOut();
