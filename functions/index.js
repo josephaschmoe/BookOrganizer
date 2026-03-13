@@ -235,6 +235,7 @@ exports.onBooksChanged = onDocumentWritten(
     if (newBooks.length <= THRESHOLD) {
       // Generate immediately, one at a time with a short delay
       const cache = { ...afterCache };
+      const failedIds = [];
       for (const book of newBooks) {
         try {
           const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
@@ -242,8 +243,17 @@ exports.onBooksChanged = onDocumentWritten(
           await ref.update({ researchCache: cache });
         } catch (err) {
           console.error(`[onBooksChanged] Failed briefing for "${book.title}":`, err.message);
+          failedIds.push(book.id);
         }
         await new Promise(r => setTimeout(r, 3000));
+      }
+      // Queue any failures for the scheduled retry function (runs every 2 hours)
+      if (failedIds.length) {
+        const existing = Array.isArray(after.pendingBriefingIds) ? after.pendingBriefingIds : [];
+        const toQueue  = failedIds.filter(id => !existing.includes(id));
+        if (toQueue.length) {
+          await ref.update({ pendingBriefingIds: [...existing, ...toQueue] });
+        }
       }
     } else {
       // Too many to generate inline — queue them for the scheduled function
