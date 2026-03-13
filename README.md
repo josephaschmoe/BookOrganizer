@@ -1,6 +1,6 @@
 # TomeShelf
 
-A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes, photograph books or entire bookshelves, or capture text listing titles to add books in bulk. Organise your collection into named shelves, generate structured discussion guides via Google Gemini or Perplexity, and sync everything to the cloud via Firebase.
+A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes, photograph books or entire bookshelves, or capture text listing titles to add books in bulk. Organise your collection into named shelves, generate structured discussion guides via Google Gemini or Perplexity, share read-only shelf links with anyone, and sync everything to the cloud via Firebase.
 
 **Live:** https://tome-shelf.littleofinterest.com
 
@@ -28,6 +28,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Guest Mode** — Try the full app without signing in; books are saved to Firestore under an anonymous account. Sign in with Google at any time to permanently link the library to your account
 - **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per account; real-time sync means background-generated briefings appear automatically without a page reload
 - **Account Settings** — Export a JSON backup or permanently delete your account and all associated data
+- **Shelf Sharing** — Generate a public, read-only share link for any shelf; viewers need no account. Per-share controls: include personal notes (off by default) and enable AI-powered Wikipedia lookup for viewers. One active link per shelf at a time; revoke from the shelf settings or Account Settings at any time. All active links visible and manageable in Account Settings
 - **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
@@ -51,7 +52,8 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 | `analyzeBookPhoto` (single book) | gemini-2.5-flash |
 | `identifyBooksInImage` — Books mode | gemini-3.1-pro-preview |
 | `identifyBooksInImage` — Titles in Text mode | gemini-2.5-flash |
-| `resolveWikipediaArticles` — Wikipedia lookup fallback | gemini-2.5-flash |
+| `resolveWikipediaArticles` — Wikipedia lookup fallback (authenticated users) | gemini-2.5-flash |
+| `resolveWikipediaArticlesShared` — Wikipedia lookup fallback (share viewers) | gemini-2.5-flash |
 
 ## Setup
 

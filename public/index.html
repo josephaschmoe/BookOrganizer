@@ -1143,8 +1143,8 @@ const firebaseConfig = {
   }
 
   .about-footer {
-    margin-top: 20px;
-    padding-top: 16px;
+    margin-top: 6px;
+    padding-top: 14px;
     border-top: 1px dashed var(--tan);
     text-align: center;
     font-family: 'Courier Prime', monospace;
@@ -1152,6 +1152,64 @@ const firebaseConfig = {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--brown);
+  }
+
+  .about-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--tan);
+    margin-bottom: 14px;
+  }
+
+  .about-more-modal {
+    width: 620px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 0;
+    border: 2px solid var(--gold);
+  }
+
+  .about-more-section-title {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--brown);
+    margin: 22px 0 9px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--tan);
+  }
+  .about-more-section-title:first-child { margin-top: 0; }
+
+  .about-more-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .about-more-list li {
+    font-size: 0.88rem;
+    color: var(--ink);
+    line-height: 1.55;
+    padding-left: 18px;
+    position: relative;
+  }
+
+  .about-more-list li::before {
+    content: "◆";
+    position: absolute;
+    left: 0;
+    color: var(--gold);
+    font-size: 0.48rem;
+    top: 5px;
   }
 
   #cameraFeed {
@@ -2417,7 +2475,7 @@ const firebaseConfig = {
       <p class="about-tagline">Your personal library, beautifully organized.</p>
     </div>
     <div class="about-body">
-      <p class="about-intro">TomeShelf transforms your book collection into a living, searchable catalog — with AI-powered identification, named shelves, and automatically generated research briefings to deepen your reading experience.</p>
+      <p class="about-intro">TomeShelf transforms your book collection into a living, searchable catalog — with AI-powered identification, named shelves, automatically generated research briefings, and shareable read-only links so you can show off your collection without giving anyone access to your account.</p>
 
       <div class="about-section-title">Features</div>
       <div class="about-features">
@@ -2425,35 +2483,42 @@ const firebaseConfig = {
           <div class="about-feature-icon">&#128218;</div>
           <div>
             <strong>Instant Barcode Scanning</strong>
-            <p>Point your camera at any book's ISBN barcode and TomeShelf instantly retrieves the title, author, cover art, and publication details — no typing required.</p>
-          </div>
-        </div>
-        <div class="about-feature">
-          <div class="about-feature-icon">&#128248;</div>
-          <div>
-            <strong>Bulk Load (beta)</strong>
-            <p>Photograph an entire bookshelf and let AI identify every title at once. Or paste in a reading list or article and extract all the books mentioned. Review results, correct any mismatches, and add them all in one go.</p>
+            <p>Point your camera at any ISBN barcode and TomeShelf instantly retrieves the title, author, cover art, and publication details — no typing required.</p>
           </div>
         </div>
         <div class="about-feature">
           <div class="about-feature-icon">&#128247;</div>
           <div>
             <strong>AI Photo Identification</strong>
-            <p>No barcode? No problem. Photograph the title page or copyright page and let AI identify your book automatically, even for older or obscure editions.</p>
+            <p>No barcode? Photograph the cover, title page, or copyright page and let AI identify the book — even for older or obscure editions.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128248;</div>
+          <div>
+            <strong>Bulk Load</strong>
+            <p>Photograph an entire bookshelf and AI identifies every title at once. Or capture any text listing books — an article, reading list, or bibliography — and AI extracts every title mentioned. Review and correct before adding.</p>
           </div>
         </div>
         <div class="about-feature">
           <div class="about-feature-icon">&#128214;</div>
           <div>
             <strong>TomeShelves</strong>
-            <p>Organise your catalog into named shelves — Reading List, Cookbooks, old family books, or whatever fits your life. Create, rename, and switch shelves freely. Select multiple books at once to move or remove them in bulk.</p>
+            <p>Organise your catalog into named shelves — Reading List, Cookbooks, Borrowed Books, or whatever fits your life. Select multiple books at once to move or remove them in bulk.</p>
           </div>
         </div>
         <div class="about-feature">
           <div class="about-feature-icon">&#128270;</div>
           <div>
             <strong>Auto-Generated Briefings</strong>
-            <p>Rich, college-level discussion guides are generated automatically in the background as you add books — covering themes, historical context, literary analysis, and discussion questions. No manual action needed; briefings simply appear.</p>
+            <p>Rich, college-level discussion guides appear automatically as you add books — themes, historical context, literary analysis, and discussion questions. Fiction briefings include a spoiler&#47;safe toggle.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#127758;</div>
+          <div>
+            <strong>Wikipedia Lookup</strong>
+            <p>One tap to view the Wikipedia article for any book or its author in a clean in-app modal. A two-pass strategy — direct REST lookup first, AI-assisted if needed — maximises coverage.</p>
           </div>
         </div>
         <div class="about-feature">
@@ -2464,21 +2529,121 @@ const firebaseConfig = {
           </div>
         </div>
         <div class="about-feature">
-          <div class="about-feature-icon">&#128193;</div>
+          <div class="about-feature-icon">&#128279;</div>
           <div>
-            <strong>Smart Catalog</strong>
-            <p>Search, sort, and filter your entire library by title, author, reading status, condition, shelf location, and more. Your collection, always at your fingertips.</p>
+            <strong>Share Your Shelves</strong>
+            <p>Generate a read-only link for any shelf — viewers need no account. Control whether your personal notes and AI Wikipedia lookups are included. Revoke at any time.</p>
           </div>
         </div>
         <div class="about-feature">
           <div class="about-feature-icon">&#128196;</div>
           <div>
             <strong>Portable Data</strong>
-            <p>Export your catalog as JSON or CSV for safekeeping or analysis. Import from Goodreads exports or your own backups — covers and metadata enriched automatically. Your data is always yours.</p>
+            <p>Export to JSON or CSV; import from Goodreads exports or your own backups, with covers and metadata enriched automatically. Your data is always yours.</p>
           </div>
         </div>
       </div>
 
+      <div class="about-actions">
+        <a class="btn btn-secondary btn-sm" href="https://tome-shelf.littleofinterest.com" target="_blank" rel="noopener noreferrer">Visit TomeShelf &#8594;</a>
+        <button class="btn btn-light btn-sm" type="button" onclick="openAboutMore()">Much More&#8230;</button>
+      </div>
+      <div class="about-footer">No account required to try &nbsp;&bull;&nbsp; Your data is always private</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="aboutMoreModal" onclick="closeAboutMore(event)">
+  <div class="modal about-more-modal" onclick="event.stopPropagation()">
+    <div class="about-header">
+      <button class="about-close" onclick="closeAboutMore()" aria-label="Close">&#10005;</button>
+      <img src="TomeShelf-Logo.png" alt="TomeShelf">
+      <p class="about-tagline">Everything TomeShelf can do.</p>
+    </div>
+    <div class="about-body">
+
+      <div class="about-more-section-title">Adding Books</div>
+      <ul class="about-more-list">
+        <li><strong>Barcode scanning</strong> — point your camera at any ISBN barcode; title, author, cover art, and publication details fill in instantly via the native BarcodeDetector API (html5-qrcode fallback for older browsers)</li>
+        <li><strong>AI Photo Identification</strong> — photograph up to 3 images of a cover, spine, title page, or copyright page; Gemini extracts all visible metadata; Open Library and Google Books are searched for a match; multiple candidates shown with thumbnails and a confidence score</li>
+        <li><strong>Bulk Load: Books</strong> — photograph a whole bookshelf or stack; AI reads every visible spine and cover; review a ✓&#47;✗ card list before anything is added; manual correction fallback for unmatched titles</li>
+        <li><strong>Bulk Load: Titles in Text</strong> — photograph an article, reading list, bibliography, or any text mentioning books; AI extracts every title found</li>
+        <li><strong>Cover Search</strong> — search Open Library and Google Books by title; results shown as a thumbnail grid; tap to preview full-size in a lightbox, then apply with one tap</li>
+        <li><strong>&#8220;Try Broader Search&#8221;</strong> — a button that relaxes field-level query operators when initial results don&#8217;t match</li>
+      </ul>
+
+      <div class="about-more-section-title">Managing Your Library</div>
+      <ul class="about-more-list">
+        <li><strong>TomeShelves</strong> — create and name as many shelves as you like; rename or delete at any time; last-viewed shelf restored on next open</li>
+        <li><strong>Multi-book selection</strong> — select any or all books on a shelf; move or delete in bulk with confirmation</li>
+        <li><strong>Full catalog fields</strong> — title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading notes, and personal notes</li>
+        <li><strong>Search, sort &amp; filter</strong> — search by any field; filter by reading status, condition, or shelf; sort by title, author, year, rating, or recently added</li>
+        <li><strong>Duplicate detection</strong> — adding a book with an identical title and author shows a warning; &#8220;Add Anyway&#8221; allows legitimate multiple editions</li>
+      </ul>
+
+      <div class="about-more-section-title">AI Research Briefings</div>
+      <ul class="about-more-list">
+        <li>Generated <strong>automatically in the background</strong> as you add books — no manual action needed; briefings appear in real time</li>
+        <li>Small batches (&#8804; 25 books) generate immediately via a background trigger; larger batches queue for a scheduled function running every 2 hours</li>
+        <li>Books published <strong>before 2024</strong> &#8594; Google Gemini 2.5 Flash &nbsp;|&nbsp; Books from <strong>2024 onward</strong> &#8594; Perplexity Sonar Pro (web-grounded, post-cutoff knowledge)</li>
+        <li>Coverage per book: genre, quick take, major themes, historical context, impact, literary analysis, and discussion questions</li>
+        <li><strong>Fiction</strong> briefings include spoiler and spoiler-free versions of summaries, character notes, and discussion questions — toggle with one tap</li>
+        <li>A <strong>Regenerate</strong> button appears only when a book&#8217;s existing briefing was produced by an older or less appropriate model</li>
+      </ul>
+
+      <div class="about-more-section-title">Wikipedia Lookup</div>
+      <ul class="about-more-list">
+        <li>Available on every book&#8217;s detail page — one tap opens an in-app modal showing the article summary, thumbnail, and Wikidata description</li>
+        <li><strong>Pass A</strong> — direct Wikipedia REST lookup verified against the book type and author name; fast, no AI cost</li>
+        <li><strong>Pass B</strong> — if Pass A finds nothing, a Gemini Cloud Function identifies the exact Wikipedia article title for the book and for its author</li>
+        <li>Shows the book&#8217;s article when one exists; falls back to the author&#8217;s article with a notice; offers a &#8220;Search Wikipedia&#8221; link if neither is found</li>
+        <li>Pass B is <strong>opt-in when sharing</strong> — shelf owners choose whether viewers can trigger AI Wikipedia lookup</li>
+      </ul>
+
+      <div class="about-more-section-title">Shelf Sharing</div>
+      <ul class="about-more-list">
+        <li>Generate a <strong>public, read-only share link</strong> for any shelf — viewers need no account or sign-in</li>
+        <li>One active link per shelf at a time; any number of people can use the same link simultaneously</li>
+        <li>Per-share controls: include personal notes (off by default); enable AI-powered Wikipedia lookups for viewers</li>
+        <li>Viewers can browse books, read briefings, view Wikipedia articles, and navigate the shelf — but cannot edit, add, or remove anything</li>
+        <li>Revoke links from the shelf&#8217;s Share button or from Account Settings at any time</li>
+        <li>All active share links visible and manageable from Account Settings in one place</li>
+      </ul>
+
+      <div class="about-more-section-title">Reading Tracker</div>
+      <ul class="about-more-list">
+        <li>Log <strong>reading status</strong>: Want to Read, Currently Reading, Read, Did Not Finish</li>
+        <li>Record <strong>start and finish dates</strong>, <strong>star ratings</strong> (1&#8211;5), and personal notes separate from publisher notes</li>
+        <li>Filter and sort your catalog by reading status at any time</li>
+      </ul>
+
+      <div class="about-more-section-title">Import &amp; Export</div>
+      <ul class="about-more-list">
+        <li><strong>Export</strong> — full JSON backup or flat CSV, available from Account Settings</li>
+        <li><strong>Import</strong> — JSON backup, this app&#8217;s own CSV format, or a <strong>Goodreads export CSV</strong></li>
+        <li>Goodreads imports are automatically enriched — cover art and full metadata fetched from Open Library and Google Books</li>
+      </ul>
+
+      <div class="about-more-section-title">Cloud &amp; Account</div>
+      <ul class="about-more-list">
+        <li>Entire catalog and briefing cache synced to <strong>Cloud Firestore</strong> per account, isolated per user, in real time</li>
+        <li>Background-generated briefings appear instantly without a page reload</li>
+        <li><strong>Guest Mode</strong> — full functionality without signing in; books saved to an anonymous Firestore account; sign in with Google at any time to permanently keep your library</li>
+        <li>Account Settings — export a JSON backup, or permanently delete your account and all associated data</li>
+        <li>Active shelf selection and sort preferences remembered across sessions</li>
+      </ul>
+
+      <div class="about-more-section-title">Design &amp; Mobile</div>
+      <ul class="about-more-list">
+        <li><strong>Vintage parchment aesthetic</strong> — warm creams, golds, and ink tones; Playfair Display headings, EB Garamond body, Courier Prime labels</li>
+        <li><strong>Mobile-first</strong> — bottom navigation bar on phones, full three-column layout on desktop, hardware back-button support, safe-area insets for notched phones</li>
+        <li>No installation required — runs in any modern browser; no app download, no extensions</li>
+      </ul>
+
+      <div class="about-actions">
+        <a class="btn btn-secondary btn-sm" href="https://tome-shelf.littleofinterest.com" target="_blank" rel="noopener noreferrer">Visit TomeShelf &#8594;</a>
+        <button class="btn btn-light btn-sm" type="button" onclick="backToAbout()">&#8592; Back</button>
+      </div>
       <div class="about-footer">No account required to try &nbsp;&bull;&nbsp; Your data is always private</div>
     </div>
   </div>
@@ -2824,6 +2989,22 @@ function closeAbout(e) {
   if (!e || e.target === document.getElementById("aboutModal")) {
     document.getElementById("aboutModal").classList.remove("open");
   }
+}
+
+function openAboutMore() {
+  document.getElementById("aboutModal").classList.remove("open");
+  document.getElementById("aboutMoreModal").classList.add("open");
+}
+
+function closeAboutMore(e) {
+  if (!e || e.target === document.getElementById("aboutMoreModal")) {
+    document.getElementById("aboutMoreModal").classList.remove("open");
+  }
+}
+
+function backToAbout() {
+  document.getElementById("aboutMoreModal").classList.remove("open");
+  document.getElementById("aboutModal").classList.add("open");
 }
 
 function toggleDataMenu() {
