@@ -650,7 +650,7 @@ let sharedShelfName   = "";
 let selectedBookId    = null;
 let showSpoilers      = false;
 let currentFilter     = "";
-let currentSort       = "title";
+let currentSort       = "added";
 let isMobileDetail    = false; // tracks if mobile user is in detail view
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -707,6 +707,7 @@ function renderLayout() {
         '<div class="shelf-toolbar">' +
           '<input type="search" id="filterInput" placeholder="Search\u2026" oninput="applyFilter(this.value)">' +
           '<select id="sortSelect" onchange="applySort(this.value)">' +
+            '<option value="added">Recently added</option>' +
             '<option value="title">Title A\u2013Z</option>' +
             '<option value="author">Author A\u2013Z</option>' +
             '<option value="year">Year</option>' +
@@ -752,7 +753,8 @@ function filteredSortedBooks() {
     if (currentSort === "author") return (a.author || "").localeCompare(b.author || "");
     if (currentSort === "year")   return (parseInt(b.year) || 0) - (parseInt(a.year) || 0);
     if (currentSort === "rating") return (Number(b.rating) || 0) - (Number(a.rating) || 0);
-    return (a.title || "").localeCompare(b.title || ""); // default: title
+    if (currentSort === "title")  return (a.title || "").localeCompare(b.title || "");
+    return Number(b.addedAt || 0) - Number(a.addedAt || 0); // "added" — newest first
   });
 
   return list;
