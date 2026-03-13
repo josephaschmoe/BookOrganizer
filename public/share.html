@@ -700,7 +700,21 @@
     .about-more-list li::before { content: "◆"; position: absolute; left: 0; color: var(--gold); font-size: 0.47rem; top: 5px; }
 
     /* ── Header logo ── */
-    .header-logo-img { height: 38px; width: auto; flex-shrink: 0; }
+    .header-logo-img {
+      height: 38px;
+      width: auto;
+      flex-shrink: 0;
+      background: #fff;
+      padding: 3px 8px;
+      border-radius: 5px;
+    }
+    header .btn-light {
+      border-color: rgba(255,255,255,0.5);
+      color: var(--cream);
+    }
+    header .btn-light:hover {
+      border-color: var(--cream);
+    }
 
     /* ── Cover Lightbox ── */
     #coverLightbox { z-index: 300; cursor: zoom-out; }
