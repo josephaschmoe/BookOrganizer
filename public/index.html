@@ -2828,7 +2828,8 @@ function expectedBriefingModel(book) {
   const year = parseInt(String((book && book.year) || ""), 10);
   return !isNaN(year) && year >= 2024 ? "perplexity-sonar-pro" : "gemini-2.5-flash";
 }
-let _catalogUnsubscribe = null; // snapshot listener teardown
+let _catalogUnsubscribe = null;  // snapshot listener teardown
+let _briefingsUnsubscribe = null; // briefings subcollection listener teardown
 let _allowDuplicateOverride = false;
 
 function safeLoad(key, fallback) {
@@ -2850,48 +2851,78 @@ async function persistCatalog() {
     console.error("[persistCatalog] BLOCKED cross-user write! auth uid:", user.uid, "but books belong to:", _booksOwnedByUid);
     return;
   }
+  const catalog = db.collection("users").doc(user.uid).collection("catalog");
   try {
-    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves, pendingBriefingIds, shareLinks });
+    // books/shelves/pending go in "data"; researchCache lives in its own "research"
+    // document to avoid hitting Firestore's 1MB per-document limit.
+    await catalog.doc("data").set({ books, shelves, pendingBriefingIds, shareLinks });
   } catch (error) {
-    console.error(error);
+    console.error("[persistCatalog] data write failed:", error);
     setStatus("addStatus", "Saved locally, but cloud sync failed.", "error");
+  }
+}
+
+// Writes a single briefing to its own document in users/{uid}/briefings/{bookId}.
+// This is the permanent storage — no 1MB cap risk.
+async function saveBriefing(bookId, data) {
+  const user = auth.currentUser;
+  if (!user) { return; }
+  if (_booksOwnedByUid && user.uid !== _booksOwnedByUid) { return; }
+  try {
+    await db.collection("users").doc(user.uid).collection("briefings").doc(bookId).set(data);
+  } catch (error) {
+    console.error("[saveBriefing] write failed:", error);
   }
 }
 
 function subscribeToBackgroundUpdates(uid) {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
-  _catalogUnsubscribe = db.collection("users").doc(uid).collection("catalog").doc("data")
-    .onSnapshot((snap) => {
-      if (!snap.exists) return;
-      // Guard against cross-user updates
-      if (!auth.currentUser || auth.currentUser.uid !== uid) return;
-      const data = snap.data();
-      let changed = false;
-      const newCache = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
-      const newPending = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
-      if (JSON.stringify(newCache) !== JSON.stringify(researchCache)) {
-        researchCache = newCache;
-        changed = true;
+  if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
+
+  const catalog = db.collection("users").doc(uid).collection("catalog");
+
+  // Watch "data" for pendingBriefingIds changes (written by Cloud Functions)
+  _catalogUnsubscribe = catalog.doc("data").onSnapshot((snap) => {
+    if (!snap.exists) return;
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    const data = snap.data();
+    const newPending = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
+    if (JSON.stringify(newPending) !== JSON.stringify(pendingBriefingIds)) {
+      pendingBriefingIds = newPending;
+      renderCatalog();
+      renderBriefingPanel();
+      updateResearchButtons();
+    }
+  }, (err) => { console.error("[subscribeToBackgroundUpdates] data snapshot error:", err); });
+
+  // Watch briefings subcollection — one doc per book, written by Cloud Functions or the client.
+  // On initial subscription Firestore delivers all existing docs as "added" changes.
+  _briefingsUnsubscribe = db.collection("users").doc(uid).collection("briefings").onSnapshot((snap) => {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    let changed = false;
+    snap.docChanges().forEach(function(change) {
+      if (change.type === "added" || change.type === "modified") {
+        const newData = change.doc.data();
+        if (JSON.stringify(researchCache[change.doc.id]) !== JSON.stringify(newData)) {
+          researchCache[change.doc.id] = newData;
+          changed = true;
+        }
+      } else if (change.type === "removed") {
+        if (researchCache[change.doc.id] !== undefined) {
+          delete researchCache[change.doc.id];
+          changed = true;
+        }
       }
-      if (JSON.stringify(newPending) !== JSON.stringify(pendingBriefingIds)) {
-        pendingBriefingIds = newPending;
-        changed = true;
-      }
-      if (changed) {
-        renderCatalog();
-        renderBriefingPanel();
-        updateResearchButtons();
-      }
-    }, (err) => {
-      console.error("[subscribeToBackgroundUpdates] snapshot error:", err);
     });
+    if (changed) {
+      renderCatalog();
+      renderBriefingPanel();
+      updateResearchButtons();
+    }
+  }, (err) => { console.error("[subscribeToBackgroundUpdates] briefings snapshot error:", err); });
 }
 
 async function saveBooks() {
-  await persistCatalog();
-}
-
-async function saveResearchCache() {
   await persistCatalog();
 }
 
@@ -2901,17 +2932,24 @@ async function loadCatalogData() {
   if (!user) { return; }
   const uid = user.uid;
   try {
-    const snap = await db.collection("users").doc(uid).collection("catalog").doc("data").get({ source: "server" });
+    const catalog = db.collection("users").doc(uid).collection("catalog");
+    const briefingsCol = db.collection("users").doc(uid).collection("briefings");
+    const [dataSnap, researchSnap, briefingsSnap] = await Promise.all([
+      catalog.doc("data").get({ source: "server" }),
+      catalog.doc("research").get({ source: "server" }),
+      briefingsCol.get({ source: "server" })
+    ]);
     // If auth changed while we were waiting (race condition), discard stale results.
     if (!auth.currentUser || auth.currentUser.uid !== uid) {
       console.log("[loadCatalogData] user changed during fetch — discarding results for", uid);
       return;
     }
-    console.log("[loadCatalogData] snap.exists:", snap.exists, "for uid:", uid);
-    if (snap.exists) {
-      const data = snap.data();
+    console.log("[loadCatalogData] data.exists:", dataSnap.exists,
+      "research.exists:", researchSnap.exists,
+      "briefings docs:", briefingsSnap.size, "for uid:", uid);
+    if (dataSnap.exists) {
+      const data = dataSnap.data();
       books = Array.isArray(data.books) ? data.books.map(normalizeBook) : [];
-      researchCache = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
       shelves = Array.isArray(data.shelves) && data.shelves.length
         ? data.shelves
         : [{ id: "default", name: "Reading List", createdAt: Date.now() }];
@@ -2919,11 +2957,43 @@ async function loadCatalogData() {
       shareLinks = data.shareLinks && typeof data.shareLinks === "object" ? data.shareLinks : {};
     } else {
       books = [];
-      researchCache = {};
       shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
       pendingBriefingIds = [];
       shareLinks = {};
     }
+
+    // Build researchCache from all three sources (oldest to newest wins):
+    //   1. catalog/data.researchCache  — very legacy (pre-split)
+    //   2. catalog/research            — intermediate legacy (post-split, pre-subcollection)
+    //   3. briefings/{bookId}          — current (subcollection)
+    const legacyDataCache = dataSnap.exists && dataSnap.data().researchCache &&
+      typeof dataSnap.data().researchCache === "object" ? dataSnap.data().researchCache : {};
+    const legacyResearchCache = researchSnap.exists && researchSnap.data().researchCache &&
+      typeof researchSnap.data().researchCache === "object" ? researchSnap.data().researchCache : {};
+    const subcollectionCache = {};
+    briefingsSnap.forEach(function(doc) { subcollectionCache[doc.id] = doc.data(); });
+
+    researchCache = Object.assign({}, legacyDataCache, legacyResearchCache, subcollectionCache);
+    console.log("[loadCatalogData] briefings in cache:", Object.keys(researchCache).length,
+      "(subcollection:", briefingsSnap.size, "legacy-research:", Object.keys(legacyResearchCache).length,
+      "legacy-data:", Object.keys(legacyDataCache).length, ")");
+
+    // Migration: copy any briefings not yet in the subcollection into briefings/{bookId} docs.
+    const toMigrate = Object.entries(researchCache).filter(function([id]) { return !subcollectionCache[id]; });
+    if (toMigrate.length > 0) {
+      console.log("[loadCatalogData] migrating", toMigrate.length, "briefings to subcollection…");
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < toMigrate.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        toMigrate.slice(i, i + BATCH_SIZE).forEach(function([id, briefingData]) {
+          batch.set(briefingsCol.doc(id), briefingData);
+        });
+        await batch.commit().catch(function(err) {
+          console.error("[loadCatalogData] migration batch failed:", err);
+        });
+      }
+    }
+
     // Restore last-viewed shelf for this user
     const savedShelfId = loadSavedShelfId(uid);
     currentShelfId = shelves.find(s => s.id === savedShelfId) ? savedShelfId : shelves[0].id;
@@ -3756,7 +3826,16 @@ async function deleteSelectedBooks() {
   books = books.filter(b => !ids.includes(b.id));
   ids.forEach(id => { delete researchCache[id]; });
   pendingBriefingIds = pendingBriefingIds.filter(pid => !ids.includes(pid));
+  const user = auth.currentUser;
   await persistCatalog();
+  // Delete individual briefing docs from the subcollection
+  if (user && _booksOwnedByUid === user.uid) {
+    try {
+      const batch = db.batch();
+      ids.forEach(id => { batch.delete(db.collection("users").doc(user.uid).collection("briefings").doc(id)); });
+      await batch.commit();
+    } catch (err) { console.error("[deleteSelectedBooks] briefing delete failed:", err); }
+  }
   if (ids.includes(selectedBookId)) {
     selectedBookId = null;
     renderBriefingPanel();
@@ -3796,7 +3875,13 @@ async function deleteBook(id) {
   books = books.filter((book) => book.id !== id);
   delete researchCache[id];
   pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== id);
+  const user = auth.currentUser;
   await persistCatalog();
+  // Delete the briefing doc from the subcollection
+  if (user && _booksOwnedByUid === user.uid) {
+    db.collection("users").doc(user.uid).collection("briefings").doc(id).delete()
+      .catch(err => console.error("[deleteBook] briefing delete failed:", err));
+  }
   if (selectedBookId === id) {
     selectedBookId = null;
     renderBriefingPanel();
@@ -3853,7 +3938,7 @@ async function generateResearchForSelected(forceRefresh) {
     }
     researchCache[book.id] = research;
     pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== book.id);
-    await saveResearchCache();
+    await saveBriefing(book.id, research);
     // Re-stamp after the await: an onSnapshot from a concurrent background
     // write can arrive during the yield and overwrite researchCache with the
     // older Firestore state (no briefing yet), clearing what we just set.
@@ -3934,7 +4019,7 @@ function renderBriefingPanel() {
   if (!briefing) {
     const isPending = pendingBriefingIds.includes(book.id);
     content.innerHTML = isPending
-      ? `<div class="briefing-empty"><p>&#8987; Briefing queued — will be generated automatically.</p></div>`
+      ? `<div class="briefing-empty"><p>&#8987; Briefing queued — click Generate to create it now, or it will run automatically.</p></div>`
       : `<div class="briefing-empty"><p>No briefing has been generated yet for this book.</p></div>`;
     document.getElementById("spoilerToggleLabel").style.display = "none";
     updateResearchButtons();
@@ -4253,9 +4338,9 @@ function updateResearchButtons() {
     btn.textContent = "Working…";
     btn.onclick = null;
   } else if (isPending && !briefing) {
-    btn.disabled = true;
-    btn.textContent = "Queued…";
-    btn.onclick = null;
+    btn.disabled = false;
+    btn.textContent = "Generate";
+    btn.onclick = () => generateResearchForSelected(false);
   } else if (briefing && (briefing.model || "gemini-2.5-flash") === expectedBriefingModel(book)) {
     // Briefing is current model for this book — hide regenerate button
     btn.style.display = "none";
@@ -5472,6 +5557,17 @@ async function importCatalog(input) {
     const { added, updated } = upsertImportedBooks(imported);
     Object.assign(researchCache, importedResearch);
     await persistCatalog();
+    // Persist any imported briefings to the subcollection
+    const importUser = auth.currentUser;
+    if (importUser && Object.keys(importedResearch).length > 0) {
+      try {
+        const batch = db.batch();
+        Object.entries(importedResearch).forEach(function([id, data]) {
+          batch.set(db.collection("users").doc(importUser.uid).collection("briefings").doc(id), data);
+        });
+        await batch.commit();
+      } catch (err) { console.error("[import] briefing save failed:", err); }
+    }
     updateShelfSelector();
     renderCatalog();
     const parts = [];
@@ -6485,6 +6581,7 @@ let _pendingSignOut = null;
 
 function _doSignOut() {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
+  if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
   document.getElementById("authOverlay").style.display = "flex";
   document.getElementById("guestBanner").style.display = "none";
   const icon = document.getElementById("userEmailIcon");

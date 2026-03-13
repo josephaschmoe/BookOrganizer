@@ -219,28 +219,31 @@ exports.onBooksChanged = onDocumentWritten(
     const before = event.data.before.exists ? event.data.before.data() : {};
     const after  = event.data.after.exists  ? event.data.after.data()  : {};
 
-    const beforeIds  = new Set((before.books || []).map(b => b.id));
-    const afterCache = after.researchCache || {};
+    const beforeIds = new Set((before.books || []).map(b => b.id));
+
+    const uid         = event.params.uid;
+    const dataRef     = db.collection("users").doc(uid).collection("catalog").doc("data");
+    const briefingsCol = db.collection("users").doc(uid).collection("briefings");
+
+    // Check which new books already have a briefing doc in the subcollection.
+    const candidateBooks = (after.books || []).filter(b => b.id && !beforeIds.has(b.id));
+    if (!candidateBooks.length) return;
+
+    // Fetch existing briefing docs in one batch (up to 30 ids per call)
+    const existingSnaps = await Promise.all(candidateBooks.map(b => briefingsCol.doc(b.id).get()));
+    const existingIds   = new Set(existingSnaps.filter(s => s.exists).map(s => s.id));
 
     // Only act on genuinely new books that have no briefing yet.
-    // This guard also prevents infinite loops when we write researchCache back.
-    const newBooks = (after.books || []).filter(
-      b => b.id && !beforeIds.has(b.id) && !afterCache[b.id]
-    );
+    const newBooks = candidateBooks.filter(b => !existingIds.has(b.id));
     if (!newBooks.length) return;
-
-    const uid = event.params.uid;
-    const ref = db.collection("users").doc(uid).collection("catalog").doc("data");
 
     if (newBooks.length <= THRESHOLD) {
       // Generate immediately, one at a time with a short delay
-      const cache = { ...afterCache };
       const failedIds = [];
       for (const book of newBooks) {
         try {
           const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
-          cache[book.id] = research;
-          await ref.update({ researchCache: cache });
+          await briefingsCol.doc(book.id).set(research);
         } catch (err) {
           console.error(`[onBooksChanged] Failed briefing for "${book.title}":`, err.message);
           failedIds.push(book.id);
@@ -252,7 +255,7 @@ exports.onBooksChanged = onDocumentWritten(
         const existing = Array.isArray(after.pendingBriefingIds) ? after.pendingBriefingIds : [];
         const toQueue  = failedIds.filter(id => !existing.includes(id));
         if (toQueue.length) {
-          await ref.update({ pendingBriefingIds: [...existing, ...toQueue] });
+          await dataRef.update({ pendingBriefingIds: [...existing, ...toQueue] });
         }
       }
     } else {
@@ -260,7 +263,7 @@ exports.onBooksChanged = onDocumentWritten(
       const existing = Array.isArray(after.pendingBriefingIds) ? after.pendingBriefingIds : [];
       const toQueue  = newBooks.map(b => b.id).filter(id => !existing.includes(id));
       if (toQueue.length) {
-        await ref.update({ pendingBriefingIds: [...existing, ...toQueue] });
+        await dataRef.update({ pendingBriefingIds: [...existing, ...toQueue] });
       }
     }
   }
@@ -274,34 +277,39 @@ exports.processPendingBriefings = onSchedule(
     // List all users and check each one's catalog for a pending queue
     const usersSnap = await db.collection("users").listDocuments();
     for (const userRef of usersSnap) {
-      const catalogRef = userRef.collection("catalog").doc("data");
-      const snap = await catalogRef.get();
-      if (!snap.exists) continue;
+      const dataRef      = userRef.collection("catalog").doc("data");
+      const briefingsCol = userRef.collection("briefings");
 
-      const data    = snap.data();
+      const dataSnap = await dataRef.get();
+      if (!dataSnap.exists) continue;
+
+      const data    = dataSnap.data();
       const pending = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
       if (!pending.length) continue;
 
-      const cache     = { ...(data.researchCache || {}) };
       const remaining = [...pending];
 
       for (const id of [...pending]) {
-        // Skip if already generated (e.g. user manually generated it)
-        if (cache[id]) {
-          remaining.splice(remaining.indexOf(id), 1);
-          continue;
-        }
         // Skip if book no longer exists (was deleted while queued)
         const book = (data.books || []).find(b => b.id === id);
         if (!book) {
           remaining.splice(remaining.indexOf(id), 1);
           continue;
         }
+        // Skip if already generated (e.g. user manually generated it)
+        const existingSnap = await briefingsCol.doc(id).get();
+        if (existingSnap.exists) {
+          remaining.splice(remaining.indexOf(id), 1);
+          continue;
+        }
 
         try {
-          cache[id] = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
+          const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
           remaining.splice(remaining.indexOf(id), 1);
-          await catalogRef.update({ researchCache: cache, pendingBriefingIds: remaining });
+          await Promise.all([
+            briefingsCol.doc(id).set(research),
+            dataRef.update({ pendingBriefingIds: remaining })
+          ]);
         } catch (err) {
           console.error(`[processPendingBriefings] Failed for "${book.title}":`, err.message);
         }
@@ -977,7 +985,10 @@ exports.getSharedShelf = onCall(async (request) => {
 
   const { ownerUid, shelfId, includePersonalNotes, allowWikiAI } = tokenDoc.data();
 
-  const catalogSnap = await db.collection("users").doc(ownerUid).collection("catalog").doc("data").get();
+  const catalogRef   = db.collection("users").doc(ownerUid).collection("catalog");
+  const briefingsCol = db.collection("users").doc(ownerUid).collection("briefings");
+
+  const catalogSnap = await catalogRef.doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
 
   const catalogData = catalogSnap.data();
@@ -992,10 +1003,25 @@ exports.getSharedShelf = onCall(async (request) => {
       return out;
     });
 
+  // Fetch briefings only for books on this shelf (avoids reading the whole subcollection).
   const shelfBookIds = new Set(shelfBooks.map((b) => b.id));
+  const briefingSnaps = await Promise.all(
+    [...shelfBookIds].map(id => briefingsCol.doc(id).get())
+  );
   const filteredCache = {};
-  for (const [id, briefing] of Object.entries(catalogData.researchCache || {})) {
-    if (shelfBookIds.has(id)) filteredCache[id] = briefing;
+  briefingSnaps.forEach(snap => {
+    if (snap.exists) filteredCache[snap.id] = snap.data();
+  });
+
+  // Legacy fallback for accounts not yet migrated to the subcollection.
+  if (Object.keys(filteredCache).length === 0) {
+    const researchSnap = await catalogRef.doc("research").get();
+    const legacyCache  = (researchSnap.exists && researchSnap.data().researchCache)
+      ? researchSnap.data().researchCache
+      : (catalogData.researchCache || {});
+    for (const [id, briefing] of Object.entries(legacyCache)) {
+      if (shelfBookIds.has(id)) filteredCache[id] = briefing;
+    }
   }
 
   return { shelfName: shelf.name, shelfId, includePersonalNotes, allowWikiAI: Boolean(allowWikiAI), books: shelfBooks, researchCache: filteredCache };
