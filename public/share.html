@@ -647,6 +647,7 @@ const functions = firebase.functions();
 let sharedBooks       = [];
 let sharedCache       = {};
 let sharedShelfName   = "";
+let sharedAllowWikiAI = false;
 let selectedBookId    = null;
 let showSpoilers      = false;
 let currentFilter     = "";
@@ -668,9 +669,10 @@ async function loadSharedShelf() {
     const fn = functions.httpsCallable("getSharedShelf");
     const result = await fn({ token });
     const data = result.data;
-    sharedBooks     = data.books || [];
-    sharedCache     = data.researchCache || {};
-    sharedShelfName = data.shelfName || "Shared Shelf";
+    sharedBooks       = data.books || [];
+    sharedCache       = data.researchCache || {};
+    sharedShelfName   = data.shelfName || "Shared Shelf";
+    sharedAllowWikiAI = Boolean(data.allowWikiAI);
     document.getElementById("headerShelfName").textContent = sharedShelfName;
     document.title = "TomeShelf \u2014 " + sharedShelfName;
     renderLayout();
@@ -1081,7 +1083,31 @@ async function lookupWikipedia() {
       content.innerHTML = renderWikiSummary(direct);
       return;
     }
-    // Pass B fallback — show not-found state with a search link
+    // Pass B — AI-assisted lookup if the share owner enabled it
+    if (sharedAllowWikiAI) {
+      content.innerHTML =
+        '<div style="padding:48px 20px;text-align:center;">' +
+          '<div style="font-family:\'EB Garamond\',serif;font-size:1rem;color:var(--brown);">Checking Wikipedia with AI\u2026</div>' +
+        '</div>';
+      try {
+        const wikiAIFn = functions.httpsCallable("resolveWikipediaArticlesShared");
+        const wikiResult = await wikiAIFn({ token, title: book.title, author: book.author || "" });
+        const articles = wikiResult.data || {};
+        const articleTitle = articles.book_article || articles.author_article || "";
+        if (articleTitle) {
+          const aiSummary = await _wikiGetSummary(articleTitle);
+          if (aiSummary) {
+            content.innerHTML = renderWikiSummary(aiSummary);
+            return;
+          }
+        }
+      } catch (aiErr) {
+        console.warn("[lookupWikipedia] AI Pass B failed:", aiErr.message);
+        // fall through to not-found state
+      }
+    }
+
+    // Not found — show search link
     const searchUrl = "https://en.wikipedia.org/w/index.php?search=" +
       encodeURIComponent([book.title, book.author].filter(Boolean).join(" "));
     content.innerHTML =

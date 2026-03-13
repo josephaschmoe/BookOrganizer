@@ -914,6 +914,7 @@ exports.createShareLink = onCall(async (request) => {
   const uid                = request.auth.uid;
   const shelfId            = String((request.data || {}).shelfId || "").trim();
   const includePersonalNotes = Boolean((request.data || {}).includePersonalNotes);
+  const allowWikiAI          = Boolean((request.data || {}).allowWikiAI);
 
   if (!shelfId) throw new HttpsError("invalid-argument", "shelfId is required.");
 
@@ -941,12 +942,13 @@ exports.createShareLink = onCall(async (request) => {
     ownerUid: uid,
     shelfId,
     includePersonalNotes,
+    allowWikiAI,
     createdAt,
   });
 
   const updatedLinks = { ...existingLinks };
   if (existingToken) delete updatedLinks[existingToken];
-  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, createdAt };
+  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, allowWikiAI, createdAt };
   batch.update(catalogRef, { shareLinks: updatedLinks });
 
   await batch.commit();
@@ -963,7 +965,7 @@ exports.getSharedShelf = onCall(async (request) => {
   const tokenDoc = await db.collection("shareLinks").doc(token).get();
   if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
 
-  const { ownerUid, shelfId, includePersonalNotes } = tokenDoc.data();
+  const { ownerUid, shelfId, includePersonalNotes, allowWikiAI } = tokenDoc.data();
 
   const catalogSnap = await db.collection("users").doc(ownerUid).collection("catalog").doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
@@ -986,7 +988,86 @@ exports.getSharedShelf = onCall(async (request) => {
     if (shelfBookIds.has(id)) filteredCache[id] = briefing;
   }
 
-  return { shelfName: shelf.name, shelfId, includePersonalNotes, books: shelfBooks, researchCache: filteredCache };
+  return { shelfName: shelf.name, shelfId, includePersonalNotes, allowWikiAI: Boolean(allowWikiAI), books: shelfBooks, researchCache: filteredCache };
+});
+
+/**
+ * resolveWikipediaArticlesShared — like resolveWikipediaArticles but for
+ * share viewers. Validates token exists and has allowWikiAI: true before
+ * calling Gemini; the token itself acts as the authorization credential.
+ */
+exports.resolveWikipediaArticlesShared = onCall({ secrets: [geminiApiKey] }, async (request) => {
+  const token  = cleanText((request.data || {}).token  || "");
+  const title  = cleanText((request.data || {}).title  || "");
+  const author = cleanText((request.data || {}).author || "");
+
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+  if (!title) throw new HttpsError("invalid-argument", "Book title is required.");
+
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
+  if (!tokenDoc.data().allowWikiAI) {
+    throw new HttpsError("permission-denied", "AI Wikipedia lookup is not enabled for this share link.");
+  }
+
+  const prompt = [
+    `Book title: "${title}"`,
+    `Author: "${author}"`,
+    "",
+    "Return the exact Wikipedia article titles for:",
+    "1. book_article — the Wikipedia article specifically about this book.",
+    "   Return empty string if no dedicated article exists or you are not confident.",
+    "2. author_article — the Wikipedia article about the PRIMARY author.",
+    "   If multiple authors are listed, use only the first/main one.",
+    "   Return empty string if you are not confident.",
+    "",
+    "Rules:",
+    "- Use the exact title as it appears in Wikipedia, including capitalisation,",
+    "  punctuation, and any parenthetical disambiguation (e.g. \"The Road (novel)\",",
+    "  \"What Is Life?\", \"Lincoln (novel)\").",
+    "- Return empty string — never null — for any article you cannot confidently identify.",
+    "- Return JSON only."
+  ].join("\n");
+
+  const payload = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 128,
+      responseMimeType: "application/json",
+      responseJsonSchema: wikiArticleSchema,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  let res;
+  try {
+    res = await fetchWithRetry(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey.value() },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    throw new HttpsError("unavailable", "Unable to reach Gemini API.");
+  }
+
+  const rawText = await res.text();
+  if (!res.ok) {
+    console.error("resolveWikipediaArticlesShared Gemini error", res.status, rawText.slice(0, 300));
+    throw new HttpsError("internal", `Gemini request failed (HTTP ${res.status}).`);
+  }
+
+  let parsed;
+  try {
+    parsed = parseResearchJson(extractCandidateText(JSON.parse(rawText)));
+  } catch (err) {
+    throw new HttpsError("internal", "Could not parse Gemini response.");
+  }
+
+  return {
+    book_article:   String(parsed.book_article   || "").trim(),
+    author_article: String(parsed.author_article || "").trim()
+  };
 });
 
 /**

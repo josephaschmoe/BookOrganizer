@@ -5378,8 +5378,11 @@ function _renderShareDialog() {
       '<p style="font-size:0.88rem;color:#666;margin-bottom:14px;line-height:1.5;">' +
         'Generate a read-only link anyone can use to browse this shelf. No sign-in required.' +
       '</p>' +
-      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:0.88rem;cursor:pointer;">' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:0.88rem;cursor:pointer;">' +
         '<input type="checkbox" id="shareIncludeNotes"> Include my personal notes' +
+      '</label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:0.88rem;cursor:pointer;">' +
+        '<input type="checkbox" id="shareAllowWikiAI"> Allow AI Wikipedia lookup' +
       '</label>' +
       '<button class="btn btn-secondary" type="button" id="generateShareBtn" onclick="generateShareLink()">' +
         'Generate Share Link' +
@@ -5392,6 +5395,7 @@ function _renderShareDialog() {
       '<p style="font-size:0.82rem;color:var(--brown);margin-bottom:10px;">' +
         'Active since ' + esc(createdDate) +
         (linkData.includePersonalNotes ? ' &middot; <em>includes personal notes</em>' : '') +
+        (linkData.allowWikiAI ? ' &middot; <em>AI Wikipedia enabled</em>' : '') +
       '</p>' +
       '<div style="display:flex;gap:8px;margin-bottom:6px;">' +
         '<input type="text" id="shareUrlInput" value="' + escapeAttribute(url) + '" readonly' +
@@ -5414,15 +5418,18 @@ async function generateShareLink() {
   if (btn) { btn.disabled = true; btn.textContent = "Generating\u2026"; }
   const includePersonalNotes = document.getElementById("shareIncludeNotes")
     ? document.getElementById("shareIncludeNotes").checked : false;
+  const allowWikiAI = document.getElementById("shareAllowWikiAI")
+    ? document.getElementById("shareAllowWikiAI").checked : false;
   try {
     const fn = functions.httpsCallable("createShareLink");
-    const result = await fn({ shelfId, includePersonalNotes });
+    const result = await fn({ shelfId, includePersonalNotes, allowWikiAI });
     const token = result.data.token;
     const shelf = shelves.find(function(s) { return s.id === shelfId; });
     shareLinks[token] = {
       shelfId,
       shelfName: shelf ? shelf.name : "",
       includePersonalNotes,
+      allowWikiAI,
       createdAt: Date.now()
     };
     _renderShareDialog();
@@ -5489,6 +5496,7 @@ function _renderSharedShelvesSection() {
         '<div style="font-size:0.75rem;color:var(--brown);margin-top:2px;">' +
           'Shared ' + esc(createdDate) +
           (link.includePersonalNotes ? ' &middot; includes personal notes' : '') +
+          (link.allowWikiAI ? ' &middot; AI Wikipedia enabled' : '') +
         '</div>' +
       '</div>' +
       '<button class="btn btn-danger btn-sm" type="button" ' +
