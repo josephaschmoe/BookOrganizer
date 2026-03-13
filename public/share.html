@@ -1153,8 +1153,15 @@ function goBackToList() {
   const detailCol = document.getElementById("detailCol");
   listCol.classList.remove("detail-visible");
   detailCol.classList.remove("detail-visible");
+  const lastId = selectedBookId;
   selectedBookId = null;
   renderBookList();
+  if (lastId) {
+    requestAnimationFrame(function() {
+      const card = document.querySelector('.book-card[data-book-id="' + lastId + '"]');
+      if (card) card.scrollIntoView({ block: "center", behavior: "instant" });
+    });
+  }
 }
 
 // ── Book detail ───────────────────────────────────────────────────────────────
