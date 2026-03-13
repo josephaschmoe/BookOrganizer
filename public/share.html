@@ -125,15 +125,21 @@
       gap: 10px;
     }
 
-    .panel-header .back-btn {
+    .panel-header .back-btn,
+    .panel-header .nav-btn {
       background: none;
       border: none;
       color: var(--cream);
       cursor: pointer;
       font-size: 1rem;
       padding: 0 4px;
-      display: none;
     }
+
+    .panel-header .back-btn { display: none; }
+    .panel-header .nav-btn { opacity: 0.4; }
+    .panel-header .nav-btn:not(:disabled) { opacity: 1; }
+    .panel-header .nav-btn:disabled { cursor: default; }
+    .panel-header .nav-group { margin-left: auto; display: flex; gap: 2px; }
 
     @media (max-width: 900px) {
       .panel-header .back-btn { display: inline; }
@@ -714,6 +720,10 @@ function renderLayout() {
         '<div class="panel-header">' +
           '<button class="back-btn" onclick="goBackToList()" title="Back">&#8592;</button>' +
           '<span>Book Details &amp; Discussion Guide</span>' +
+          '<div class="nav-group">' +
+            '<button class="nav-btn" id="prevBookBtn" onclick="navigateBook(-1)" title="Previous book" disabled>&#8592;</button>' +
+            '<button class="nav-btn" id="nextBookBtn" onclick="navigateBook(1)"  title="Next book"     disabled>&#8594;</button>' +
+          '</div>' +
         '</div>' +
         '<div class="panel-body" id="detailBody">' +
           '<div class="briefing-empty"><p>Choose a book to view its details and discussion guide.</p></div>' +
@@ -722,6 +732,7 @@ function renderLayout() {
     '</div>';
 
   renderBookList();
+  _attachDetailSwipe();
 }
 
 // ── Book list ─────────────────────────────────────────────────────────────────
@@ -932,12 +943,63 @@ function renderBookDetail() {
   }
 
   detailBody.innerHTML = headerHtml + actionsHtml + briefingHtml;
+  updateNavArrows();
 }
 
 function toggleSpoilers(checked) {
   showSpoilers = checked;
   renderBookDetail();
 }
+
+// ── Book navigation ───────────────────────────────────────────────────────────
+function navigateBook(delta) {
+  if (!selectedBookId) return;
+  const list = filteredSortedBooks();
+  const idx  = list.findIndex(function(b) { return b.id === selectedBookId; });
+  if (idx === -1) return;
+  const newIdx = idx + delta;
+  if (newIdx < 0 || newIdx >= list.length) return;
+  selectedBookId = list[newIdx].id;
+  showSpoilers = false;
+  renderBookList();
+  renderBookDetail();
+  updateNavArrows();
+}
+
+function updateNavArrows() {
+  const prev = document.getElementById("prevBookBtn");
+  const next = document.getElementById("nextBookBtn");
+  if (!prev || !next) return;
+  const list = filteredSortedBooks();
+  const idx  = list.findIndex(function(b) { return b.id === selectedBookId; });
+  prev.disabled = idx <= 0;
+  next.disabled = idx === -1 || idx >= list.length - 1;
+}
+
+function _attachDetailSwipe() {
+  var sx = 0, sy = 0;
+  var panel = document.getElementById("detailCol");
+  if (!panel) return;
+  panel.addEventListener("touchstart", function(e) {
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+  }, { passive: true });
+  panel.addEventListener("touchend", function(e) {
+    var dx = e.changedTouches[0].clientX - sx;
+    var dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 60) {
+      if (dx < 0) navigateBook(1);
+      else        navigateBook(-1);
+    }
+  }, { passive: true });
+}
+
+window.addEventListener("keydown", function(e) {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement && document.activeElement.tagName)) return;
+  if (!selectedBookId) return;
+  if (e.key === "ArrowRight") { navigateBook(1);  e.preventDefault(); }
+  else if (e.key === "ArrowLeft")  { navigateBook(-1); e.preventDefault(); }
+});
 
 // ── Cover lightbox ─────────────────────────────────────────────────────────────
 function showCoverLightbox(url) {
@@ -1017,11 +1079,21 @@ async function lookupWikipedia() {
       content.innerHTML = renderWikiSummary(direct);
       return;
     }
-    // Pass B fallback — open Wikipedia search in new tab, close modal
-    modal.classList.remove("open");
+    // Pass B fallback — show not-found state with a search link
     const searchUrl = "https://en.wikipedia.org/w/index.php?search=" +
       encodeURIComponent([book.title, book.author].filter(Boolean).join(" "));
-    window.open(searchUrl, "_blank", "noopener,noreferrer");
+    content.innerHTML =
+      '<div class="wiki-not-found">' +
+        '<div style="font-size:2rem;margin-bottom:12px;">\uD83D\uDCDA</div>' +
+        '<div style="font-family:\'Playfair Display\',serif;color:var(--dark);font-size:1.05rem;margin-bottom:8px;">No Wikipedia page found for this book or author.</div>' +
+        '<div style="font-family:\'EB Garamond\',serif;color:var(--brown);font-size:0.9rem;margin-bottom:20px;">' +
+          'You can try searching Wikipedia directly \u2014 it may be listed under a different title.' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+          '<a class="btn btn-secondary btn-sm" href="' + escapeAttribute(searchUrl) + '" target="_blank" rel="noopener noreferrer">Search Wikipedia &#8594;</a>' +
+          '<button class="btn btn-light btn-sm" onclick="closeWikiModal()">Close</button>' +
+        '</div>' +
+      '</div>';
   } catch (err) {
     content.innerHTML =
       '<div class="wiki-not-found">' +
