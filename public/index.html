@@ -5068,8 +5068,11 @@ async function deleteShelf(id) {
   renderCatalog();
 }
 
-async function initializeApp() {
-  setMobileSection("catalog");
+async function initializeApp(cameraReturn = false) {
+  // On camera return (full page reload after taking a photo) stay on the Add tab
+  // so the captured photo — delivered via onchange after the reload — is visible.
+  // On normal init, navigate to Catalog.
+  setMobileSection(cameraReturn ? "add" : "catalog");
   renderCatalog();
   renderBriefingPanel();
   updateResearchButtons();
@@ -5715,6 +5718,41 @@ function _doSignOut() {
   loadApiConfig();
 }
 
+// ── Camera-return overlay suppression ────────────────────────────────────────
+// On iOS, using capture="environment" can trigger a full page reload when the
+// user returns from the native camera.  The auth overlay is visible by default
+// in CSS; Firebase takes 1-2 s to restore the cached session, so the user would
+// see the login form flash briefly on every camera photo.  Running this check
+// synchronously — before onAuthStateChanged is even registered — hides the
+// overlay immediately if the camera was recently opened (localStorage flag set
+// by startPhotoCamera), making the reload invisible to the user.
+(function () {
+  try {
+    const ts = parseInt(localStorage.getItem("_cameraActive") || "0", 10);
+    if (ts && Date.now() - ts < 120000) {
+      const ov = document.getElementById("authOverlay");
+      if (ov) ov.style.display = "none";
+    }
+  } catch (e) {}
+}());
+
+// bfcache restore (page was frozen rather than reloaded): timers may fire
+// immediately on restore if their duration elapsed while the page was frozen.
+// Cancel any stale pending sign-out and re-issue a fresh one so Firebase has
+// time to re-validate the session after the page returns to foreground.
+window.addEventListener("pageshow", function (event) {
+  if (!event.persisted) return;
+  if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
+  try {
+    const ts = parseInt(localStorage.getItem("_cameraActive") || "0", 10);
+    if (ts && Date.now() - ts < 120000) {
+      const ov = document.getElementById("authOverlay");
+      if (ov) ov.style.display = "none";
+      _pendingSignOut = setTimeout(function () { _pendingSignOut = null; _doSignOut(); }, 8000);
+    }
+  } catch (e) {}
+});
+
 auth.onAuthStateChanged(async (user) => {
   console.log("[onAuthStateChanged] uid:", user ? user.uid : "null", "email:", user ? user.email : "null",
     "prev booksOwner:", _booksOwnedByUid);
@@ -5722,8 +5760,13 @@ auth.onAuthStateChanged(async (user) => {
   if (user) {
     // Cancel any pending sign-out — this was a transient null (e.g. camera return)
     if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
-    // Clear the camera-active flag now that auth is confirmed
-    try { localStorage.removeItem("_cameraActive"); } catch(e) {}
+    // Read the camera-return flag BEFORE clearing it so initializeApp() can use it
+    let _wasCameraReturn = false;
+    try {
+      const _cts = parseInt(localStorage.getItem("_cameraActive") || "0", 10);
+      _wasCameraReturn = _cts > 0 && (Date.now() - _cts < 120000);
+      localStorage.removeItem("_cameraActive");
+    } catch(e) {}
 
     document.getElementById("authOverlay").style.display = "none";
     const icon = document.getElementById("userEmailIcon");
@@ -5764,26 +5807,27 @@ auth.onAuthStateChanged(async (user) => {
     shelves = [];
     pendingBriefingIds = [];
     currentShelfId = "default";
-    await initializeApp();
+    await initializeApp(_wasCameraReturn);
     subscribeToBackgroundUpdates(user.uid);
 
   } else {
     // user = null: could be transient (camera / background return) or a real logout.
-    // If a user was loaded, wait briefly before resetting — a real logout won't be
-    // followed by a user event, but a camera return will cancel the timer.
-    const icon = document.getElementById("userEmailIcon");
-    const emailText = document.getElementById("userEmailText");
-    icon.style.display = "none";
-    icon.src = "";
-    emailText.style.display = "none";
-
-    // Check whether the native camera was recently opened.  On iOS, the camera
-    // can trigger a full page reload on return, resetting _booksOwnedByUid to null.
-    // The localStorage timestamp lets us detect this case even after a reload.
+    // Check the camera flag FIRST so we can suppress visual changes during a
+    // camera return — the overlay pre-hid itself and we don't want the header
+    // icon to flicker either.
     const _cameraTs = (() => {
       try { return parseInt(localStorage.getItem("_cameraActive") || "0", 10); } catch(e) { return 0; }
     })();
     const _recentCamera = _cameraTs > 0 && (Date.now() - _cameraTs < 120000); // within 2 min
+
+    if (!_recentCamera) {
+      // Not a camera return — hide the header identity indicators while auth resolves
+      const icon = document.getElementById("userEmailIcon");
+      const emailText = document.getElementById("userEmailText");
+      icon.style.display = "none";
+      icon.src = "";
+      emailText.style.display = "none";
+    }
 
     if (_booksOwnedByUid || _recentCamera) {
       // Either a transient null after having a user (bfcache restore) or a camera-return
