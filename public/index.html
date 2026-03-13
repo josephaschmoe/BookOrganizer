@@ -3953,30 +3953,30 @@ function startPhotoLookup() {
   document.getElementById("photoInput").click();
 }
 
-async function handlePhotoSelection(input) {
-  const fileList = Array.from(input.files || []).slice(0, 3);
-  if (!fileList.length) {
+function handlePhotoSelection(input) {
+  const files = Array.from(input.files || []).slice(0, 3);
+  if (!files.length) {
     // User cancelled (e.g. dismissed camera without taking a photo)
     try { localStorage.removeItem("_cameraActive"); } catch(e) {}
     return;
   }
-  // Immediately buffer each file's raw bytes into a memory-backed Blob BEFORE
-  // clearing input.value.  On iOS/WebKit, File objects can silently lose access
-  // to their underlying data once the file input is reset, causing URL.createObjectURL
-  // and createImageBitmap to fail.  Reading via arrayBuffer() copies the data into
-  // JS heap memory, making the resulting Blob stable for the lifetime of this page.
-  const buffered = await Promise.all(fileList.map(async (f) => {
-    try {
-      const buf = await f.arrayBuffer();
-      return new Blob([buf], { type: f.type || "image/jpeg" });
-    } catch (e) {
-      return f; // fallback: keep original File if buffering fails
-    }
-  }));
   try { localStorage.removeItem("_cameraActive"); } catch(e) {}
-  input.value = "";
-  photoFiles = buffered;
+  // Set photoFiles and render thumbnails synchronously so they appear
+  // immediately in the same microtask as the onchange event.  The async
+  // arrayBuffer() buffering approach introduced a gap during which timing
+  // issues (auth restore, bfcache events) could prevent thumbnails from
+  // appearing.  createImageBitmap() in resizeImage() reads the file data
+  // directly when Analyze is tapped — no upfront buffering needed.
+  photoFiles = files;
   renderPhotoThumbnails();
+  // Reset gallery inputs so the same file can be re-selected again later.
+  // Do NOT reset the camera input — each shot is always unique content
+  // (so reset is unnecessary), and clearing it on some iOS versions can
+  // silently invalidate the File object before createImageBitmap() reads
+  // it when the user taps Analyze.
+  if (input.id !== "photoCameraInput") {
+    input.value = "";
+  }
 }
 
 function renderPhotoThumbnails() {
