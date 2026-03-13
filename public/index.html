@@ -1651,16 +1651,25 @@ const firebaseConfig = {
   .cover-choice-thumb {
     display: flex; flex-direction: column; align-items: center; gap: 4px;
     cursor: pointer; opacity: 0.45; transition: opacity 0.15s;
+    -webkit-touch-callout: none; /* suppress iOS "Save Image" context menu */
+    -webkit-user-select: none; user-select: none;
+    touch-action: manipulation; /* prevent double-tap zoom interfering */
   }
   .cover-choice-thumb.selected { opacity: 1; outline: 2px solid var(--gold); outline-offset: 2px; }
   .cover-choice-thumb:hover { opacity: 0.8; }
   .cover-choice-thumb img {
     width: 52px; height: 72px; object-fit: cover;
     border: 1px solid var(--tan); display: block;
+    pointer-events: none; /* let the parent div handle all pointer events */
   }
   .cover-choice-thumb span {
     font-size: 0.58rem; font-family: 'Courier Prime', monospace;
     color: var(--brown); text-align: center; line-height: 1.2;
+  }
+  .cover-choice-hint {
+    font-size: 0.62rem; font-family: 'Courier Prime', monospace;
+    color: var(--brown); opacity: 0.6; text-align: center;
+    margin: 5px 0 0; letter-spacing: 0.01em;
   }
 
   .review-title {
@@ -2485,6 +2494,12 @@ let photoLookupInFlight = false;
 let reviewData = null;
 let _photoObjectUrl = null;       // object URL of the first search photo, for cover picker
 let _selectedCoverSource = "database"; // "database" | "photo"
+// Long-press state for cover choice thumbnails
+let _coverThumbTimer   = null;
+let _coverThumbFired   = false;  // true if the long-press lightbox already opened
+let _coverThumbStartX  = 0;
+let _coverThumbStartY  = 0;
+const COVER_LONG_PRESS_MS = 450;
 let html5QrScanner = null;
 // Bulk Load state
 let bulkLoadInFlight = false;
@@ -4119,17 +4134,21 @@ function renderReviewCard(match) {
 
   let coverHtml = "";
   if (showPicker) {
+    const _dbUrl = escapeAttribute(match.coverUrl);
+    const _phUrl = escapeAttribute(_photoObjectUrl);
+    const _pe = `onpointerdown="coverThumbDown(event,this)" onpointerup="coverThumbUp(event,this)" onpointercancel="coverThumbCancel(event,this)" onpointermove="coverThumbMove(event,this)" oncontextmenu="return false"`;
     coverHtml = `
       <div class="cover-choice">
-        <div class="cover-choice-thumb selected" data-src="database" onclick="selectCoverSource('database')" title="Use database cover">
-          <img src="${escapeAttribute(match.coverUrl)}" alt="Database cover" onerror="this.style.visibility='hidden'">
+        <div class="cover-choice-thumb selected" data-src="database" data-imgurl="${_dbUrl}" ${_pe}>
+          <img src="${_dbUrl}" alt="Database cover" onerror="this.style.visibility='hidden'" draggable="false">
           <span>Database</span>
         </div>
-        <div class="cover-choice-thumb" data-src="photo" onclick="selectCoverSource('photo')" title="Use my photo">
-          <img src="${escapeAttribute(_photoObjectUrl)}" alt="My photo">
+        <div class="cover-choice-thumb" data-src="photo" data-imgurl="${_phUrl}" ${_pe}>
+          <img src="${_phUrl}" alt="My photo" draggable="false">
           <span>My Photo</span>
         </div>
-      </div>`;
+      </div>
+      <p class="cover-choice-hint">Tap to select &middot; Hold to preview</p>`;
   } else if (hasDatabaseCover) {
     coverHtml = `<img src="${escapeAttribute(match.coverUrl)}" alt="Cover" class="review-cover" onclick="showCoverLightbox('${escapeAttribute(match.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`;
   }
@@ -4171,6 +4190,42 @@ function selectCoverSource(src) {
   document.querySelectorAll(".cover-choice-thumb").forEach(el => {
     el.classList.toggle("selected", el.dataset.src === src);
   });
+}
+
+// Long-press handlers for cover choice thumbnails.
+// Short tap  (< COVER_LONG_PRESS_MS) → select that cover.
+// Long press (≥ COVER_LONG_PRESS_MS) → open lightbox for full-size preview.
+function coverThumbDown(e, el) {
+  e.preventDefault(); // suppress ghost click and iOS image save sheet
+  _coverThumbFired  = false;
+  _coverThumbStartX = e.clientX;
+  _coverThumbStartY = e.clientY;
+  el.setPointerCapture(e.pointerId); // route move/up/cancel to this element
+  _coverThumbTimer = setTimeout(() => {
+    _coverThumbFired = true;
+    const url = el.dataset.imgurl;
+    if (url) showCoverLightbox(url);
+  }, COVER_LONG_PRESS_MS);
+}
+function coverThumbMove(e, el) {
+  if (!_coverThumbTimer) return;
+  const dx = e.clientX - _coverThumbStartX;
+  const dy = e.clientY - _coverThumbStartY;
+  if (Math.sqrt(dx * dx + dy * dy) > 10) {
+    // Finger moved — treat as scroll gesture, cancel the press
+    clearTimeout(_coverThumbTimer);
+    _coverThumbTimer = null;
+  }
+}
+function coverThumbUp(e, el) {
+  if (_coverThumbTimer) { clearTimeout(_coverThumbTimer); _coverThumbTimer = null; }
+  if (!_coverThumbFired) selectCoverSource(el.dataset.src); // short tap
+  _coverThumbFired = false;
+}
+function coverThumbCancel(e, el) {
+  clearTimeout(_coverThumbTimer);
+  _coverThumbTimer = null;
+  _coverThumbFired = false;
 }
 
 async function acceptReviewMatch() {
