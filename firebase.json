@@ -5,6 +5,9 @@
       "firebase.json",
       ".firebaserc",
       "**/.git/**"
+    ],
+    "rewrites": [
+      { "source": "/share/**", "destination": "/share.html" }
     ]
   },
   "functions": [

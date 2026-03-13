@@ -1963,6 +1963,11 @@ const firebaseConfig = {
     margin-top: 4px;
   }
 
+  .btn.share-btn-active {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
   @media (max-width: 420px) {
     .shelf-item-actions {
       flex-basis: 100%;
@@ -2520,6 +2525,16 @@ const firebaseConfig = {
   </div>
 </div>
 
+<div class="modal-overlay" id="shareDialog" onclick="closeShareDialog(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:380px;">
+    <h3 id="shareDialogTitle" style="margin-bottom:14px;">Share Shelf</h3>
+    <div id="shareDialogContent"></div>
+    <div class="modal-actions" style="margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-light" type="button" onclick="closeShareDialog()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="accountSettingsModal" onclick="closeAccountSettings(event)">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
     <h3 style="margin-bottom:8px;">Account Settings</h3>
@@ -2561,6 +2576,12 @@ const firebaseConfig = {
       </div>
     </div>
 
+    <!-- Shared Shelves section — shown for signed-in non-guest users -->
+    <div id="accountSettingsShareSection" style="display:none;border-top:1px solid var(--tan);padding-top:16px;margin-top:16px;">
+      <p style="font-size:0.88rem;color:var(--ink);margin-bottom:10px;"><strong>Shared Shelves</strong></p>
+      <div id="sharedShelvesList"></div>
+    </div>
+
     <div class="modal-actions" style="margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-light" type="button" onclick="closeAccountSettings()">Close</button>
     </div>
@@ -2591,6 +2612,7 @@ const firebaseConfig = {
 let books = [];
 let researchCache = {};
 let shelves = [];
+let shareLinks = {};
 let currentShelfId = "default";
 let _booksOwnedByUid = null; // tracks which user the in-memory books belong to
 let pendingBook = null;
@@ -2664,7 +2686,7 @@ async function persistCatalog() {
     return;
   }
   try {
-    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves, pendingBriefingIds });
+    await db.collection("users").doc(user.uid).collection("catalog").doc("data").set({ books, researchCache, shelves, pendingBriefingIds, shareLinks });
   } catch (error) {
     console.error(error);
     setStatus("addStatus", "Saved locally, but cloud sync failed.", "error");
@@ -2729,11 +2751,13 @@ async function loadCatalogData() {
         ? data.shelves
         : [{ id: "default", name: "Reading List", createdAt: Date.now() }];
       pendingBriefingIds = Array.isArray(data.pendingBriefingIds) ? data.pendingBriefingIds : [];
+      shareLinks = data.shareLinks && typeof data.shareLinks === "object" ? data.shareLinks : {};
     } else {
       books = [];
       researchCache = {};
       shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
       pendingBriefingIds = [];
+      shareLinks = {};
     }
     // Restore last-viewed shelf for this user
     const savedShelfId = loadSavedShelfId(uid);
@@ -5324,11 +5348,163 @@ function closeShelvesModal(e) {
   }
 }
 
+// ── Share Dialog ─────────────────────────────────────────────────────────────
+
+let _shareDialogShelfId = null;
+
+function openShareDialog(shelfId) {
+  _shareDialogShelfId = shelfId;
+  const shelf = shelves.find(function(s) { return s.id === shelfId; });
+  if (!shelf) return;
+  document.getElementById("shareDialogTitle").textContent = "Share \u201c" + shelf.name + "\u201d";
+  _renderShareDialog();
+  document.getElementById("shareDialog").classList.add("open");
+}
+
+function closeShareDialog(event) {
+  if (event && event.target !== document.getElementById("shareDialog")) return;
+  document.getElementById("shareDialog").classList.remove("open");
+  _shareDialogShelfId = null;
+}
+
+function _renderShareDialog() {
+  const shelfId = _shareDialogShelfId;
+  if (!shelfId) return;
+  const content = document.getElementById("shareDialogContent");
+  const token = Object.keys(shareLinks).find(function(t) { return shareLinks[t].shelfId === shelfId; });
+
+  if (!token) {
+    content.innerHTML =
+      '<p style="font-size:0.88rem;color:#666;margin-bottom:14px;line-height:1.5;">' +
+        'Generate a read-only link anyone can use to browse this shelf. No sign-in required.' +
+      '</p>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:0.88rem;cursor:pointer;">' +
+        '<input type="checkbox" id="shareIncludeNotes"> Include my personal notes' +
+      '</label>' +
+      '<button class="btn btn-secondary" type="button" id="generateShareBtn" onclick="generateShareLink()">' +
+        'Generate Share Link' +
+      '</button>';
+  } else {
+    const linkData = shareLinks[token];
+    const url = "https://schmoeslibrary-ff6c2.web.app/share/" + token;
+    const createdDate = new Date(linkData.createdAt).toLocaleDateString();
+    content.innerHTML =
+      '<p style="font-size:0.82rem;color:var(--brown);margin-bottom:10px;">' +
+        'Active since ' + esc(createdDate) +
+        (linkData.includePersonalNotes ? ' &middot; <em>includes personal notes</em>' : '') +
+      '</p>' +
+      '<div style="display:flex;gap:8px;margin-bottom:6px;">' +
+        '<input type="text" id="shareUrlInput" value="' + escapeAttribute(url) + '" readonly' +
+          ' style="flex:1;font-family:\'Courier Prime\',monospace;font-size:0.75rem;' +
+                  'background:var(--cream);border:1px solid var(--tan);padding:6px 8px;' +
+                  'border-radius:2px;color:var(--ink);">' +
+        '<button class="btn btn-secondary btn-sm" type="button" onclick="copyShareUrl()">Copy</button>' +
+      '</div>' +
+      '<div id="shareDialogStatus" style="font-size:0.82rem;color:var(--green);min-height:1.2em;margin-bottom:10px;"></div>' +
+      '<button class="btn btn-danger btn-sm" type="button" onclick="revokeActiveShareLink(\'' + escapeAttribute(token) + '\')">' +
+        'Revoke Link' +
+      '</button>';
+  }
+}
+
+async function generateShareLink() {
+  const shelfId = _shareDialogShelfId;
+  if (!shelfId) return;
+  const btn = document.getElementById("generateShareBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Generating\u2026"; }
+  const includePersonalNotes = document.getElementById("shareIncludeNotes")
+    ? document.getElementById("shareIncludeNotes").checked : false;
+  try {
+    const fn = functions.httpsCallable("createShareLink");
+    const result = await fn({ shelfId, includePersonalNotes });
+    const token = result.data.token;
+    const shelf = shelves.find(function(s) { return s.id === shelfId; });
+    shareLinks[token] = {
+      shelfId,
+      shelfName: shelf ? shelf.name : "",
+      includePersonalNotes,
+      createdAt: Date.now()
+    };
+    _renderShareDialog();
+    renderShelvesModal();
+  } catch (err) {
+    console.error("[generateShareLink]", err);
+    if (btn) { btn.disabled = false; btn.textContent = "Generate Share Link"; }
+    alert("Could not generate share link. Please try again.");
+  }
+}
+
+function copyShareUrl() {
+  const input = document.getElementById("shareUrlInput");
+  if (!input) return;
+  const status = document.getElementById("shareDialogStatus");
+  navigator.clipboard.writeText(input.value).then(function() {
+    if (status) {
+      status.textContent = "Copied to clipboard!";
+      setTimeout(function() { if (status) status.textContent = ""; }, 2500);
+    }
+  }).catch(function() {
+    input.select();
+    document.execCommand("copy");
+    if (status) {
+      status.textContent = "Copied!";
+      setTimeout(function() { if (status) status.textContent = ""; }, 2500);
+    }
+  });
+}
+
+async function revokeActiveShareLink(token) {
+  if (!confirm("Revoke this share link? Anyone with the link will no longer be able to view the shelf.")) return;
+  try {
+    const fn = functions.httpsCallable("revokeShareLink");
+    await fn({ token });
+    delete shareLinks[token];
+    _renderShareDialog();
+    renderShelvesModal();
+    const settingsModal = document.getElementById("accountSettingsModal");
+    if (settingsModal && settingsModal.classList.contains("open")) {
+      _renderSharedShelvesSection();
+    }
+  } catch (err) {
+    console.error("[revokeActiveShareLink]", err);
+    alert("Could not revoke share link. Please try again.");
+  }
+}
+
+function _renderSharedShelvesSection() {
+  const list = document.getElementById("sharedShelvesList");
+  if (!list) return;
+  const tokens = Object.keys(shareLinks);
+  if (!tokens.length) {
+    list.innerHTML = '<p style="font-size:0.82rem;color:#888;">No shelves are currently shared.</p>';
+    return;
+  }
+  list.innerHTML = tokens.map(function(token) {
+    const link = shareLinks[token];
+    const createdDate = new Date(link.createdAt).toLocaleDateString();
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;' +
+                        'border-bottom:1px solid var(--tan);flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:0.88rem;font-weight:600;color:var(--dark);">' + esc(link.shelfName) + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--brown);margin-top:2px;">' +
+          'Shared ' + esc(createdDate) +
+          (link.includePersonalNotes ? ' &middot; includes personal notes' : '') +
+        '</div>' +
+      '</div>' +
+      '<button class="btn btn-danger btn-sm" type="button" ' +
+        'onclick="revokeActiveShareLink(\'' + escapeAttribute(token) + '\')">Revoke</button>' +
+    '</div>';
+  }).join("");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderShelvesModal() {
   const list = document.getElementById("shelvesList");
   list.innerHTML = shelves.map(function(shelf) {
     const count = books.filter(function(b) { return (b.listShelfId || "default") === shelf.id; }).length;
     const isActive = shelf.id === currentShelfId;
+    const shareActive = Object.values(shareLinks).some(function(l) { return l.shelfId === shelf.id; });
     return `
       <div class="shelf-item${isActive ? " active" : ""}" data-shelf-id="${escapeAttribute(shelf.id)}">
         <button class="shelf-item-name" type="button" onclick="switchShelf('${escapeAttribute(shelf.id)}')">
@@ -5336,6 +5512,11 @@ function renderShelvesModal() {
         </button>
         <span class="shelf-item-count">${count} tome${count === 1 ? "" : "s"}</span>
         <div class="shelf-item-actions">
+          <button class="btn btn-light btn-sm${shareActive ? " share-btn-active" : ""}" type="button"
+            title="${shareActive ? "Manage share link" : "Share this shelf"}"
+            onclick="openShareDialog('${escapeAttribute(shelf.id)}')">
+            ${shareActive ? "&#128279;" : "Share"}
+          </button>
           <button class="btn btn-light btn-sm" type="button" onclick="renameShelf('${escapeAttribute(shelf.id)}')">Rename</button>
           ${shelves.length > 1 ? `<button class="btn btn-danger btn-sm" type="button" onclick="deleteShelf('${escapeAttribute(shelf.id)}')">Delete</button>` : ""}
         </div>
@@ -5462,6 +5643,14 @@ async function deleteShelf(id) {
     currentShelfId = shelves[0].id;
     saveCurrentShelfId();
   }
+  // Auto-revoke any active share link for the deleted shelf
+  const tokenToRevoke = Object.keys(shareLinks).find(function(t) { return shareLinks[t].shelfId === id; });
+  if (tokenToRevoke) {
+    try {
+      await functions.httpsCallable("revokeShareLink")({ token: tokenToRevoke });
+      delete shareLinks[tokenToRevoke];
+    } catch (e) { console.warn("[deleteShelf] could not revoke share link:", e); }
+  }
   await persistCatalog();
   renderShelvesModal();
   updateShelfLabel();
@@ -5569,6 +5758,11 @@ function openAccountSettings() {
   if (emailEl) emailEl.textContent = isGuest ? "Guest session — not signed in" : (user && (user.email || user.displayName) || "");
   document.getElementById("accountSettingsGuestSection").style.display = isGuest ? "" : "none";
   document.getElementById("accountSettingsUserSection").style.display  = isGuest ? "none" : "";
+  const shareSection = document.getElementById("accountSettingsShareSection");
+  if (shareSection) {
+    shareSection.style.display = (!isGuest && user) ? "" : "none";
+    if (!isGuest && user) _renderSharedShelvesSection();
+  }
   document.getElementById("accountSettingsModal").classList.add("open");
 }
 

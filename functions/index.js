@@ -897,3 +897,124 @@ exports.identifyBooksInImage = onCall({
     : [];
   return { books };
 });
+
+// ─── Share Link Functions ────────────────────────────────────────────────────
+
+const crypto = require("crypto");
+
+/**
+ * createShareLink — generates a public read-only share token for one shelf.
+ * One active token per shelf (revokes any prior token for the same shelf).
+ */
+exports.createShareLink = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid                = request.auth.uid;
+  const shelfId            = String((request.data || {}).shelfId || "").trim();
+  const includePersonalNotes = Boolean((request.data || {}).includePersonalNotes);
+
+  if (!shelfId) throw new HttpsError("invalid-argument", "shelfId is required.");
+
+  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
+  const snap = await catalogRef.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Catalog not found.");
+
+  const data  = snap.data();
+  const shelf = (data.shelves || []).find((s) => s.id === shelfId);
+  if (!shelf) throw new HttpsError("not-found", "Shelf not found.");
+
+  const existingLinks = data.shareLinks || {};
+  const existingToken = Object.keys(existingLinks).find((t) => existingLinks[t].shelfId === shelfId);
+
+  const token = crypto.randomBytes(16).toString("hex");
+  const createdAt = Date.now();
+
+  const batch = db.batch();
+
+  if (existingToken) {
+    batch.delete(db.collection("shareLinks").doc(existingToken));
+  }
+
+  batch.set(db.collection("shareLinks").doc(token), {
+    ownerUid: uid,
+    shelfId,
+    includePersonalNotes,
+    createdAt,
+  });
+
+  const updatedLinks = { ...existingLinks };
+  if (existingToken) delete updatedLinks[existingToken];
+  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, createdAt };
+  batch.update(catalogRef, { shareLinks: updatedLinks });
+
+  await batch.commit();
+  return { token };
+});
+
+/**
+ * getSharedShelf — unauthenticated endpoint; returns filtered shelf data for a share token.
+ */
+exports.getSharedShelf = onCall(async (request) => {
+  const token = String((request.data || {}).token || "").trim();
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
+
+  const { ownerUid, shelfId, includePersonalNotes } = tokenDoc.data();
+
+  const catalogSnap = await db.collection("users").doc(ownerUid).collection("catalog").doc("data").get();
+  if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
+
+  const catalogData = catalogSnap.data();
+  const shelf = (catalogData.shelves || []).find((s) => s.id === shelfId);
+  if (!shelf) throw new HttpsError("not-found", "Shelf no longer exists.");
+
+  const shelfBooks = (catalogData.books || [])
+    .filter((b) => (b.listShelfId || "default") === shelfId)
+    .map((b) => {
+      const out = { ...b };
+      if (!includePersonalNotes) delete out.personalNotes;
+      return out;
+    });
+
+  const shelfBookIds = new Set(shelfBooks.map((b) => b.id));
+  const filteredCache = {};
+  for (const [id, briefing] of Object.entries(catalogData.researchCache || {})) {
+    if (shelfBookIds.has(id)) filteredCache[id] = briefing;
+  }
+
+  return { shelfName: shelf.name, shelfId, includePersonalNotes, books: shelfBooks, researchCache: filteredCache };
+});
+
+/**
+ * revokeShareLink — deletes a share token (owner only).
+ */
+exports.revokeShareLink = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid   = request.auth.uid;
+  const token = String((request.data || {}).token || "").trim();
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (!tokenDoc.exists) return { revoked: false };
+
+  if (tokenDoc.data().ownerUid !== uid) {
+    throw new HttpsError("permission-denied", "Not your share link.");
+  }
+
+  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
+  const batch = db.batch();
+  batch.delete(db.collection("shareLinks").doc(token));
+  const update = {};
+  update[`shareLinks.${token}`] = admin.firestore.FieldValue.delete();
+  batch.update(catalogRef, update);
+
+  await batch.commit();
+  return { revoked: true };
+});
