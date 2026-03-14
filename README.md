@@ -1,6 +1,6 @@
 # TomeShelf
 
-A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes, photograph books or entire bookshelves, or capture text listing titles to add books in bulk. Organise your collection into named shelves, generate structured discussion guides via Google Gemini or Perplexity, share read-only shelf links with anyone, and sync everything to the cloud via Firebase.
+A personal book catalog with a vintage aesthetic and AI-powered research briefings. Scan barcodes, photograph books or entire bookshelves, select batches of individual book photos, or capture text listing titles to add books in bulk. Organise your collection into named shelves, generate structured discussion guides via Google Gemini or Perplexity, share read-only shelf links with anyone, and sync everything to the cloud via Firebase.
 
 **Live:** https://tome-shelf.littleofinterest.com
 
@@ -11,13 +11,14 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Multi-book Selection** — Select any or all books on a shelf; move the selection to another shelf or delete in bulk with confirmation
 - **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
 - **Photo Book Lookup** — Photograph a book's cover, spine, title page, or copyright page (up to 3 images); also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details. When multiple candidates are found, all are shown with cover thumbnails; selecting an alternate candidate swaps it to the top while keeping the previous pick accessible
-- **Bulk Load** — Add many books at once from a single photo:
+- **Bulk Load** — Add many books at once without entering them one by one:
   - **Books** — photograph a bookshelf, stack of covers, or any group of books; AI reads every visible spine and cover
+  - **Batch Photos** — select up to 20 individual book photos at once; each image is treated as one book; AI identifies each independently; review before anything is added; manual correction fallback for unmatched items
   - **Titles in Text** — photograph an article, reading list, or bibliography; AI extracts every book title mentioned in the text
   - After AI identification, review a ✓/✗ card list before anything is added; Books mode includes a second-pass cover photo step and manual correction fallback for unmatched titles
 - **Cover Images** — Finds covers via Open Library and Google Books across all entry methods; automatic API key rotation when daily quota is reached
 - **Cover Search** — When adding or replacing a cover, choose to upload a photo or search online; search fetches covers from Open Library and Google Books and presents them as a thumbnail grid; tap any thumbnail to open a full lightbox preview, then apply the cover with one tap
-- **Search Results** — Cover thumbnails appear inline in all search result lists; "Try Broader Search" button relaxes field-level query operators when initial results don't match
+- **Search Results** — Cover thumbnails appear inline in all search result lists; "Try Broader Search" button relaxes field-level query operators when initial results don't match; each candidate shows a plain-language match-quality cue (title/author word overlap, ISBN match, AI confidence) so you can quickly judge which result to pick
 - **Wikipedia Lookup** — On any book's detail page, tap the Wikipedia button to pull up an in-app modal showing the Wikipedia article summary, thumbnail, and Wikidata description for the book. Uses a two-pass strategy: first a direct REST lookup verified against the book type and author name (fast, no AI cost); if that finds nothing, falls back to a Gemini Cloud Function that identifies the exact Wikipedia article titles for both the book and author. Shows the book article if one exists; falls back to the author's page with a notice; shows a "Search Wikipedia" link if neither is found
 - **Auto-Generated Briefings** — College-level discussion guides (plot summary, themes, characters, literary analysis, discussion questions) are generated automatically in the background when books are added:
   - Small batches (≤ 25 books) generate immediately via a Firestore trigger; larger batches are queued for a scheduled function that runs every 2 hours
@@ -30,6 +31,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Account Settings** — Export a JSON backup or permanently delete your account and all associated data
 - **Shelf Sharing** — Generate a public, read-only share link for any shelf; viewers need no account. Per-share controls: include personal notes (off by default) and enable AI-powered Wikipedia lookup for viewers. One active link per shelf at a time; revoke from the shelf settings or Account Settings at any time. All active links visible and manageable in Account Settings
 - **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
+- **Desktop Layout** — Three-column layout with collapsible Add panel (collapses to a narrow sidebar) and expandable Briefing panel (wider focus mode); states persist across sessions; compact UI mode hides helper text for a denser view
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
 

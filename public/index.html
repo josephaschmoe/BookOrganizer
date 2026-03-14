@@ -125,12 +125,12 @@ const firebaseConfig = {
   .api-badge.online { border-color: #c8dfb8; color: #c8dfb8; }
 
   .main {
-    max-width: 1280px;
+    max-width: 1440px;
     margin: 0 auto;
     padding: 28px 24px;
     display: grid;
-    grid-template-columns: 340px minmax(0, 1fr) 400px;
-    gap: 28px;
+    grid-template-columns: 360px minmax(0, 1.2fr) 380px;
+    gap: 32px;
     align-items: start;
   }
 
@@ -153,6 +153,156 @@ const firebaseConfig = {
 
   .panel-body { padding: 16px; }
 
+  @media (min-width: 1024px) {
+    body.desktop-add-collapsed .main {
+      grid-template-columns: 72px minmax(0, 0.9fr) minmax(460px, 1.1fr);
+    }
+    body.desktop-briefing-expanded .main {
+      grid-template-columns: 320px minmax(0, 0.92fr) 560px;
+    }
+    body.desktop-add-collapsed.desktop-briefing-expanded .main {
+      grid-template-columns: 72px minmax(0, 0.72fr) minmax(620px, 1.28fr);
+    }
+    #catalogPanel {
+      background: #fbf7ef;
+      border: 1px solid rgba(201, 185, 154, 0.85);
+      border-radius: 4px;
+      box-shadow: 8px 12px 28px rgba(21, 45, 69, 0.12);
+      padding: 18px 20px 20px;
+    }
+    #addPanel .panel,
+    #briefingPanel.panel {
+      background: linear-gradient(180deg, #efe7d7 0%, #ebe2d0 100%);
+      border-color: rgba(201, 185, 154, 0.8);
+      box-shadow: 2px 4px 12px rgba(21, 45, 69, 0.1);
+    }
+    #addPanel .panel-header,
+    #briefingPanel .panel-header {
+      background: #3b648c;
+    }
+    #addPanel .panel-body,
+    #briefingPanel .panel-body {
+      padding: 18px 18px 22px;
+    }
+    #addPanel .panel-header {
+      justify-content: space-between;
+    }
+    #addPanel .panel-body {
+      max-height: calc(100vh - 150px);
+      overflow: auto;
+    }
+    #addPanel .add-chooser,
+    #addPanel .single-add-chooser,
+    #addPanel .bulk-mode-cards {
+      grid-template-columns: 1fr;
+    }
+    #addPanel .bulk-mode-btn {
+      width: 100%;
+    }
+    #addPanel .single-add-pane,
+    #addPanel .review-section,
+    #addPanel #tabManual,
+    #addPanel #tabBulk {
+      margin-top: 10px;
+    }
+    .add-panel-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,0.35);
+      background: transparent;
+      color: var(--cream);
+      border-radius: 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .add-panel-toggle:hover {
+      border-color: rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.08);
+    }
+    .panel-focus-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,0.35);
+      background: transparent;
+      color: var(--cream);
+      border-radius: 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .panel-focus-toggle:hover {
+      border-color: rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.08);
+    }
+    body.desktop-briefing-expanded #briefingPanelToggle svg {
+      transform: scaleX(-1);
+    }
+    body.desktop-add-collapsed #addPanel .panel-body {
+      display: none;
+    }
+    body.desktop-add-collapsed #addPanel .panel {
+      overflow: visible;
+    }
+    body.desktop-add-collapsed #addPanel .panel-header {
+      padding: 12px 10px;
+      justify-content: center;
+      gap: 6px;
+      min-height: 72px;
+    }
+    body.desktop-add-collapsed #addPanelTitle {
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+    body.desktop-add-collapsed #addPanelToggle svg {
+      transform: rotate(180deg);
+    }
+    body.desktop-add-collapsed #editBackBtn {
+      display: none !important;
+    }
+    #briefingPanel {
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      display: flex;
+      flex-direction: column;
+    }
+    #briefingPanel .panel-body {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #briefingPanel .briefing-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+    body.desktop-briefing-expanded #briefingPanel {
+      top: 16px;
+      max-height: calc(100vh - 32px);
+    }
+    body.desktop-briefing-expanded #briefingPanel .panel-body {
+      padding: 20px 20px 24px;
+    }
+    #catalogPanel .catalog-toolbar,
+    #catalogPanel .filter-pills,
+    #catalogPanel .catalog-actions {
+      margin-bottom: 12px;
+    }
+    #catalogPanel .search-input,
+    #catalogPanel .sort-select {
+      background: #fffdf8;
+    }
+  }
+
   /* Back button in Briefing panel header — only shown on mobile nav layout */
   .briefing-back-btn {
     display: none;
@@ -170,10 +320,12 @@ const firebaseConfig = {
     display: flex;
     margin-bottom: 16px;
     border-bottom: 2px solid var(--tan);
+    gap: 4px;
+    flex-wrap: wrap;
   }
 
   .tab {
-    padding: 7px 14px;
+    padding: 9px 16px;
     font-family: 'Courier Prime', monospace;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
@@ -184,6 +336,7 @@ const firebaseConfig = {
     color: var(--brown);
     border-bottom: 3px solid transparent;
     margin-bottom: -2px;
+    white-space: nowrap;
   }
 
   .tab.active {
@@ -300,6 +453,44 @@ const firebaseConfig = {
   .btn-danger:hover { border-color: var(--red); }
   .btn-sm { padding: 5px 10px; font-size: 0.68rem; }
   .btn:disabled { opacity: 0.55; cursor: wait; }
+  .add-chooser {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .chooser-card {
+    background: var(--cream);
+    border: 1px solid var(--tan);
+    border-left: 3px solid var(--tan);
+    border-radius: 2px;
+    padding: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  }
+  .chooser-card:hover { background: #fbf8f2; border-left-color: var(--brown); }
+  .chooser-card.active { border-left-color: var(--red); background: #fffaf3; }
+  .chooser-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    color: var(--dark);
+    font-weight: 700;
+  }
+  .chooser-copy {
+    margin-top: 4px;
+    font-size: 0.78rem;
+    color: var(--brown);
+    line-height: 1.45;
+  }
+  .chooser-kicker {
+    margin-top: 6px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tan);
+  }
 
   .lookup-status,
   .helper-text,
@@ -316,6 +507,28 @@ const firebaseConfig = {
   .lookup-status.success,
   .research-status.success { color: var(--green); }
   .lookup-status.warning { color: var(--brown); }
+  body.ui-compact #addPanel .chooser-copy,
+  body.ui-compact #addPanel .chooser-kicker,
+  body.ui-compact #addPanel .single-add-copy,
+  body.ui-compact #addPanel .single-add-kicker,
+  body.ui-compact #addPanel .bulk-explanation,
+  body.ui-compact #addPanel .bulk-mode-copy,
+  body.ui-compact #addPanel .bulk-mode-meta,
+  body.ui-compact #addPanel .bulk-photo-helper,
+  body.ui-compact #addPanel .photo-lookup-row .helper-text {
+    display: none;
+  }
+  body.ui-compact #addPanel .add-chooser,
+  body.ui-compact #addPanel .single-add-chooser,
+  body.ui-compact #addPanel .bulk-mode-cards {
+    gap: 8px;
+  }
+  body.ui-compact #addPanel .chooser-card,
+  body.ui-compact #addPanel .single-add-card,
+  body.ui-compact #addPanel .bulk-mode-card {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
 
   .search-results {
     margin: 10px 0 14px;
@@ -498,6 +711,13 @@ const firebaseConfig = {
     font-family: 'Courier Prime', monospace; font-size: 0.62rem;
     color: var(--tan); margin-top: 2px;
   }
+  .bulk-book-reason {
+    margin-top: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
   .bulk-toggle-btns { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
   .bulk-toggle-btn {
     width: 30px; height: 24px;
@@ -544,6 +764,116 @@ const firebaseConfig = {
   }
   .bulk-second-pass-author {
     font-size: 0.78rem; color: var(--brown); font-style: italic; margin-top: 1px;
+  }
+  .bulk-mode-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 10px 0 12px;
+  }
+  .bulk-mode-card {
+    background: var(--cream);
+    border: 1px solid var(--tan);
+    border-left: 3px solid var(--tan);
+    border-radius: 2px;
+    padding: 12px;
+  }
+  .bulk-mode-card.active { border-left-color: var(--gold); background: #fbf8f2; }
+  .bulk-mode-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.94rem;
+    color: var(--dark);
+    font-weight: 700;
+  }
+  .bulk-mode-copy {
+    margin-top: 5px;
+    font-size: 0.79rem;
+    color: var(--brown);
+    line-height: 1.45;
+    min-height: 4.2em;
+  }
+  .bulk-mode-meta {
+    margin-top: 7px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tan);
+  }
+  .bulk-photo-helper { font-size: 0.76rem; color: var(--brown); line-height: 1.45; margin-top: 2px; }
+  .bulk-progress {
+    display: none;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #f8f3ea;
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+  }
+  .bulk-progress.is-visible { display: block; }
+  .bulk-progress-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: baseline;
+    margin-bottom: 7px;
+  }
+  .bulk-progress-stage {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.67rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--brown);
+  }
+  .bulk-progress-count {
+    font-size: 0.75rem;
+    color: var(--tan);
+    font-family: 'Courier Prime', monospace;
+  }
+  .bulk-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--parchment);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .bulk-progress-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold), var(--brown));
+    transition: width 0.2s ease;
+  }
+  .bulk-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .bulk-summary-pill {
+    padding: 5px 9px;
+    border: 1px solid var(--tan);
+    border-radius: 999px;
+    background: #f8f3ea;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--brown);
+  }
+  .bulk-correction-photo { margin: 0 0 12px; width: 112px; }
+  .bulk-correction-photo img {
+    width: 100%;
+    display: block;
+    border: 1px solid var(--tan);
+    border-radius: 1px;
+    background: var(--parchment);
+    cursor: zoom-in;
+  }
+  .bulk-correction-photo-caption {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.62rem;
+    color: var(--tan);
+    margin-top: 4px;
+    word-break: break-word;
   }
 
   .catalog-toolbar {
@@ -1324,6 +1654,38 @@ const firebaseConfig = {
 
     /* ISBN row: keep on one line so buttons don't orphan to a half-empty line */
     .button-row { flex-wrap: wrap; }
+    .add-chooser,
+    .single-add-chooser,
+    .bulk-mode-cards {
+      grid-template-columns: 1fr;
+    }
+    .sticky-mobile-actions {
+      position: sticky;
+      bottom: calc(8px + env(safe-area-inset-bottom));
+      padding: 10px;
+      background: rgba(245, 240, 232, 0.96);
+      border: 1px solid var(--tan);
+      border-radius: 2px;
+      box-shadow: 0 6px 18px rgba(21, 45, 69, 0.12);
+      z-index: 5;
+    }
+    #bulkActionRow.sticky-mobile-actions .btn,
+    #reviewActions.sticky-mobile-actions .btn,
+    #bulkCorrActions.sticky-mobile-actions .btn {
+      flex: 1 1 0;
+    }
+    .bulk-toggle-btn {
+      width: 42px;
+      height: 34px;
+      font-size: 0.95rem;
+    }
+    .bulk-correction-photo {
+      width: min(48vw, 180px);
+    }
+    .bulk-book-card {
+      align-items: stretch;
+      padding: 10px;
+    }
   }
 
   /* Portrait phone: count badge drops to its own second line so the
@@ -1715,8 +2077,56 @@ const firebaseConfig = {
   /* ── Photo Lookup ── */
   .photo-lookup-section {
     margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px dashed var(--tan);
+  }
+  .single-add-chooser {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .single-add-card {
+    background: #f8f3ea;
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+    padding: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  }
+  .single-add-card:hover { background: #fffdf8; border-color: var(--brown); }
+  .single-add-card.active {
+    background: var(--cream);
+    border-color: var(--brown);
+    box-shadow: inset 0 0 0 1px rgba(46, 92, 133, 0.08);
+  }
+  .single-add-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    color: var(--dark);
+    font-weight: 700;
+  }
+  .single-add-copy {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--brown);
+  }
+  .single-add-kicker {
+    margin-top: 7px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tan);
+  }
+  .single-add-pane {
+    padding: 12px;
+    background: var(--cream);
+    border: 1px solid var(--tan);
+    border-radius: 2px;
+  }
+  .sticky-mobile-actions {
+    margin-top: 10px;
   }
 
   .photo-lookup-row {
@@ -1841,6 +2251,59 @@ const firebaseConfig = {
     letter-spacing: 0.05em;
     color: var(--tan);
     margin-top: 4px;
+  }
+  .match-reason-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .match-cue {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--tan);
+    border-radius: 999px;
+    background: var(--parchment);
+    color: var(--dark);
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .match-cue.strong {
+    border-color: rgba(58, 106, 70, 0.35);
+    background: rgba(58, 106, 70, 0.12);
+    color: var(--green);
+  }
+  .match-cue.likely {
+    border-color: rgba(151, 122, 69, 0.32);
+    background: rgba(151, 122, 69, 0.10);
+    color: var(--brown);
+  }
+  .match-cue.uncertain {
+    border-color: rgba(122, 43, 43, 0.28);
+    background: rgba(122, 43, 43, 0.08);
+    color: var(--red);
+  }
+  .match-cue.neutral {
+    color: var(--brown);
+  }
+  .match-reason-detail {
+    font-size: 0.75rem;
+    color: var(--brown);
+    line-height: 1.4;
+  }
+  .candidate-reason {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.7rem;
+    color: var(--tan);
+    font-family: 'Courier Prime', monospace;
+    letter-spacing: 0.02em;
   }
 
   .candidate-list { margin-top: 10px; }
@@ -2083,12 +2546,15 @@ const firebaseConfig = {
 
 <div class="main">
   <div id="addPanel">
-    <div class="panel">
+      <div class="panel">
       <div class="panel-header" style="display:flex;align-items:center;gap:10px;">
         <button class="briefing-back-btn" id="editBackBtn" style="display:none;" onclick="cancelEdit()" title="Back to Book">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <span id="addPanelTitle">Add to Catalog</span>
+        <button class="add-panel-toggle" id="addPanelToggle" type="button" onclick="toggleDesktopAddPanel()" title="Collapse add panel" aria-label="Collapse add panel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
       </div>
       <div class="panel-body">
 
@@ -2107,43 +2573,78 @@ const firebaseConfig = {
 
         <!-- ─── Add mode: tabs + lookup / manual entry ─── -->
         <div id="addModeSection">
-          <div class="tabs">
-            <button class="tab active" type="button" data-tab="isbn" onclick="switchTab('isbn')">By ISBN</button>
+          <div class="add-chooser">
+            <button class="chooser-card active" type="button" data-chooser-tab="isbn" onclick="chooseAddFlow('isbn','photo')">
+              <div class="chooser-title">Identify One Book</div>
+              <div class="chooser-copy">Use a photo, scan a barcode, or enter an ISBN to pull in metadata quickly.</div>
+              <div class="chooser-kicker">Fastest for one book</div>
+            </button>
+            <button class="chooser-card" type="button" data-chooser-tab="manual" onclick="chooseAddFlow('manual')">
+              <div class="chooser-title">Type It In</div>
+              <div class="chooser-copy">Search by title and author, then fill anything the databases miss yourself.</div>
+              <div class="chooser-kicker">Best for obscure edits</div>
+            </button>
+            <button class="chooser-card" type="button" data-chooser-tab="bulk" onclick="chooseAddFlow('bulk')">
+              <div class="chooser-title">Add Many Books</div>
+              <div class="chooser-copy">Choose the right multi-book workflow for shelves, batches of photos, or text lists.</div>
+              <div class="chooser-kicker">Bookshelf, batch, or text</div>
+            </button>
+          </div>
+          <div class="tabs" style="display:none;">
+            <button class="tab active" type="button" data-tab="isbn" onclick="switchTab('isbn')">Photo or ISBN</button>
             <button class="tab" type="button" data-tab="manual" onclick="switchTab('manual')">Manual Entry</button>
-            <button class="tab" type="button" data-tab="bulk" onclick="switchTab('bulk')">Bulk Load <span class="beta-badge">Beta</span></button>
+            <button class="tab" type="button" data-tab="bulk" onclick="switchTab('bulk')">Multi-Book Bulk Load</button>
           </div>
 
           <div id="tabIsbn">
-            <div class="form-group">
-              <label for="isbnInput">ISBN (10 or 13 digits)</label>
-              <div class="isbn-row">
-                <input type="text" id="isbnInput" placeholder="e.g. 9780374533557" maxlength="17" onkeydown="if (event.key === 'Enter') lookupISBN()">
-                <button class="btn btn-secondary" type="button" onclick="lookupISBN()">Look up</button>
-                <button class="btn btn-accent" type="button" onclick="openCamera()" title="Scan barcode">Scan</button>
+            <div class="single-add-chooser">
+              <button class="single-add-card active" id="singleAddCardPhoto" type="button" onclick="setSingleAddMode('photo')">
+                <div class="single-add-title">Identify from Photos</div>
+                <div class="single-add-copy">Use a cover, title page, copyright page, or any text mentioning the book.</div>
+                <div class="single-add-kicker">Recommended for most books</div>
+              </button>
+              <button class="single-add-card" id="singleAddCardIsbn" type="button" onclick="setSingleAddMode('isbn')">
+                <div class="single-add-title">Look Up by ISBN</div>
+                <div class="single-add-copy">Paste the ISBN or scan the barcode if the edition has one.</div>
+                <div class="single-add-kicker">Fastest when the barcode is clear</div>
+              </button>
+            </div>
+
+            <div id="singleAddPhotoPane" class="single-add-pane">
+              <div class="section-label">Photo Identification</div>
+              <div class="photo-lookup-section" id="photoLookupSection">
+                <div class="photo-lookup-row">
+                  <button class="btn btn-accent" type="button" onclick="startPhotoCamera()">Camera</button>
+                  <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
+                  <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
+                  <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
+                  <span class="helper-text">Title page or copyright page work best — or photograph any text that mentions the book</span>
+                </div>
+                <div class="photo-preview-row" id="photoPreviewRow"></div>
+                <div class="lookup-status" id="photoStatus"></div>
               </div>
             </div>
-            <div class="lookup-status" id="lookupStatus">Enter an ISBN and click Look up, or use Scan.</div>
-            <div class="cover-preview" id="coverPreview"></div>
 
-            <div class="photo-lookup-section" id="photoLookupSection">
-              <div class="section-label">Or use photos</div>
-              <div class="photo-lookup-row">
-                <button class="btn btn-accent" type="button" onclick="startPhotoCamera()">Camera</button>
-                <button class="btn btn-accent" type="button" onclick="startPhotoLookup()">Gallery</button>
-                <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelection(this)">
-                <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoSelection(this)">
-                <span class="helper-text">Title page or copyright page work best — or photograph any text that mentions the book</span>
+            <div id="singleAddIsbnPane" class="single-add-pane" style="display:none;">
+              <div class="section-label">ISBN Lookup</div>
+              <div class="form-group">
+                <label for="isbnInput">ISBN (10 or 13 digits)</label>
+                <div class="isbn-row">
+                  <input type="text" id="isbnInput" placeholder="e.g. 9780374533557" maxlength="17" onkeydown="if (event.key === 'Enter') lookupISBN()">
+                  <button class="btn btn-secondary" type="button" onclick="lookupISBN()">Find by ISBN</button>
+                  <button class="btn btn-accent" type="button" onclick="openCamera()" title="Scan barcode">Scan</button>
+                </div>
               </div>
-              <div class="photo-preview-row" id="photoPreviewRow"></div>
-              <div class="lookup-status" id="photoStatus"></div>
+              <div class="lookup-status" id="lookupStatus">Enter an ISBN and click Find by ISBN, or use Scan.</div>
+              <div class="cover-preview" id="coverPreview"></div>
             </div>
 
             <div class="review-section" id="reviewSection" style="display:none;">
               <div class="section-label">Review match</div>
               <div id="reviewCard"></div>
               <div class="candidate-list" id="candidateList"></div>
-              <div class="button-row" style="margin-top: 10px;">
-                <button class="btn btn-secondary btn-sm" type="button" onclick="acceptReviewMatch()">Use This Match</button>
+              <div class="button-row sticky-mobile-actions" id="reviewActions" style="margin-top: 10px;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="acceptReviewMatch()">Use Selected Match</button>
                 <button class="btn btn-light btn-sm" type="button" onclick="dismissReview()">Dismiss</button>
               </div>
             </div>
@@ -2183,20 +2684,32 @@ const firebaseConfig = {
           </div>
 
           <!-- ─── Bulk Load tab ─── -->
-          <div id="tabBulk" style="display:none;">
+            <div id="tabBulk" style="display:none;">
 
             <!-- Intro: explanation + photo picker -->
             <div id="bulkIntroSection">
               <p class="bulk-explanation">
-                <strong>Bulk Load</strong> — add multiple books at once using your camera or photo library.<br><br>
-                <strong>📷 Books</strong> — photograph a bookshelf, a stack of covers, or any group of books.
-                AI reads the spines and covers to identify each title.<br><br>
-                <strong>📋 Titles in Text</strong> — photograph an article, review, reading list, or bibliography
-                that mentions book titles. AI scans the text and extracts every title it finds.
+                Choose the right workflow for the material you have. The cards below match the input style to the right AI process.
               </p>
-              <div class="bulk-mode-btn-row">
-                <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnBook" type="button" onclick="toggleBulkPhotoMode('book')">📷 Books</button>
-                <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnText" type="button" onclick="toggleBulkPhotoMode('text')">📋 Titles in Text</button>
+              <div class="bulk-mode-cards">
+                <div class="bulk-mode-card" id="bulkModeCardBook">
+                  <div class="bulk-mode-title">📷 Bookshelf Photo</div>
+                  <div class="bulk-mode-copy">Photograph a shelf, stack, or group of books. AI reads multiple visible spines and covers from one image.</div>
+                  <div class="bulk-mode-meta">One image • many books</div>
+                  <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnBook" type="button" onclick="toggleBulkPhotoMode('book')">Use Bookshelf Photo</button>
+                </div>
+                <div class="bulk-mode-card" id="bulkModeCardBatch">
+                  <div class="bulk-mode-title">📚 Batch Photos</div>
+                  <div class="bulk-mode-copy">Select up to 20 separate book photos. Each image is treated as one book and can be reviewed individually.</div>
+                  <div class="bulk-mode-meta">Up to 20 photos • one book each</div>
+                  <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnBatch" type="button" onclick="toggleBulkPhotoMode('batch')">Use Batch Photos</button>
+                </div>
+                <div class="bulk-mode-card" id="bulkModeCardText">
+                  <div class="bulk-mode-title">📋 Titles in Text</div>
+                  <div class="bulk-mode-copy">Photograph an article, reading list, bibliography, or any text that mentions books. AI extracts titles and authors from the page.</div>
+                  <div class="bulk-mode-meta">Text-heavy images</div>
+                  <button class="btn btn-accent bulk-mode-btn" id="bulkModeBtnText" type="button" onclick="toggleBulkPhotoMode('text')">Use Text Extraction</button>
+                </div>
               </div>
               <!-- Camera / Gallery options for Book Cover mode -->
               <div id="bulkBookModeExpand" class="bulk-expand-row" style="display:none;">
@@ -2205,6 +2718,13 @@ const firebaseConfig = {
                 <input type="file" id="bulkCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this, false)">
                 <input type="file" id="bulkGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this, false)">
               </div>
+              <div id="bulkBatchModeExpand" class="bulk-expand-row" style="display:none;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkBatchCamera()">📷 Camera</button>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkBatchGallery()">🖼 Choose Photos</button>
+                <input type="file" id="bulkBatchCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkBatchSelection(this)">
+                <input type="file" id="bulkBatchGalleryInput" accept="image/*" multiple style="display:none" onchange="handleBulkBatchSelection(this)">
+              </div>
+              <div class="bulk-photo-helper">Batch Photos uses Gemini 2.5 Flash. Select up to 20 photos, one photo per book.</div>
               <!-- Camera / Gallery options for Titles in Text mode -->
               <div id="bulkTextModeExpand" class="bulk-expand-row" style="display:none;">
                 <button class="btn btn-secondary btn-sm" type="button" onclick="startBulkTextCamera()">📷 Camera</button>
@@ -2212,16 +2732,24 @@ const firebaseConfig = {
                 <input type="file" id="bulkTextCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBulkPhotoSelection(this, true)">
                 <input type="file" id="bulkTextGalleryInput" accept="image/*" style="display:none" onchange="handleBulkPhotoSelection(this, true)">
               </div>
+              <div class="bulk-progress" id="bulkProgress">
+                <div class="bulk-progress-top">
+                  <div class="bulk-progress-stage" id="bulkProgressStage"></div>
+                  <div class="bulk-progress-count" id="bulkProgressCount"></div>
+                </div>
+                <div class="bulk-progress-bar"><div class="bulk-progress-fill" id="bulkProgressFill"></div></div>
+              </div>
               <div class="lookup-status" id="bulkStatus"></div>
             </div>
 
             <!-- Results: review identified books, toggle correct/incorrect -->
             <div id="bulkResultsSection" style="display:none;">
               <div class="bulk-results-hdr" id="bulkResultsHdr"></div>
+              <div class="bulk-summary" id="bulkSummary"></div>
               <div class="bulk-book-cards" id="bulkBookCards"></div>
-              <div class="button-row" id="bulkActionRow">
+              <div class="button-row sticky-mobile-actions" id="bulkActionRow">
                 <button class="btn btn-light btn-sm" type="button" onclick="resetBulkLoad()">Start Over</button>
-                <button class="btn btn-primary" type="button" id="bulkAddCorrectBtn" onclick="addCorrectBulkBooks()">Add Books</button>
+                <button class="btn btn-primary" type="button" id="bulkAddCorrectBtn" onclick="addCorrectBulkBooks()">Add Confirmed Books</button>
               </div>
               <div class="lookup-status" id="bulkResultStatus"></div>
             </div>
@@ -2252,6 +2780,10 @@ const firebaseConfig = {
             <div id="bulkCorrectionSection" style="display:none;">
               <div class="bulk-correction-hdr" id="bulkCorrectionHdr"></div>
               <div class="bulk-ai-saw" id="bulkAiSaw"></div>
+              <div class="bulk-correction-photo" id="bulkCorrPhotoWrap" style="display:none;">
+                <img id="bulkCorrPhoto" alt="Original uploaded photo">
+                <div class="bulk-correction-photo-caption" id="bulkCorrPhotoCaption"></div>
+              </div>
               <div class="form-group">
                 <label for="bulkCorrTitle">Title</label>
                 <input type="text" id="bulkCorrTitle" onkeydown="if(event.key==='Enter') bulkCorrectionSearch()">
@@ -2266,7 +2798,7 @@ const firebaseConfig = {
               </div>
               <div class="lookup-status" id="bulkCorrStatus"></div>
               <div class="search-results" id="bulkCorrSearchResults" style="display:none;"></div>
-              <div class="button-row" style="margin-top:4px;">
+              <div class="button-row sticky-mobile-actions" id="bulkCorrActions" style="margin-top:4px;">
                 <button class="btn btn-light" type="button" id="bulkCorrSkipBtn" onclick="bulkCorrectionSkip()">Skip →</button>
                 <button class="btn btn-primary" type="button" id="bulkCorrAddBtn" onclick="addBulkCorrectionBook()" disabled>Add to Catalog</button>
               </div>
@@ -2421,6 +2953,9 @@ const firebaseConfig = {
       </button>
       Book Detail
       <span style="flex:1;"></span>
+      <button class="panel-focus-toggle" id="briefingPanelToggle" type="button" onclick="toggleDesktopBriefingPanel()" title="Expand briefing panel" aria-label="Expand briefing panel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
       <button class="briefing-back-btn" id="prevBookBtn" onclick="navigateBook(-1)" title="Previous book" disabled style="opacity:0.4;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
@@ -2704,6 +3239,16 @@ const firebaseConfig = {
   <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
     <h3 style="margin-bottom:8px;">Account Settings</h3>
     <p id="accountSettingsEmail" style="font-family:'Courier Prime',monospace;font-size:0.82rem;color:var(--brown);margin-bottom:20px;"></p>
+    <div style="border-top:1px solid var(--tan);padding-top:16px;margin-bottom:16px;">
+      <label for="uiDetailModeSelect">Interface Detail</label>
+      <select id="uiDetailModeSelect" onchange="setUiDetailMode(this.value)">
+        <option value="guided">Guided</option>
+        <option value="compact">Compact</option>
+      </select>
+      <p style="font-size:0.78rem;color:#666;margin-top:8px;line-height:1.45;">
+        Guided shows the explanatory copy. Compact trims helper text for repeat use.
+      </p>
+    </div>
 
     <!-- Guest section — shown for anonymous users -->
     <div id="accountSettingsGuestSection" style="display:none;">
@@ -2784,6 +3329,11 @@ let pendingBook = null;
 let cameraStream = null;
 let scanInterval = null;
 let currentTab = "isbn";
+let singleAddMode = "photo";
+let desktopAddPanelCollapsed = false;
+let desktopBriefingPanelExpanded = false;
+let uiDetailMode = "guided";
+let wasMobileLayout = window.innerWidth < 1024;
 let researchEnabled = false;
 let selectedBookId = null;
 let researchRequestInFlight = false;
@@ -2819,6 +3369,9 @@ let bulkCorrSelectedResult = null;
 let bulkSecondPassActive   = false;  // true while in Phase 3 second-pass mode
 let bulkSecondPassFailures = [];     // failures accumulated across second-pass photos
 let bulkTextMode           = false;  // true when photo came from "Titles in Text" (no second-pass/correction)
+let bulkBatchMode          = false;  // true when processing many individual photos
+let bulkObjectUrls         = [];     // object URLs for batch-photo correction/lightbox previews
+let bulkProgress = { total: 0, processed: 0, stage: "", manual: 0, duplicates: 0 };
 let selectionMode    = false;
 let selectedBookIds  = new Set();
 let pendingBriefingIds = [];
@@ -3114,6 +3667,7 @@ function setMobileSection(name) {
       if (card) card.scrollIntoView({ block: "center", behavior: "instant" });
     });
   }
+  updateHeaderBadge();
 }
 
 // Intercept the phone/browser back button while briefing is open
@@ -3137,15 +3691,122 @@ function switchTab(tab) {
   document.querySelectorAll(".tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
+  document.querySelectorAll(".chooser-card").forEach((card) => {
+    card.classList.toggle("active", card.dataset.chooserTab === tab);
+  });
   pendingBook = null;
   clearManualSearch();
   document.getElementById("coverPreview").innerHTML = "";
-  setStatus("lookupStatus", "Enter an ISBN and click Look up, or use Scan.", "");
+  setStatus("lookupStatus", "Enter an ISBN and click Find by ISBN, or use Scan.", "");
   if (tab !== "manual") {
     clearManualSearch(false);
   }
   document.getElementById("bookMetaSection").style.display = tab === "manual" ? "" : "none";
+  if (tab === "isbn") setSingleAddMode(singleAddMode || "photo");
+  if (tab === "bulk") updateBulkModeCards();
 }
+
+function chooseAddFlow(tab, mode = null) {
+  if (tab && desktopAddPanelCollapsed && window.innerWidth >= 1024) {
+    setDesktopAddPanelCollapsed(false);
+  }
+  switchTab(tab);
+  if (tab === "isbn" && mode) setSingleAddMode(mode);
+}
+
+function setSingleAddMode(mode) {
+  singleAddMode = mode === "isbn" ? "isbn" : "photo";
+  const showIsbn = singleAddMode === "isbn";
+  document.getElementById("singleAddCardPhoto").classList.toggle("active", !showIsbn);
+  document.getElementById("singleAddCardIsbn").classList.toggle("active", showIsbn);
+  document.getElementById("singleAddPhotoPane").style.display = showIsbn ? "none" : "";
+  document.getElementById("singleAddIsbnPane").style.display = showIsbn ? "" : "none";
+}
+
+function applyUiDetailMode() {
+  const compact = uiDetailMode === "compact";
+  document.body.classList.toggle("ui-compact", compact);
+  const select = document.getElementById("uiDetailModeSelect");
+  if (select) select.value = uiDetailMode;
+  const bulkBookBtn = document.getElementById("bulkModeBtnBook");
+  const bulkBatchBtn = document.getElementById("bulkModeBtnBatch");
+  const bulkTextBtn = document.getElementById("bulkModeBtnText");
+  if (bulkBookBtn) bulkBookBtn.textContent = compact ? "Bookshelf Photo" : "Use Bookshelf Photo";
+  if (bulkBatchBtn) bulkBatchBtn.textContent = compact ? "Batch Photos" : "Use Batch Photos";
+  if (bulkTextBtn) bulkTextBtn.textContent = compact ? "Titles in Text" : "Use Text Extraction";
+}
+
+function setUiDetailMode(mode) {
+  uiDetailMode = mode === "compact" ? "compact" : "guided";
+  try { localStorage.setItem("tomeshelf-ui-detail-mode", uiDetailMode); } catch (e) {}
+  applyUiDetailMode();
+}
+
+function restoreUiDetailMode() {
+  try { uiDetailMode = localStorage.getItem("tomeshelf-ui-detail-mode") || "guided"; } catch (e) { uiDetailMode = "guided"; }
+  if (uiDetailMode !== "compact") uiDetailMode = "guided";
+  applyUiDetailMode();
+}
+
+function setDesktopAddPanelCollapsed(collapsed) {
+  desktopAddPanelCollapsed = Boolean(collapsed) && window.innerWidth >= 1024;
+  document.body.classList.toggle("desktop-add-collapsed", desktopAddPanelCollapsed);
+  const btn = document.getElementById("addPanelToggle");
+  if (btn) {
+    btn.title = desktopAddPanelCollapsed ? "Expand add panel" : "Collapse add panel";
+    btn.setAttribute("aria-label", btn.title);
+  }
+  try { localStorage.setItem("tomeshelf-add-panel-collapsed", desktopAddPanelCollapsed ? "1" : "0"); } catch (e) {}
+}
+
+function toggleDesktopAddPanel() {
+  setDesktopAddPanelCollapsed(!desktopAddPanelCollapsed);
+}
+
+function restoreDesktopAddPanelState() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("tomeshelf-add-panel-collapsed") === "1"; } catch (e) {}
+  setDesktopAddPanelCollapsed(collapsed);
+}
+
+function setDesktopBriefingPanelExpanded(expanded) {
+  desktopBriefingPanelExpanded = Boolean(expanded) && window.innerWidth >= 1024;
+  document.body.classList.toggle("desktop-briefing-expanded", desktopBriefingPanelExpanded);
+  const btn = document.getElementById("briefingPanelToggle");
+  if (btn) {
+    btn.title = desktopBriefingPanelExpanded ? "Shrink briefing panel" : "Expand briefing panel";
+    btn.setAttribute("aria-label", btn.title);
+  }
+  try { localStorage.setItem("tomeshelf-briefing-panel-expanded", desktopBriefingPanelExpanded ? "1" : "0"); } catch (e) {}
+}
+
+function toggleDesktopBriefingPanel() {
+  setDesktopBriefingPanelExpanded(!desktopBriefingPanelExpanded);
+}
+
+function restoreDesktopBriefingPanelState() {
+  let expanded = false;
+  try { expanded = localStorage.getItem("tomeshelf-briefing-panel-expanded") === "1"; } catch (e) {}
+  setDesktopBriefingPanelExpanded(expanded);
+}
+
+window.addEventListener("resize", function() {
+  const isMobileLayout = window.innerWidth < 1024;
+  if (isMobileLayout) {
+    document.body.classList.remove("desktop-add-collapsed");
+    document.body.classList.remove("desktop-briefing-expanded");
+  } else {
+    document.body.classList.toggle("desktop-add-collapsed", desktopAddPanelCollapsed);
+    document.body.classList.toggle("desktop-briefing-expanded", desktopBriefingPanelExpanded);
+  }
+  if (isMobileLayout && !wasMobileLayout) {
+    setMobileSection(selectedBookId ? "briefing" : "catalog");
+  }
+  if (!isMobileLayout && wasMobileLayout) {
+    document.querySelectorAll(".main > div").forEach((el) => el.classList.remove("mobile-active"));
+  }
+  wasMobileLayout = isMobileLayout;
+});
 
 async function loadApiConfig() {
   researchEnabled = Boolean(auth.currentUser);
@@ -3672,7 +4333,7 @@ function renderCatalog() {
 
   renderStats();
 
-  document.getElementById("countBadge").textContent = `${shelfBooks.length} tome${shelfBooks.length === 1 ? "" : "s"}`;
+  updateHeaderBadge(shelfBooks.length);
 
   const grid = document.getElementById("bookGrid");
   if (catalogLoading && !books.length) {
@@ -4749,6 +5410,7 @@ function showReviewSection(data) {
   if (data.candidates.length > 1) {
     list.innerHTML = `<div class="section-label" style="margin-top:10px;">Other matches</div>` +
       data.candidates.slice(1).map((c, i) => {
+        const cue = describeReviewMatch(c, data.extracted);
         const thumb = c.coverUrl
           ? `<div class="candidate-item-thumb"><img src="${escapeAttribute(c.coverUrl)}" alt="" onerror="this.parentElement.textContent='📖'"></div>`
           : `<div class="candidate-item-thumb">📖</div>`;
@@ -4757,6 +5419,7 @@ function showReviewSection(data) {
           <div class="candidate-item-text">
             <strong>${esc(c.title)}</strong>
             <span>${[c.authors.join(", "), c.publishedDate, c.source.replace(/_/g, " ")].filter(Boolean).map(esc).join(" | ")}</span>
+            <span class="candidate-reason">${esc(cue.badge)} - ${esc(cue.detail)}</span>
           </div>
         </button>`;
       }).join("");
@@ -4767,10 +5430,126 @@ function showReviewSection(data) {
   }
 }
 
+function normalizeMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compareWordOverlap(a, b) {
+  const aNorm = normalizeMatchText(a);
+  const bNorm = normalizeMatchText(b);
+  if (!aNorm || !bNorm) return 0;
+  const aWords = new Set(aNorm.split(" ").filter(Boolean));
+  const bWords = new Set(bNorm.split(" ").filter(Boolean));
+  if (!aWords.size || !bWords.size) return 0;
+  let overlap = 0;
+  aWords.forEach((word) => {
+    if (bWords.has(word)) overlap += 1;
+  });
+  return overlap / Math.max(aWords.size, bWords.size);
+}
+
+function cleanMatchIsbn(value) {
+  return String(value || "").replace(/[^0-9X]/gi, "").toUpperCase();
+}
+
+function describeReviewMatch(match, extracted) {
+  const titleScore = compareWordOverlap(extracted && extracted.title, match && match.title);
+  const authorScore = compareWordOverlap(
+    extracted && Array.isArray(extracted.authors) ? extracted.authors[0] : "",
+    match && Array.isArray(match.authors) ? match.authors[0] : ""
+  );
+  const candidateIsbn = cleanMatchIsbn(match && (match.isbn_13 || match.isbn_10));
+  const extractedIsbn = cleanMatchIsbn(extracted && (extracted.isbn_13 || extracted.isbn_10));
+  const reasons = [];
+
+  if (candidateIsbn && extractedIsbn && candidateIsbn === extractedIsbn) reasons.push("ISBN agrees");
+  if (titleScore >= 0.85) reasons.push("title aligns");
+  else if (titleScore >= 0.45) reasons.push("title partly aligns");
+  if (authorScore >= 0.8) reasons.push("author aligns");
+  else if (authorScore >= 0.45) reasons.push("author partly aligns");
+  if (!reasons.length && match && match.source) reasons.push(`${String(match.source).replace(/_/g, " ")} candidate`);
+
+  const confidence = typeof match?.confidence === "number" ? match.confidence : 0;
+  let tone = "uncertain";
+  let badge = "Possible match";
+  if ((candidateIsbn && extractedIsbn && candidateIsbn === extractedIsbn) || confidence >= 0.85 || (titleScore >= 0.85 && authorScore >= 0.8)) {
+    tone = "strong";
+    badge = "Strong match";
+  } else if (confidence >= 0.55 || titleScore >= 0.65 || (titleScore >= 0.45 && authorScore >= 0.45)) {
+    tone = "likely";
+    badge = "Likely match";
+  }
+
+  return {
+    tone,
+    badge,
+    detail: reasons.join("; ")
+  };
+}
+
+function describeExtractedReview(extracted) {
+  const visible = Array.isArray(extracted && extracted.source_visible)
+    ? extracted.source_visible.filter(Boolean).slice(0, 2)
+    : [];
+  const confidence = typeof extracted?.confidence === "number" ? extracted.confidence : 0;
+  const reasons = [];
+  if (cleanMatchIsbn(extracted && (extracted.isbn_13 || extracted.isbn_10))) reasons.push("ISBN was readable");
+  if (visible.length) reasons.push(`read from ${visible.join(" + ")}`);
+  if (!reasons.length && extracted && extracted.title) reasons.push("metadata was extracted from the photo");
+  return {
+    tone: confidence >= 0.65 ? "likely" : "neutral",
+    badge: confidence >= 0.65 ? "Extracted clearly" : "Needs review",
+    detail: reasons.join("; ")
+  };
+}
+
+function describeBulkMatch(entry) {
+  if (!entry || !entry.result) {
+    return {
+      tone: "uncertain",
+      badge: "Needs manual review",
+      detail: "No catalog match was confirmed"
+    };
+  }
+
+  const result = entry.result;
+  const titleScore = compareWordOverlap(entry.aiTitle, result.title);
+  const authorScore = compareWordOverlap(entry.aiAuthor, result.author);
+  const reasons = [];
+  if (result.isbn) reasons.push("catalog ISBN found");
+  if (titleScore >= 0.85) reasons.push("title aligns");
+  else if (titleScore >= 0.45) reasons.push("title partly aligns");
+  if (authorScore >= 0.8) reasons.push("author aligns");
+  else if (authorScore >= 0.45) reasons.push("author partly aligns");
+  if (!reasons.length && result.source) reasons.push(`matched via ${result.source}`);
+
+  const confidence = typeof result.confidence === "number" ? result.confidence : 0;
+  let tone = "uncertain";
+  let badge = "Possible match";
+  if (confidence >= 0.85 || (titleScore >= 0.85 && (!entry.aiAuthor || authorScore >= 0.8)) || (result.isbn && titleScore >= 0.45)) {
+    tone = "strong";
+    badge = "Strong match";
+  } else if (confidence >= 0.55 || titleScore >= 0.65 || (titleScore >= 0.45 && authorScore >= 0.45)) {
+    tone = "likely";
+    badge = "Likely match";
+  }
+
+  return {
+    tone,
+    badge,
+    detail: reasons.join("; ")
+  };
+}
+
 function renderReviewCard(match) {
   const hasDatabaseCover = Boolean(match.coverUrl);
   const hasPhoto = Boolean(_photoObjectUrl);
   const showPicker = hasDatabaseCover && hasPhoto;
+  const cue = describeReviewMatch(match, reviewData && reviewData.extracted);
 
   let coverHtml = "";
   if (showPicker) {
@@ -4802,11 +5581,16 @@ function renderReviewCard(match) {
         <div class="review-meta">${[match.publisher, match.publishedDate].filter(Boolean).map(esc).join(" | ")}</div>
         <div class="review-meta">ISBN: ${esc(match.isbn_13 || match.isbn_10 || "N/A")}</div>
         <div class="review-source">Source: ${esc(match.source.replace(/_/g, " "))}</div>
+        <div class="match-reason-row">
+          <span class="match-cue ${cue.tone}">${esc(cue.badge)}</span>
+          <span class="match-reason-detail">${esc(cue.detail)}</span>
+        </div>
       </div>
     </div>`;
 }
 
 function renderExtractedCard(extracted) {
+  const cue = describeExtractedReview(extracted);
   return `
     <div class="review-card-inner">
       <div>
@@ -4815,6 +5599,10 @@ function renderExtractedCard(extracted) {
         ${extracted.publisher ? `<div class="review-meta">${esc(extracted.publisher)}</div>` : ""}
         ${extracted.published_year ? `<div class="review-meta">Year: ${esc(extracted.published_year)}</div>` : ""}
         <div class="review-source">Extracted from photos (no database match)</div>
+        <div class="match-reason-row">
+          <span class="match-cue ${cue.tone}">${esc(cue.badge)}</span>
+          <span class="match-reason-detail">${esc(cue.detail)}</span>
+        </div>
       </div>
     </div>`;
 }
@@ -5822,6 +6610,22 @@ function updateShelfLabel() {
   const shelf = shelves.find(function(s) { return s.id === currentShelfId; }) || shelves[0];
   const el = document.getElementById("currentShelfName");
   if (el) el.textContent = shelf ? shelf.name : "Reading List";
+  updateHeaderBadge();
+}
+
+function updateHeaderBadge(bookCount = null) {
+  const badge = document.getElementById("countBadge");
+  if (!badge) return;
+  const shelf = shelves.find(function(s) { return s.id === currentShelfId; }) || shelves[0];
+  const isMobileAdd = window.innerWidth < 1024 && document.getElementById("addPanel")?.classList.contains("mobile-active");
+  if (isMobileAdd && shelf) {
+    badge.textContent = `Shelf: ${shelf.name}`;
+    return;
+  }
+  const count = bookCount === null
+    ? books.filter((b) => (b.listShelfId || "default") === currentShelfId).length
+    : bookCount;
+  badge.textContent = `${count} tome${count === 1 ? "" : "s"}`;
 }
 
 function updateShelfSelector() {
@@ -5956,6 +6760,9 @@ async function initializeApp(cameraReturn = false) {
   // On camera return (full page reload after taking a photo) stay on the Add tab
   // so the captured photo — delivered via onchange after the reload — is visible.
   // On normal init, navigate to Catalog.
+  restoreUiDetailMode();
+  restoreDesktopAddPanelState();
+  restoreDesktopBriefingPanelState();
   setMobileSection(cameraReturn ? "add" : "catalog");
   renderCatalog();
   renderBriefingPanel();
@@ -6050,6 +6857,8 @@ function openAccountSettings() {
   const isGuest = user && user.isAnonymous;
   const emailEl = document.getElementById("accountSettingsEmail");
   if (emailEl) emailEl.textContent = isGuest ? "Guest session — not signed in" : (user && (user.email || user.displayName) || "");
+  const modeSelect = document.getElementById("uiDetailModeSelect");
+  if (modeSelect) modeSelect.value = uiDetailMode;
   document.getElementById("accountSettingsGuestSection").style.display = isGuest ? "" : "none";
   document.getElementById("accountSettingsUserSection").style.display  = isGuest ? "none" : "";
   const shareSection = document.getElementById("accountSettingsShareSection");
@@ -6140,21 +6949,101 @@ async function confirmDeleteAccount() {
 
 function startBulkCamera()  { document.getElementById("bulkCameraInput").click(); }
 function startBulkGallery() { document.getElementById("bulkGalleryInput").click(); }
+function startBulkBatchCamera()  { document.getElementById("bulkBatchCameraInput").click(); }
+function startBulkBatchGallery() { document.getElementById("bulkBatchGalleryInput").click(); }
 function startBulkTextCamera()  { document.getElementById("bulkTextCameraInput").click(); }
 function startBulkTextGallery() { document.getElementById("bulkTextGalleryInput").click(); }
 
 function toggleBulkPhotoMode(mode) {
   const bookExpand = document.getElementById("bulkBookModeExpand");
+  const batchExpand = document.getElementById("bulkBatchModeExpand");
   const textExpand = document.getElementById("bulkTextModeExpand");
+  let activeMode = "";
   if (mode === "book") {
     const open = bookExpand.style.display === "none";
     bookExpand.style.display = open ? "" : "none";
+    batchExpand.style.display = "none";
     textExpand.style.display = "none";
+    activeMode = open ? "book" : "";
+  } else if (mode === "batch") {
+    const open = batchExpand.style.display === "none";
+    batchExpand.style.display = open ? "" : "none";
+    bookExpand.style.display = "none";
+    textExpand.style.display = "none";
+    activeMode = open ? "batch" : "";
   } else {
     const open = textExpand.style.display === "none";
     textExpand.style.display = open ? "" : "none";
     bookExpand.style.display = "none";
+    batchExpand.style.display = "none";
+    activeMode = open ? "text" : "";
   }
+  updateBulkModeCards(activeMode);
+}
+
+function revokeBulkObjectUrls() {
+  bulkObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  bulkObjectUrls = [];
+}
+
+function resetBulkFlowState() {
+  bulkFoundBooks = [];
+  bulkIncorrectQueue = [];
+  bulkCorrectionIdx = 0;
+  bulkCorrSearchResults = [];
+  bulkCorrSelectedResult = null;
+  bulkSecondPassActive = false;
+  bulkSecondPassFailures = [];
+  bulkTextMode = false;
+  bulkBatchMode = false;
+  bulkProgress = { total: 0, processed: 0, stage: "", manual: 0, duplicates: 0 };
+  revokeBulkObjectUrls();
+  updateBulkModeCards();
+  renderBulkProgress();
+  renderBulkSummary();
+}
+
+function updateBulkModeCards(activeMode = "") {
+  document.getElementById("bulkModeCardBook").classList.toggle("active", activeMode === "book");
+  document.getElementById("bulkModeCardBatch").classList.toggle("active", activeMode === "batch");
+  document.getElementById("bulkModeCardText").classList.toggle("active", activeMode === "text");
+}
+
+function setBulkProgress(update = {}) {
+  bulkProgress = { ...bulkProgress, ...update };
+  renderBulkProgress();
+}
+
+function renderBulkProgress() {
+  const wrap = document.getElementById("bulkProgress");
+  const stage = document.getElementById("bulkProgressStage");
+  const count = document.getElementById("bulkProgressCount");
+  const fill = document.getElementById("bulkProgressFill");
+  const total = Number(bulkProgress.total || 0);
+  const processed = Math.min(Number(bulkProgress.processed || 0), total || 0);
+  if (!wrap || !stage || !count || !fill) return;
+  const show = total > 0 || Boolean(bulkProgress.stage);
+  wrap.classList.toggle("is-visible", show);
+  stage.textContent = bulkProgress.stage || "";
+  count.textContent = total > 0 ? `${processed} of ${total}` : "";
+  fill.style.width = total > 0 ? `${Math.max(0, Math.min(100, (processed / total) * 100))}%` : "0%";
+}
+
+function renderBulkSummary() {
+  const el = document.getElementById("bulkSummary");
+  if (!el) return;
+  const confirmed = bulkFoundBooks.filter((b) => b.correct).length;
+  const rejected = bulkFoundBooks.filter((b) => !b.correct).length;
+  const unmatched = bulkFoundBooks.filter((b) => b.correct && !b.result).length;
+  const pills = [];
+  if (bulkFoundBooks.length) pills.push(`${bulkFoundBooks.length} found`);
+  if (confirmed || bulkFoundBooks.length) pills.push(`${confirmed} confirmed`);
+  if (rejected) pills.push(`${rejected} excluded`);
+  if (unmatched) pills.push(`${unmatched} unmatched`);
+  if (bulkIncorrectQueue.length) pills.push(`${bulkIncorrectQueue.length} manual`);
+  if (bulkProgress.duplicates) pills.push(`${bulkProgress.duplicates} merged`);
+  el.innerHTML = pills.map((pill) => `<span class="bulk-summary-pill">${esc(pill)}</span>`).join("");
+  el.style.display = pills.length ? "" : "none";
 }
 
 function handleBulkPhotoSelection(input, textMode = false) {
@@ -6162,15 +7051,31 @@ function handleBulkPhotoSelection(input, textMode = false) {
   input.value = "";
   if (!file) return;
   // Always a fresh start — clear any state left over from a prior session
-  bulkFoundBooks = [];
-  bulkIncorrectQueue = [];
-  bulkSecondPassActive = false;
-  bulkSecondPassFailures = [];
+  resetBulkFlowState();
   bulkTextMode = textMode;
   // Collapse both expand rows
   document.getElementById("bulkBookModeExpand").style.display = "none";
+  document.getElementById("bulkBatchModeExpand").style.display = "none";
   document.getElementById("bulkTextModeExpand").style.display = "none";
+  updateBulkModeCards(textMode ? "text" : "book");
   runBulkAnalysis(file);
+}
+
+function handleBulkBatchSelection(input) {
+  const files = Array.from(input.files || []).filter((file) => file && /^image\//.test(file.type || ""));
+  input.value = "";
+  if (!files.length) return;
+  if (files.length > 20) {
+    setBulkStatus("Select up to 20 photos at a time.", "error");
+    return;
+  }
+  resetBulkFlowState();
+  bulkBatchMode = true;
+  document.getElementById("bulkBookModeExpand").style.display = "none";
+  document.getElementById("bulkBatchModeExpand").style.display = "none";
+  document.getElementById("bulkTextModeExpand").style.display = "none";
+  updateBulkModeCards("batch");
+  runBulkBatchAnalysis(files);
 }
 
 async function runBulkAnalysis(file) {
@@ -6260,6 +7165,158 @@ async function runBulkAnalysis(file) {
   }
 }
 
+function normalizeBatchBestMatch(match) {
+  if (!match) return null;
+  return {
+    title: match.title || "",
+    author: Array.isArray(match.authors) ? match.authors.join(", ") : "",
+    publisher: match.publisher || "",
+    year: (match.publishedDate || "").match(/\d{4}/)?.[0] || "",
+    edition: "",
+    subjects: Array.isArray(match.categories) ? match.categories.join("; ") : "",
+    isbn: match.isbn_13 || match.isbn_10 || "",
+    coverUrl: match.coverUrl || "",
+    source: match.source === "google_books" ? "Google Books" : "Open Library",
+    confidence: typeof match.confidence === "number" ? match.confidence : 0
+  };
+}
+
+function buildBatchBookEntry(data, file, objectUrl, index) {
+  const match = normalizeBatchBestMatch(data && data.bestMatch);
+  const extracted = data && data.extracted ? data.extracted : null;
+  return {
+    aiTitle: match?.title || extracted?.title || file.name || `Photo ${index + 1}`,
+    aiAuthor: match?.author || (Array.isArray(extracted?.authors) ? extracted.authors.join(", ") : ""),
+    result: match,
+    correct: true,
+    extracted,
+    sourcePhotoUrl: objectUrl,
+    sourcePhotoName: file.name || `Photo ${index + 1}`,
+    sourcePhotoIndex: index
+  };
+}
+
+function dedupeBulkBatchResults(items) {
+  const bestByKey = new Map();
+  for (const item of items) {
+    const key = item.result && item.result.isbn
+      ? `isbn:${item.result.isbn}`
+      : `meta:${String(item.aiTitle || "").trim().toLowerCase()}||${String(item.aiAuthor || "").trim().toLowerCase()}`;
+    if (!String(item.aiTitle || "").trim()) continue;
+    const existing = bestByKey.get(key);
+    if (!existing) {
+      bestByKey.set(key, item);
+      continue;
+    }
+    const score = (entry) => {
+      if (!entry) return -1;
+      let n = 0;
+      if (entry.result && entry.result.isbn) n += 4;
+      if (entry.result && entry.result.coverUrl) n += 2;
+      if (entry.result) n += 1;
+      if (entry.result && typeof entry.result.confidence === "number") n += entry.result.confidence;
+      return n;
+    };
+    if (score(item) > score(existing)) bestByKey.set(key, item);
+  }
+  return Array.from(bestByKey.values());
+}
+
+async function runBulkBatchAnalysis(files) {
+  if (bulkLoadInFlight) return;
+  bulkLoadInFlight = true;
+  setBulkProgress({ total: files.length, processed: 0, stage: "Preparing photos", manual: 0, duplicates: 0 });
+  showBulkSection("intro");
+  setBulkStatus(`Preparing ${files.length} photo${files.length !== 1 ? "s" : ""}…`, "");
+
+  try {
+    const resizedImages = await Promise.all(files.map((file) => resizeImage(file, 1600)));
+    const analyzePhotoFn = functions.httpsCallable("analyzeBookPhoto");
+    const found = [];
+    const failures = [];
+    let cursor = 0;
+    let completed = 0;
+    const concurrency = Math.min(2, files.length);
+
+    async function worker() {
+      while (cursor < files.length) {
+        const index = cursor++;
+        const file = files[index];
+        const image = resizedImages[index];
+        completed++;
+        setBulkProgress({ total: files.length, processed: completed - 1, stage: "Analyzing batch photos" });
+        setBulkStatus(`Analyzing ${completed} of ${files.length}: "${file.name}"…`, "");
+
+        const objectUrl = URL.createObjectURL(file);
+        bulkObjectUrls.push(objectUrl);
+
+        if (!image) {
+          failures.push({
+            aiTitle: file.name,
+            aiAuthor: "",
+            sourcePhotoName: file.name,
+            sourcePhotoUrl: objectUrl,
+            sourcePhotoIndex: index
+          });
+          setBulkProgress({ manual: failures.length });
+          continue;
+        }
+
+        try {
+          const result = await analyzePhotoFn({ images: [image] });
+          found.push(buildBatchBookEntry(result.data || {}, file, objectUrl, index));
+          setBulkProgress({ processed: completed });
+        } catch (_) {
+          failures.push({
+            aiTitle: file.name,
+            aiAuthor: "",
+            sourcePhotoName: file.name,
+            sourcePhotoUrl: objectUrl,
+            sourcePhotoIndex: index
+          });
+          setBulkProgress({ processed: completed, manual: failures.length });
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    bulkFoundBooks = dedupeBulkBatchResults(found);
+    bulkIncorrectQueue = failures;
+    setBulkProgress({
+      total: files.length,
+      processed: files.length,
+      stage: "Ready for review",
+      manual: failures.length,
+      duplicates: Math.max(0, found.length - bulkFoundBooks.length)
+    });
+
+    if (!bulkFoundBooks.length && !bulkIncorrectQueue.length) {
+      setBulkStatus("No books could be identified from the selected photos.", "error");
+      return;
+    }
+    if (!bulkFoundBooks.length && bulkIncorrectQueue.length > 0) {
+      setBulkStatus(`Processed ${files.length} photo${files.length !== 1 ? "s" : ""}. Manual review needed.`, "success");
+      startBulkCorrection();
+      return;
+    }
+
+    renderBulkResults();
+    document.querySelectorAll("#bulkBookCards .bulk-pull-hint").forEach((el) => { el.style.display = "none"; });
+    showBulkSection("results");
+
+    const dedupedCount = found.length - bulkFoundBooks.length;
+    const statusBits = [`Processed ${files.length} photo${files.length !== 1 ? "s" : ""}.`];
+    if (dedupedCount > 0) statusBits.push(`Merged ${dedupedCount} duplicate result${dedupedCount !== 1 ? "s" : ""}.`);
+    if (bulkIncorrectQueue.length > 0) statusBits.push(`${bulkIncorrectQueue.length} need manual review.`);
+    setBulkStatus(statusBits.join(" "), bulkFoundBooks.length ? "success" : "");
+  } catch (err) {
+    setBulkStatus(err.message || "Batch photo analysis failed.", "error");
+  } finally {
+    bulkLoadInFlight = false;
+  }
+}
+
 function setBulkStatus(msg, type) { setStatus("bulkStatus", msg, type); }
 
 function showBulkSection(section) {
@@ -6277,6 +7334,7 @@ function renderBulkResults() {
 
   document.getElementById("bulkBookCards").innerHTML = bulkFoundBooks.map((b, i) => {
     const r = b.result;
+    const cue = describeBulkMatch(b);
     const cover  = r && r.coverUrl ? `<img src="${escapeAttribute(r.coverUrl)}" alt="" onclick="showCoverLightbox('${escapeAttribute(r.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">` : "📖";
     const title  = esc(r ? r.title  : b.aiTitle);
     const author = esc(r ? r.author : b.aiAuthor);
@@ -6287,6 +7345,10 @@ function renderBulkResults() {
         <div class="bulk-book-title">${title}</div>
         <div class="bulk-book-author">${author}</div>
         <div class="bulk-book-meta">${esc(meta)}</div>
+        <div class="bulk-book-reason">
+          <span class="match-cue ${cue.tone}">${esc(cue.badge)}</span>
+          <span class="match-reason-detail">${esc(cue.detail)}</span>
+        </div>
         ${(!bulkSecondPassActive && !bulkTextMode) ? `<div class="bulk-pull-hint" id="bulkHint${i}"${b.correct ? ' style="display:none"' : ''}>← pull this book for cover photo</div>` : ''}
       </div>
       <div class="bulk-toggle-btns">
@@ -6296,6 +7358,11 @@ function renderBulkResults() {
     </div>`;
   }).join("");
 
+  if (bulkBatchMode) {
+    document.getElementById("bulkResultsHdr").textContent =
+      `${bulkFoundBooks.length} book${bulkFoundBooks.length !== 1 ? "s" : ""} found from batch photos â€” toggle any that are incorrect`;
+  }
+  renderBulkSummary();
   updateBulkAddBtn();
   document.getElementById("bulkActionRow").style.display = "";
 }
@@ -6307,17 +7374,18 @@ function toggleBulkBook(index, correct) {
   const [btnOk, btnNo] = card.querySelectorAll(".bulk-toggle-btn");
   btnOk.className = `bulk-toggle-btn${correct  ? " active-correct" : ""}`;
   btnNo.className = `bulk-toggle-btn${!correct ? " active-incorrect" : ""}`;
-  if (!bulkSecondPassActive) {
+  if (!bulkSecondPassActive && !bulkBatchMode) {
     const hint = document.getElementById(`bulkHint${index}`);
     if (hint) hint.style.display = correct ? "none" : "";
   }
+  renderBulkSummary();
   updateBulkAddBtn();
 }
 
 function updateBulkAddBtn() {
   const n = bulkFoundBooks.filter(b => b.correct).length;
   const btn = document.getElementById("bulkAddCorrectBtn");
-  btn.textContent = `Add ${n} Correct Book${n !== 1 ? "s" : ""} to TomeShelf`;
+  btn.textContent = `Add ${n} Confirmed Book${n !== 1 ? "s" : ""}`;
   btn.disabled = n === 0;
 }
 
@@ -6352,9 +7420,22 @@ async function addCorrectBulkBooks() {
   if (addedCount > 0) { await saveBooks(); renderCatalog(); }
 
   const failures = [
-    ...incorrect.map(b => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor })),
-    ...noMatch.map(b  => ({ aiTitle: b.aiTitle, aiAuthor: b.aiAuthor }))
+    ...incorrect.map(b => ({
+      aiTitle: b.aiTitle,
+      aiAuthor: b.aiAuthor,
+      sourcePhotoName: b.sourcePhotoName || "",
+      sourcePhotoUrl: b.sourcePhotoUrl || "",
+      sourcePhotoIndex: b.sourcePhotoIndex
+    })),
+    ...noMatch.map(b  => ({
+      aiTitle: b.aiTitle,
+      aiAuthor: b.aiAuthor,
+      sourcePhotoName: b.sourcePhotoName || "",
+      sourcePhotoUrl: b.sourcePhotoUrl || "",
+      sourcePhotoIndex: b.sourcePhotoIndex
+    }))
   ];
+  const carryFailures = bulkBatchMode ? [...bulkIncorrectQueue, ...failures] : failures;
 
   let statusMsg = `Added ${addedCount} book${addedCount !== 1 ? "s" : ""} to TomeShelf.`;
   if (skippedCount) statusMsg += ` (${skippedCount} already in catalog.)`;
@@ -6368,6 +7449,10 @@ async function addCorrectBulkBooks() {
     bulkSecondPassFailures.push(...failures);
     setStatus("bulkSecondPassStatus", statusMsg, "success");
     showBulkSection("secondpass");
+  } else if (bulkBatchMode && carryFailures.length > 0) {
+    bulkIncorrectQueue = carryFailures;
+    setStatus("bulkResultStatus", statusMsg, "success");
+    startBulkCorrection();
   } else if (failures.length > 0) {
     // First pass with failures: enter second-pass mode
     bulkIncorrectQueue = failures;
@@ -6418,14 +7503,7 @@ function endBulkSecondPass() {
 }
 
 function resetBulkLoad() {
-  bulkFoundBooks = [];
-  bulkIncorrectQueue = [];
-  bulkCorrectionIdx = 0;
-  bulkCorrSearchResults = [];
-  bulkCorrSelectedResult = null;
-  bulkSecondPassActive = false;
-  bulkSecondPassFailures = [];
-  bulkTextMode = false;
+  resetBulkFlowState();
   setBulkStatus("", "");
   showBulkSection("intro");
 }
@@ -6453,6 +7531,20 @@ function renderBulkCorrectionForm() {
     `Reviewing book ${curr + 1} of ${total}`;
   document.getElementById("bulkAiSaw").textContent =
     `AI saw: "${item.aiTitle}"${item.aiAuthor ? ` by ${item.aiAuthor}` : ""}`;
+  const photoWrap = document.getElementById("bulkCorrPhotoWrap");
+  const photo = document.getElementById("bulkCorrPhoto");
+  const caption = document.getElementById("bulkCorrPhotoCaption");
+  if (item.sourcePhotoUrl) {
+    photo.src = item.sourcePhotoUrl;
+    photo.onclick = () => showCoverLightbox(item.sourcePhotoUrl);
+    caption.textContent = item.sourcePhotoName || "";
+    photoWrap.style.display = "";
+  } else {
+    photo.src = "";
+    photo.onclick = null;
+    caption.textContent = "";
+    photoWrap.style.display = "none";
+  }
   document.getElementById("bulkCorrTitle").value  = item.aiTitle;
   document.getElementById("bulkCorrAuthor").value = item.aiAuthor;
   document.getElementById("bulkCorrSearchResults").style.display = "none";
