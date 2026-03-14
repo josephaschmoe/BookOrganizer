@@ -970,14 +970,18 @@ const functions = firebase.functions();
 // ── State ─────────────────────────────────────────────────────────────────────
 let sharedBooks       = [];
 let sharedCache       = {};
+let sharedAudioCache  = {};
 let sharedShelfName   = "";
 let sharedAllowWikiAI = false;
+let sharedAllowBriefingAudio = false;
 let selectedBookId    = null;
 let showSpoilers      = false;
 let currentFilter     = "";
 let currentSort       = "added";
 let isMobileDetail    = false; // tracks if mobile user is in detail view
 let shareDetailExpanded = false;
+let sharedAudioUrls   = {};
+let sharedAudioLoading = {};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 const token = (window.location.pathname.split("/share/")[1] || "").split("?")[0].trim();
@@ -997,8 +1001,10 @@ async function loadSharedShelf() {
     const data = result.data;
     sharedBooks       = data.books || [];
     sharedCache       = data.researchCache || {};
+    sharedAudioCache  = data.briefingAudioCache || {};
     sharedShelfName   = data.shelfName || "Shared Shelf";
     sharedAllowWikiAI = Boolean(data.allowWikiAI);
+    sharedAllowBriefingAudio = Boolean(data.allowBriefingAudio);
     document.getElementById("headerShelfName").textContent = sharedShelfName;
     document.title = "TomeShelf \u2014 " + sharedShelfName;
     renderLayout();
@@ -1206,6 +1212,37 @@ function goBackToList() {
   }
 }
 
+function sharedAudioVariant(bookId, spoilerMode) {
+  const audioDoc = sharedAudioCache[bookId];
+  const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
+  const variant = variants[spoilerMode];
+  return variant && typeof variant === "object" ? variant : null;
+}
+
+function sharedAudioKey(bookId, spoilerMode) {
+  return bookId + ":" + spoilerMode;
+}
+
+async function ensureSharedAudioUrl(bookId, spoilerMode) {
+  const key = sharedAudioKey(bookId, spoilerMode);
+  if (sharedAudioUrls[key]) return sharedAudioUrls[key];
+  if (sharedAudioLoading[key]) return "";
+  sharedAudioLoading[key] = true;
+  try {
+    const fn = functions.httpsCallable("getSharedBriefingAudio");
+    const result = await fn({ token, bookId, spoilerMode });
+    const audioUrl = result.data && result.data.audioUrl ? result.data.audioUrl : "";
+    if (audioUrl) sharedAudioUrls[key] = audioUrl;
+    if (selectedBookId === bookId) renderBookDetail();
+    return audioUrl;
+  } catch (err) {
+    console.error("[ensureSharedAudioUrl]", err);
+    return "";
+  } finally {
+    delete sharedAudioLoading[key];
+  }
+}
+
 // ── Book detail ───────────────────────────────────────────────────────────────
 function renderBookDetail() {
   const detailBody = document.getElementById("detailBody");
@@ -1269,10 +1306,22 @@ function renderBookDetail() {
         '<span class="toggle-text">Show Spoilers</span>' +
       '</label>'
     : '';
+  const spoilerMode = isFiction && showSpoilers ? "spoiler" : "safe";
+  const audioVariant = sharedAllowBriefingAudio && briefing ? sharedAudioVariant(book.id, spoilerMode) : null;
+  const audioUrl = sharedAudioUrls[sharedAudioKey(book.id, spoilerMode)] || "";
+
+  if (audioVariant && audioVariant.status === "ready" && !audioUrl) {
+    ensureSharedAudioUrl(book.id, spoilerMode);
+  }
 
   const actionsHtml =
     '<div class="book-detail-action-row">' +
       '<button class="btn btn-light btn-sm" type="button" onclick="lookupWikipedia()">Wikipedia</button>' +
+      (audioVariant
+        ? '<button class="btn btn-light btn-sm" type="button" onclick="ensureSharedAudioUrl(\'' + escapeAttribute(book.id) + '\', \'' + spoilerMode + '\')">' +
+            (audioUrl ? 'Play Audio' : 'Listen') +
+          '</button>'
+        : '') +
       spoilerToggleHtml +
     '</div>';
 
@@ -1289,9 +1338,19 @@ function renderBookDetail() {
 
     const takeawaysHtml = (!isFiction && briefing.key_takeaways && briefing.key_takeaways.length)
       ? '<div class="briefing-section"><h3>Key Takeaways</h3>' + renderList(briefing.key_takeaways, "briefing-list") + '</div>' : "";
+    const audioHtml = !audioVariant ? ""
+      : '<div class="briefing-section"><h3>Audio Overview</h3>' +
+          '<p>Voice: ' + esc(audioVariant.voice || "Kore") +
+            (audioVariant.durationSec ? ' &middot; Approx. ' + Math.max(1, Math.round(audioVariant.durationSec / 60)) + ' min' : '') +
+          '</p>' +
+          (audioUrl
+            ? '<audio controls preload="none" style="width:100%;margin-top:8px;"><source src="' + escapeAttribute(audioUrl) + '" type="audio/wav"></audio>'
+            : '<p>Loading audio player...</p>') +
+        '</div>';
 
     briefingHtml =
       '<div class="briefing-scroll">' +
+        audioHtml +
         '<div class="briefing-section"><h3>Quick Take</h3><p>' + esc(briefing.quick_take) + '</p></div>' +
         '<div class="briefing-section"><h3>' + (isFiction ? "Plot Summary" : "Overview") + '</h3><p>' + paragraphize(summaryText) + '</p></div>' +
         '<div class="briefing-section"><h3>Major Themes</h3>' + renderList(briefing.major_themes, "briefing-list") + '</div>' +

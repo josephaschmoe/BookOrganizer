@@ -4,6 +4,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten }  = require("firebase-functions/v2/firestore");
 const { onSchedule }         = require("firebase-functions/v2/scheduler");
 const { defineSecret }       = require("firebase-functions/params");
+const crypto = require("crypto");
 const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
@@ -13,6 +14,12 @@ const perplexityApiKey  = defineSecret("PERPLEXITY_API_KEY");
 
 const MODEL = "gemini-2.5-flash";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const SCRIPT_MODEL = "gemini-2.5-pro";
+const SCRIPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${SCRIPT_MODEL}:generateContent`;
+const TTS_MODEL = "gemini-2.5-pro-preview-tts";
+const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
+const DEFAULT_AUDIO_VOICE = "Kore";
+const AUDIO_VOICES = new Set(["Kore", "Puck", "Charon"]);
 
 const PERPLEXITY_MODEL   = "sonar-pro";
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
@@ -211,6 +218,79 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] },
   return { research };
 });
 
+exports.generateBriefingAudio = onCall({
+  secrets: [geminiApiKey],
+  timeoutSeconds: 300,
+  memory: "1GiB"
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const bookId = cleanText((request.data || {}).bookId || "");
+  const spoilerMode = cleanText((request.data || {}).spoilerMode || "");
+  const voice = cleanText((request.data || {}).voice || DEFAULT_AUDIO_VOICE);
+  const forceRefresh = Boolean((request.data || {}).forceRefresh);
+
+  if (!bookId) {
+    throw new HttpsError("invalid-argument", "bookId is required.");
+  }
+
+  try {
+    const result = await buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, geminiApiKey.value());
+    const signed = result.metadata && result.metadata.audioPath
+      ? await getPlayableAudioUrl(result.metadata.audioPath)
+      : { audioUrl: "" };
+    return {
+      ok: true,
+      spoilerMode: result.variantKey,
+      metadata: result.metadata,
+      cached: result.cached,
+      audioUrl: signed.audioUrl
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    console.error("[generateBriefingAudio] failed:", error && error.message ? error.message : error);
+    return {
+      ok: false,
+      error: error && error.message ? error.message : "Unknown audio generation error."
+    };
+  }
+});
+
+exports.getBriefingAudio = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const bookId = cleanText((request.data || {}).bookId || "");
+  const requestedMode = cleanText((request.data || {}).spoilerMode || "");
+  if (!bookId) throw new HttpsError("invalid-argument", "bookId is required.");
+
+  const briefingSnap = await db.collection("users").doc(uid).collection("briefings").doc(bookId).get();
+  if (!briefingSnap.exists) throw new HttpsError("not-found", "Briefing not found.");
+  const isFiction = String((briefingSnap.data() || {}).genre || "").toLowerCase() !== "non-fiction";
+  const variantKey = normalizeSpoilerMode(requestedMode, isFiction);
+
+  const audioSnap = await briefingAudioDocRef(uid, bookId).get();
+  if (!audioSnap.exists) throw new HttpsError("not-found", "Audio has not been generated for this book.");
+  const variant = audioVariantFromDoc(audioSnap.data(), variantKey);
+  if (!variant || variant.status !== "ready" || !variant.audioPath) {
+    throw new HttpsError("not-found", "Audio has not been generated for this mode.");
+  }
+
+  const signed = await getPlayableAudioUrl(variant.audioPath);
+  return {
+    spoilerMode: variantKey,
+    voice: variant.voice || DEFAULT_AUDIO_VOICE,
+    durationSec: variant.durationSec || 0,
+    generatedAt: variant.generatedAt || "",
+    ...signed
+  };
+});
+
 // ── Firestore trigger: auto-generate or queue on new books ───────────────────
 
 exports.onBooksChanged = onDocumentWritten(
@@ -401,6 +481,387 @@ function parseResearchJson(text) {
     if (match) { return JSON.parse(match[0]); }
     throw new Error("Could not parse JSON.");
   }
+}
+
+function briefingAudioDocRef(uid, bookId) {
+  return db.collection("users").doc(uid).collection("briefingAudio").doc(bookId);
+}
+
+function normalizeVoice(voice) {
+  const value = cleanText(voice || DEFAULT_AUDIO_VOICE) || DEFAULT_AUDIO_VOICE;
+  return AUDIO_VOICES.has(value) ? value : DEFAULT_AUDIO_VOICE;
+}
+
+function normalizeSpoilerMode(mode, isFiction) {
+  if (!isFiction) return "safe";
+  return String(mode || "").trim().toLowerCase() === "spoiler" ? "spoiler" : "safe";
+}
+
+function estimateDurationSec(text) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(60, Math.round((words / 150) * 60));
+}
+
+function audioVariantFromDoc(doc, variantKey) {
+  const variants = doc && typeof doc.variants === "object" ? doc.variants : {};
+  const variant = variants[variantKey];
+  return variant && typeof variant === "object" ? variant : null;
+}
+
+async function loadBookAndBriefing(uid, bookId) {
+  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
+  const briefingRef = db.collection("users").doc(uid).collection("briefings").doc(bookId);
+  const [catalogSnap, briefingSnap] = await Promise.all([catalogRef.get(), briefingRef.get()]);
+
+  if (!catalogSnap.exists) throw new HttpsError("not-found", "Catalog not found.");
+
+  const catalogData = catalogSnap.data() || {};
+  const rawBook = (catalogData.books || []).find((entry) => entry && entry.id === bookId);
+  if (!rawBook) throw new HttpsError("not-found", "Book not found.");
+  if (!briefingSnap.exists) throw new HttpsError("failed-precondition", "Generate the book briefing first.");
+
+  return {
+    book: sanitizeBook(rawBook),
+    rawBook,
+    briefing: briefingSnap.data() || {}
+  };
+}
+
+function listToNarrationLines(items, prefix = "- ") {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  return list.length ? list.map((item) => `${prefix}${item}`).join("\n") : `${prefix}No details available.`;
+}
+
+function buildNarrationPrompt(book, briefing, spoilerMode) {
+  const isFiction = String(briefing.genre || "").toLowerCase() !== "non-fiction";
+  const safeMode = normalizeSpoilerMode(spoilerMode, isFiction);
+  const summaryText = isFiction
+    ? (safeMode === "spoiler" ? briefing.summary_spoiler : briefing.summary_safe)
+    : briefing.summary;
+  const keyElems = isFiction
+    ? (safeMode === "spoiler" ? briefing.key_elements_spoiler : briefing.key_elements_safe)
+    : briefing.key_elements;
+  const craftText = isFiction
+    ? (safeMode === "spoiler" ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe)
+    : briefing.craft_analysis;
+  const discussionList = isFiction
+    ? (safeMode === "spoiler" ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe)
+    : briefing.discussion_questions;
+
+  return [
+    `Book title: ${book.title || "Unknown"}`,
+    `Author: ${book.author || "Unknown"}`,
+    `Year: ${book.year || "Unknown"}`,
+    `Genre: ${briefing.genre || "Unknown"}`,
+    `Spoiler mode: ${safeMode}`,
+    "",
+    "Use the structured briefing below as source material. Expand every section into a polished solo audio overview.",
+    "Treat each heading as a chapter marker with a natural spoken transition.",
+    "Do not mention JSON, metadata, bullet points, or field names.",
+    "Aim for roughly 1,000 to 1,400 words and about 8 to 10 minutes of listening time.",
+    isFiction
+      ? "For fiction, focus on atmosphere, character arc, structure, and prose."
+      : "For non-fiction, focus on utility, argument quality, key ideas, and real-world application.",
+    safeMode === "spoiler"
+      ? "Spoilers are allowed. Discuss the full work plainly."
+      : "Do not reveal endings, twists, or late-stage character fates beyond the spoiler-safe briefing.",
+    "For discussion questions, pose each question naturally to the listener and offer a brief exploratory answer.",
+    "Return only the finished narration script in plain text.",
+    "",
+    "Quick Take",
+    String(briefing.quick_take || ""),
+    "",
+    isFiction ? "Plot Summary" : "Overview",
+    String(summaryText || ""),
+    "",
+    "Major Themes",
+    listToNarrationLines(briefing.major_themes),
+    "",
+    isFiction ? "Characters" : "Key Concepts and Figures",
+    listToNarrationLines(keyElems),
+    "",
+    "Historical and Cultural Context",
+    String(briefing.historical_context || ""),
+    "",
+    isFiction ? "Literary Analysis" : "Analysis and Methodology",
+    String(craftText || ""),
+    "",
+    !isFiction ? "Key Takeaways" : "",
+    !isFiction ? listToNarrationLines(briefing.key_takeaways) : "",
+    !isFiction ? "" : "",
+    "Impact",
+    String(briefing.impact || ""),
+    "",
+    "Discussion Questions",
+    listToNarrationLines(discussionList),
+    "",
+    "Confidence Note",
+    String(briefing.confidence_note || "")
+  ].filter(Boolean).join("\n");
+}
+
+async function generateNarrationScript(book, briefing, spoilerMode, apiKey) {
+  const payload = {
+    system_instruction: {
+      parts: [{
+        text: [
+          "You are an expert literary podcaster creating a solo Audio Overview of a book.",
+          "Do not summarize the summary. Expand each supplied section into a full discussion.",
+          "Use a conversational, intellectual, accessible tone in the spirit of a public-radio deep dive.",
+          "Use clear transitions such as moving into the narrative structure or historical context.",
+          "Treat the provided headers as chapter markers.",
+          "Return plain text only."
+        ].join(" ")
+      }]
+    },
+    contents: [{ role: "user", parts: [{ text: buildNarrationPrompt(book, briefing, spoilerMode) }] }],
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.9,
+      topK: 32,
+      maxOutputTokens: 3072
+    }
+  };
+
+  async function requestScript(url, modelName) {
+    let response;
+    try {
+      response = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify(payload)
+      });
+    } catch (error) {
+      throw new Error(`Unable to reach Gemini narration API on ${modelName}.`);
+    }
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      let apiError = {};
+      try { apiError = JSON.parse(rawText); } catch { /* ignore */ }
+      const apiMessage = apiError && apiError.error && apiError.error.message
+        ? apiError.error.message
+        : `HTTP ${response.status}`;
+      console.error(`Gemini script generation error (${modelName})`, response.status, JSON.stringify(apiError));
+      const error = new Error(`Narration script request failed on ${modelName}: ${apiMessage}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    let parsedApi;
+    try { parsedApi = JSON.parse(rawText); }
+    catch { throw new Error(`Gemini returned unreadable narration output on ${modelName}.`); }
+
+    const script = extractCandidateText(parsedApi).trim();
+    if (!script) throw new Error(`Gemini returned an empty narration script on ${modelName}.`);
+    return { script, modelName };
+  }
+
+  try {
+    const primary = await requestScript(SCRIPT_API_URL, SCRIPT_MODEL);
+    return primary.script;
+  } catch (error) {
+    if (error && error.status === 400) {
+      const fallback = await requestScript(API_URL, MODEL);
+      return fallback.script;
+    }
+    throw error;
+  }
+}
+
+function extractAudioBase64(data) {
+  const parts = (((data || {}).candidates || [])[0] || {}).content?.parts || [];
+  for (const part of parts) {
+    const inlineData = part && part.inlineData;
+    if (inlineData && inlineData.data) return inlineData.data;
+  }
+  throw new Error("No audio returned by Gemini TTS.");
+}
+
+function pcmToWavBuffer(pcmBuffer, sampleRate = 24000, channels = 1, bitsPerSample = 16) {
+  const byteRate = sampleRate * channels * bitsPerSample / 8;
+  const blockAlign = channels * bitsPerSample / 8;
+  const dataSize = pcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
+async function synthesizeNarrationAudio(script, voice, apiKey) {
+  const payload = {
+    contents: [{ parts: [{ text: script }] }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: voice
+          }
+        }
+      }
+    }
+  };
+
+  let response;
+  try {
+    response = await fetchWithRetry(TTS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    throw new Error("Unable to reach Gemini TTS API.");
+  }
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    let apiError = {};
+    try { apiError = JSON.parse(rawText); } catch { /* ignore */ }
+    console.error("Gemini TTS error", response.status, JSON.stringify(apiError));
+    throw new Error(`Narration audio request failed (HTTP ${response.status})`);
+  }
+
+  let parsedApi;
+  try { parsedApi = JSON.parse(rawText); }
+  catch { throw new Error("Gemini returned unreadable audio output."); }
+
+  const pcm = Buffer.from(extractAudioBase64(parsedApi), "base64");
+  return pcmToWavBuffer(pcm);
+}
+
+async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, apiKey) {
+  console.log(`[buildBriefingAudio] start bookId=${bookId} spoilerMode=${spoilerMode || "safe"} forceRefresh=${forceRefresh ? "1" : "0"}`);
+  const { book, briefing } = await loadBookAndBriefing(uid, bookId);
+  console.log(`[buildBriefingAudio] loaded book="${book.title}" briefingModel=${briefing.model || "unknown"}`);
+  const isFiction = String(briefing.genre || "").toLowerCase() !== "non-fiction";
+  const variantKey = normalizeSpoilerMode(spoilerMode, isFiction);
+  const audioRef = briefingAudioDocRef(uid, bookId);
+  const audioSnap = await audioRef.get();
+  const audioDoc = audioSnap.exists ? (audioSnap.data() || {}) : {};
+  const currentVariant = audioVariantFromDoc(audioDoc, variantKey);
+  const normalizedVoice = normalizeVoice(voice);
+  const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
+
+  if (
+    !forceRefresh &&
+    currentVariant &&
+    currentVariant.status === "ready" &&
+    currentVariant.voice === normalizedVoice &&
+    currentVariant.sourceBriefingGeneratedAt === sourceBriefingGeneratedAt &&
+    currentVariant.audioPath
+  ) {
+    return {
+      variantKey,
+      metadata: currentVariant,
+      cached: true
+    };
+  }
+
+  const startedAt = new Date().toISOString();
+  await audioRef.set({
+    updatedAt: startedAt,
+    variants: {
+      [variantKey]: {
+        status: "generating",
+        voice: normalizedVoice,
+        generatedAt: startedAt,
+        sourceBriefingGeneratedAt
+      }
+    }
+  }, { merge: true });
+
+  try {
+    console.log(`[buildBriefingAudio] generating script via ${SCRIPT_MODEL} variant=${variantKey}`);
+    const script = await generateNarrationScript(book, briefing, variantKey, apiKey);
+    console.log(`[buildBriefingAudio] script ready chars=${script.length}`);
+    console.log(`[buildBriefingAudio] synthesizing audio via ${TTS_MODEL} voice=${normalizedVoice}`);
+    const wavBuffer = await synthesizeNarrationAudio(script, normalizedVoice, apiKey);
+    console.log(`[buildBriefingAudio] audio ready bytes=${wavBuffer.length}`);
+    const audioPath = `users/${uid}/briefing-audio/${bookId}-${variantKey}.wav`;
+    const file = admin.storage().bucket().file(audioPath);
+    console.log(`[buildBriefingAudio] saving audio path=${audioPath}`);
+    await file.save(wavBuffer, {
+      resumable: false,
+      metadata: {
+        contentType: "audio/wav",
+        cacheControl: "private, max-age=3600"
+      }
+    });
+    console.log(`[buildBriefingAudio] storage save complete path=${audioPath}`);
+
+    const metadata = {
+      status: "ready",
+      audioPath,
+      voice: normalizedVoice,
+      generatedAt: new Date().toISOString(),
+      sourceBriefingGeneratedAt,
+      scriptModel: SCRIPT_MODEL,
+      ttsModel: TTS_MODEL,
+      durationSec: estimateDurationSec(script),
+      script
+    };
+
+    await audioRef.set({
+      updatedAt: metadata.generatedAt,
+      variants: { [variantKey]: metadata }
+    }, { merge: true });
+    console.log(`[buildBriefingAudio] metadata saved variant=${variantKey}`);
+
+    return { variantKey, metadata, cached: false };
+  } catch (error) {
+    console.error(`[buildBriefingAudio] failed variant=${variantKey}:`, error && error.message ? error.message : error);
+    await audioRef.set({
+      updatedAt: new Date().toISOString(),
+      variants: {
+        [variantKey]: {
+          status: "error",
+          voice: normalizedVoice,
+          generatedAt: startedAt,
+          sourceBriefingGeneratedAt,
+          error: error && error.message ? error.message : "Unknown audio generation error."
+        }
+      }
+    }, { merge: true });
+    throw error;
+  }
+}
+
+async function getPlayableAudioUrl(audioPath) {
+  const file = admin.storage().bucket().file(audioPath);
+  const [exists] = await file.exists();
+  if (!exists) throw new HttpsError("not-found", "Audio file not found.");
+  const [metadata] = await file.getMetadata();
+  let token = metadata && metadata.metadata && metadata.metadata.firebaseStorageDownloadTokens
+    ? String(metadata.metadata.firebaseStorageDownloadTokens).split(",")[0].trim()
+    : "";
+  if (!token) {
+    token = crypto.randomUUID();
+    await file.setMetadata({
+      metadata: {
+        ...(metadata && metadata.metadata ? metadata.metadata : {}),
+        firebaseStorageDownloadTokens: token
+      }
+    });
+  }
+  const bucket = admin.storage().bucket().name;
+  const encodedPath = encodeURIComponent(audioPath);
+  return {
+    audioUrl: `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -918,8 +1379,6 @@ exports.identifyBooksInImage = onCall({
 
 // ─── Share Link Functions ────────────────────────────────────────────────────
 
-const crypto = require("crypto");
-
 /**
  * createShareLink — generates a public read-only share token for one shelf.
  * One active token per shelf (revokes any prior token for the same shelf).
@@ -933,6 +1392,7 @@ exports.createShareLink = onCall(async (request) => {
   const shelfId            = String((request.data || {}).shelfId || "").trim();
   const includePersonalNotes = Boolean((request.data || {}).includePersonalNotes);
   const allowWikiAI          = Boolean((request.data || {}).allowWikiAI);
+  const allowBriefingAudio   = Boolean((request.data || {}).allowBriefingAudio);
 
   if (!shelfId) throw new HttpsError("invalid-argument", "shelfId is required.");
 
@@ -961,12 +1421,13 @@ exports.createShareLink = onCall(async (request) => {
     shelfId,
     includePersonalNotes,
     allowWikiAI,
+    allowBriefingAudio,
     createdAt,
   });
 
   const updatedLinks = { ...existingLinks };
   if (existingToken) delete updatedLinks[existingToken];
-  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, allowWikiAI, createdAt };
+  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, allowWikiAI, allowBriefingAudio, createdAt };
   batch.update(catalogRef, { shareLinks: updatedLinks });
 
   await batch.commit();
@@ -983,10 +1444,11 @@ exports.getSharedShelf = onCall(async (request) => {
   const tokenDoc = await db.collection("shareLinks").doc(token).get();
   if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
 
-  const { ownerUid, shelfId, includePersonalNotes, allowWikiAI } = tokenDoc.data();
+  const { ownerUid, shelfId, includePersonalNotes, allowWikiAI, allowBriefingAudio } = tokenDoc.data();
 
   const catalogRef   = db.collection("users").doc(ownerUid).collection("catalog");
   const briefingsCol = db.collection("users").doc(ownerUid).collection("briefings");
+  const briefingAudioCol = db.collection("users").doc(ownerUid).collection("briefingAudio");
 
   const catalogSnap = await catalogRef.doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
@@ -1024,7 +1486,84 @@ exports.getSharedShelf = onCall(async (request) => {
     }
   }
 
-  return { shelfName: shelf.name, shelfId, includePersonalNotes, allowWikiAI: Boolean(allowWikiAI), books: shelfBooks, researchCache: filteredCache };
+  let briefingAudioCache = {};
+  if (allowBriefingAudio && shelfBookIds.size) {
+    const audioSnaps = await Promise.all([...shelfBookIds].map((id) => briefingAudioCol.doc(id).get()));
+    audioSnaps.forEach((snap) => {
+      if (!snap.exists) return;
+      const data = snap.data() || {};
+      const variants = data.variants && typeof data.variants === "object" ? data.variants : {};
+      const sanitized = {};
+      Object.entries(variants).forEach(([key, value]) => {
+        if (!value || typeof value !== "object" || value.status !== "ready") return;
+        sanitized[key] = {
+          status: value.status,
+          voice: value.voice || DEFAULT_AUDIO_VOICE,
+          generatedAt: value.generatedAt || "",
+          durationSec: value.durationSec || 0,
+          sourceBriefingGeneratedAt: value.sourceBriefingGeneratedAt || ""
+        };
+      });
+      if (Object.keys(sanitized).length) briefingAudioCache[snap.id] = { variants: sanitized };
+    });
+  }
+
+  return {
+    shelfName: shelf.name,
+    shelfId,
+    includePersonalNotes,
+    allowWikiAI: Boolean(allowWikiAI),
+    allowBriefingAudio: Boolean(allowBriefingAudio),
+    books: shelfBooks,
+    researchCache: filteredCache,
+    briefingAudioCache
+  };
+});
+
+exports.getSharedBriefingAudio = onCall(async (request) => {
+  const token = cleanText((request.data || {}).token || "");
+  const bookId = cleanText((request.data || {}).bookId || "");
+  const requestedMode = cleanText((request.data || {}).spoilerMode || "");
+
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+  if (!bookId) throw new HttpsError("invalid-argument", "bookId is required.");
+
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
+  if (!tokenDoc.data().allowBriefingAudio) {
+    throw new HttpsError("permission-denied", "Briefing audio is not enabled for this share link.");
+  }
+
+  const ownerUid = tokenDoc.data().ownerUid;
+  const shelfId = tokenDoc.data().shelfId;
+  const catalogSnap = await db.collection("users").doc(ownerUid).collection("catalog").doc("data").get();
+  if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
+  const catalogData = catalogSnap.data() || {};
+  const onSharedShelf = (catalogData.books || []).some((book) => book && book.id === bookId && (book.listShelfId || "default") === shelfId);
+  if (!onSharedShelf) {
+    throw new HttpsError("permission-denied", "This book is not part of the shared shelf.");
+  }
+
+  const briefingSnap = await db.collection("users").doc(ownerUid).collection("briefings").doc(bookId).get();
+  if (!briefingSnap.exists) throw new HttpsError("not-found", "Briefing not found.");
+  const isFiction = String((briefingSnap.data() || {}).genre || "").toLowerCase() !== "non-fiction";
+  const variantKey = normalizeSpoilerMode(requestedMode, isFiction);
+
+  const audioSnap = await briefingAudioDocRef(ownerUid, bookId).get();
+  if (!audioSnap.exists) throw new HttpsError("not-found", "Audio has not been generated for this book.");
+  const variant = audioVariantFromDoc(audioSnap.data(), variantKey);
+  if (!variant || variant.status !== "ready" || !variant.audioPath) {
+    throw new HttpsError("not-found", "Audio has not been generated for this mode.");
+  }
+
+  const signed = await getPlayableAudioUrl(variant.audioPath);
+  return {
+    spoilerMode: variantKey,
+    voice: variant.voice || DEFAULT_AUDIO_VOICE,
+    durationSec: variant.durationSec || 0,
+    generatedAt: variant.generatedAt || "",
+    ...signed
+  };
 });
 
 /**

@@ -3210,6 +3210,7 @@ const firebaseConfig = {
         <button class="btn btn-danger btn-sm" type="button" id="removeBookDetailBtn">Remove</button>
         <button class="btn btn-light btn-sm" type="button" id="wikiLookupBtn" onclick="lookupWikipedia()">Wikipedia</button>
         <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
+        <button class="btn btn-light btn-sm" type="button" id="listenBriefingBtn" onclick="generateBriefingAudioForSelected(false)" disabled>Listen</button>
         <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
           <input type="checkbox" id="spoilerToggle" onchange="renderBriefingPanel()">
           <span class="toggle-slider"></span>
@@ -3562,6 +3563,7 @@ const firebaseConfig = {
 <script>
 let books = [];
 let researchCache = {};
+let briefingAudioCache = {};
 let shelves = [];
 let shareLinks = {};
 let currentShelfId = "default";
@@ -3624,7 +3626,10 @@ function expectedBriefingModel(book) {
 }
 let _catalogUnsubscribe = null;  // snapshot listener teardown
 let _briefingsUnsubscribe = null; // briefings subcollection listener teardown
+let _briefingAudioUnsubscribe = null; // briefing audio subcollection listener teardown
 let _allowDuplicateOverride = false;
+let briefingAudioRequestInFlight = false;
+let briefingAudioUrls = {};
 
 function safeLoad(key, fallback) {
   try {
@@ -3672,6 +3677,7 @@ async function saveBriefing(bookId, data) {
 function subscribeToBackgroundUpdates(uid) {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
+  if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
 
   const catalog = db.collection("users").doc(uid).collection("catalog");
 
@@ -3714,6 +3720,31 @@ function subscribeToBackgroundUpdates(uid) {
       updateResearchButtons();
     }
   }, (err) => { console.error("[subscribeToBackgroundUpdates] briefings snapshot error:", err); });
+
+  _briefingAudioUnsubscribe = db.collection("users").doc(uid).collection("briefingAudio").onSnapshot((snap) => {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    let changed = false;
+    snap.docChanges().forEach(function(change) {
+      if (change.type === "added" || change.type === "modified") {
+        const newData = change.doc.data();
+        if (JSON.stringify(briefingAudioCache[change.doc.id]) !== JSON.stringify(newData)) {
+          briefingAudioCache[change.doc.id] = newData;
+          changed = true;
+        }
+      } else if (change.type === "removed") {
+        if (briefingAudioCache[change.doc.id] !== undefined) {
+          delete briefingAudioCache[change.doc.id];
+          delete briefingAudioUrls[change.doc.id + ":safe"];
+          delete briefingAudioUrls[change.doc.id + ":spoiler"];
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      renderBriefingPanel();
+      updateResearchButtons();
+    }
+  }, (err) => { console.error("[subscribeToBackgroundUpdates] briefingAudio snapshot error:", err); });
 }
 
 async function saveBooks() {
@@ -3728,10 +3759,15 @@ async function loadCatalogData() {
   try {
     const catalog = db.collection("users").doc(uid).collection("catalog");
     const briefingsCol = db.collection("users").doc(uid).collection("briefings");
-    const [dataSnap, researchSnap, briefingsSnap] = await Promise.all([
+    const briefingAudioCol = db.collection("users").doc(uid).collection("briefingAudio");
+    const [dataSnap, researchSnap, briefingsSnap, briefingAudioResult] = await Promise.all([
       catalog.doc("data").get({ source: "server" }),
       catalog.doc("research").get({ source: "server" }),
-      briefingsCol.get({ source: "server" })
+      briefingsCol.get({ source: "server" }),
+      briefingAudioCol.get({ source: "server" }).catch(function(error) {
+        console.warn("[loadCatalogData] briefingAudio fetch failed; continuing without audio cache:", error);
+        return null;
+      })
     ]);
     // If auth changed while we were waiting (race condition), discard stale results.
     if (!auth.currentUser || auth.currentUser.uid !== uid) {
@@ -3766,8 +3802,13 @@ async function loadCatalogData() {
       typeof researchSnap.data().researchCache === "object" ? researchSnap.data().researchCache : {};
     const subcollectionCache = {};
     briefingsSnap.forEach(function(doc) { subcollectionCache[doc.id] = doc.data(); });
+    const audioCache = {};
+    if (briefingAudioResult && typeof briefingAudioResult.forEach === "function") {
+      briefingAudioResult.forEach(function(doc) { audioCache[doc.id] = doc.data(); });
+    }
 
     researchCache = Object.assign({}, legacyDataCache, legacyResearchCache, subcollectionCache);
+    briefingAudioCache = audioCache;
     console.log("[loadCatalogData] briefings in cache:", Object.keys(researchCache).length,
       "(subcollection:", briefingsSnap.size, "legacy-research:", Object.keys(legacyResearchCache).length,
       "legacy-data:", Object.keys(legacyDataCache).length, ")");
@@ -5051,6 +5092,13 @@ function renderBriefingPanel() {
   const keyElems       = isFiction ? (showSpoilers ? briefing.key_elements_spoiler : briefing.key_elements_safe) : briefing.key_elements;
   const craftText      = isFiction ? (showSpoilers ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : briefing.craft_analysis;
   const discussionList = isFiction ? (showSpoilers ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : briefing.discussion_questions;
+  const spoilerMode    = showSpoilers ? "spoiler" : "safe";
+  const audioVariant   = getBriefingAudioVariant(book.id, spoilerMode);
+  const audioUrl       = briefingAudioUrls[currentAudioKey(book.id, spoilerMode)] || "";
+
+  if (audioVariant && audioVariant.status === "ready" && audioVariant.audioPath && !audioUrl) {
+    ensureBriefingAudioUrl(book.id, spoilerMode, audioVariant);
+  }
 
   const takeawaysHtml = !isFiction && briefing.key_takeaways && briefing.key_takeaways.length
     ? `<div class="briefing-section">
@@ -5058,7 +5106,21 @@ function renderBriefingPanel() {
         ${renderList(briefing.key_takeaways, "briefing-list")}
       </div>` : "";
 
+  const audioHtml = !audioVariant ? ""
+    : audioVariant.status === "generating"
+      ? `<div class="briefing-section"><h3>Audio Overview</h3><p>Preparing an audio version of this briefing...</p></div>`
+      : audioVariant.status === "error"
+        ? `<div class="briefing-section"><h3>Audio Overview</h3><p>${esc(audioVariant.error || "Audio generation failed.")}</p></div>`
+        : `<div class="briefing-section">
+            <h3>Audio Overview</h3>
+            <p>Voice: ${esc(audioVariant.voice || "Kore")} ${audioVariant.durationSec ? `&middot; Approx. ${Math.max(1, Math.round(audioVariant.durationSec / 60))} min` : ""}</p>
+            ${audioUrl
+              ? `<audio controls preload="none" style="width:100%;margin-top:8px;"><source src="${escapeAttribute(audioUrl)}" type="audio/wav"></audio>`
+              : `<p>Loading audio player...</p>`}
+          </div>`;
+
   content.innerHTML = `
+    ${audioHtml}
     <div class="briefing-section">
       <h3>Quick Take</h3>
       <p>${esc(briefing.quick_take)}</p>
@@ -5343,8 +5405,11 @@ function closeWikipediaModal(event) {
 function updateResearchButtons() {
   const book = selectedBookId ? findBook(selectedBookId) : null;
   const btn = document.getElementById("generateBriefingBtn");
+  const audioBtn = document.getElementById("listenBriefingBtn");
   const briefing = book && researchCache[book.id];
   const isPending = book && pendingBriefingIds.includes(book.id);
+  const spoilerMode = book && briefing ? currentSpoilerModeForBook(book, briefing) : "safe";
+  const audioVariant = book && briefing ? getBriefingAudioVariant(book.id, spoilerMode) : null;
 
   btn.style.display = "";
   if (researchRequestInFlight) {
@@ -5367,6 +5432,30 @@ function updateResearchButtons() {
     btn.disabled = !book;
     btn.textContent = "Generate";
     btn.onclick = () => generateResearchForSelected(false);
+  }
+
+  if (!audioBtn) return;
+  audioBtn.style.display = "";
+  if (briefingAudioRequestInFlight) {
+    audioBtn.disabled = true;
+    audioBtn.textContent = "Working...";
+    audioBtn.onclick = null;
+  } else if (!book || !briefing) {
+    audioBtn.disabled = true;
+    audioBtn.textContent = "Listen";
+    audioBtn.onclick = () => generateBriefingAudioForSelected(false);
+  } else if (audioVariant && audioVariant.status === "ready") {
+    audioBtn.disabled = false;
+    audioBtn.textContent = "Play Audio";
+    audioBtn.onclick = () => generateBriefingAudioForSelected(false);
+  } else if (audioVariant && audioVariant.status === "generating") {
+    audioBtn.disabled = true;
+    audioBtn.textContent = "Preparing...";
+    audioBtn.onclick = null;
+  } else {
+    audioBtn.disabled = false;
+    audioBtn.textContent = "Listen";
+    audioBtn.onclick = () => generateBriefingAudioForSelected(false);
   }
 }
 
@@ -5781,6 +5870,133 @@ function showReviewSection(data) {
   } else {
     list.innerHTML = "";
     list.style.display = "none";
+  }
+}
+
+function getBriefingAudioVariant(bookId, spoilerMode) {
+  const audioDoc = briefingAudioCache[bookId];
+  const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
+  const variant = variants[spoilerMode];
+  return variant && typeof variant === "object" ? variant : null;
+}
+
+function currentSpoilerModeForBook(book, briefing) {
+  const isFiction = briefing && (briefing.genre || "").toLowerCase() !== "non-fiction";
+  return isFiction && document.getElementById("spoilerToggle")?.checked ? "spoiler" : "safe";
+}
+
+function currentAudioKey(bookId, spoilerMode) {
+  return bookId + ":" + spoilerMode;
+}
+
+function getCallableErrorMessage(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error.details === "string" && error.details.trim()) return error.details.trim();
+  if (error.details && typeof error.details.reason === "string" && error.details.reason.trim()) {
+    return error.details.reason.trim();
+  }
+  if (typeof error.message === "string" && error.message.trim() && error.message.trim().toLowerCase() !== "internal") {
+    return error.message.trim();
+  }
+  return fallback;
+}
+
+async function ensureBriefingAudioUrl(bookId, spoilerMode, variant) {
+  if (!variant || variant.status !== "ready" || !variant.audioPath) return "";
+  const key = currentAudioKey(bookId, spoilerMode);
+  if (briefingAudioUrls[key]) return briefingAudioUrls[key];
+  try {
+    const fn = functions.httpsCallable("getBriefingAudio");
+    const result = await fn({ bookId, spoilerMode });
+    const url = result.data && result.data.audioUrl ? result.data.audioUrl : "";
+    if (url) {
+      briefingAudioUrls[key] = url;
+      if (selectedBookId === bookId) renderBriefingPanel();
+    }
+    return url;
+  } catch (error) {
+    console.error("[ensureBriefingAudioUrl] signed URL fetch failed:", error);
+    return "";
+  }
+}
+
+async function waitForBriefingAudioError(bookId, spoilerMode, timeoutMs) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const variant = getBriefingAudioVariant(bookId, spoilerMode);
+    if (variant && variant.status === "error" && variant.error) return variant.error;
+    await new Promise(function(resolve) { setTimeout(resolve, 150); });
+  }
+  return "";
+}
+
+async function generateBriefingAudioForSelected(forceRefresh) {
+  const book = selectedBookId ? findBook(selectedBookId) : null;
+  const briefing = book && researchCache[book.id];
+  if (!book || !briefing) {
+    setResearchStatus("Generate the book briefing first.", "error");
+    return;
+  }
+  if (!researchEnabled) {
+    setResearchStatus("Sign in to enable book briefing audio.", "error");
+    return;
+  }
+  if (briefingAudioRequestInFlight) return;
+
+  const spoilerMode = currentSpoilerModeForBook(book, briefing);
+  const isFiction = (briefing.genre || "").toLowerCase() !== "non-fiction";
+  if (isFiction && spoilerMode === "spoiler" && !forceRefresh) {
+    const proceed = confirm("This audio overview may reveal major plot points. Generate spoiler-inclusive audio?");
+    if (!proceed) return;
+  }
+
+  const existingVariant = getBriefingAudioVariant(book.id, spoilerMode);
+  if (existingVariant && existingVariant.status === "ready" && existingVariant.audioPath && !forceRefresh) {
+    await ensureBriefingAudioUrl(book.id, spoilerMode, existingVariant);
+    renderBriefingPanel();
+    return;
+  }
+
+  briefingAudioRequestInFlight = true;
+  updateResearchButtons();
+  setResearchStatus(`Preparing audio overview for "${book.title}"...`, "");
+  renderBriefingPanel();
+
+  try {
+    const fn = functions.httpsCallable("generateBriefingAudio");
+    const result = await fn({ bookId: book.id, spoilerMode, forceRefresh });
+    if (result.data && result.data.ok === false) {
+      throw new Error(result.data.error || "Audio generation failed.");
+    }
+    const metadata = result.data && result.data.metadata;
+    const resolvedMode = result.data && result.data.spoilerMode ? result.data.spoilerMode : spoilerMode;
+    const audioUrl = result.data && result.data.audioUrl ? result.data.audioUrl : "";
+    if (!metadata || typeof metadata !== "object") {
+      throw new Error("The server returned empty audio metadata. Please try again.");
+    }
+    const currentDoc = briefingAudioCache[book.id] && typeof briefingAudioCache[book.id] === "object" ? briefingAudioCache[book.id] : {};
+    const variants = currentDoc.variants && typeof currentDoc.variants === "object" ? currentDoc.variants : {};
+    briefingAudioCache[book.id] = {
+      ...currentDoc,
+      variants: {
+        ...variants,
+        [resolvedMode]: metadata
+      }
+    };
+    if (audioUrl) {
+      briefingAudioUrls[currentAudioKey(book.id, resolvedMode)] = audioUrl;
+    }
+    renderBriefingPanel();
+    setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+  } catch (error) {
+    const latestVariant = getBriefingAudioVariant(book.id, spoilerMode);
+    const immediateError = latestVariant && latestVariant.status === "error" ? latestVariant.error : "";
+    const storedError = immediateError || await waitForBriefingAudioError(book.id, spoilerMode, 1200);
+    setResearchStatus(storedError || getCallableErrorMessage(error, "Audio generation failed."), "error");
+    renderBriefingPanel();
+  } finally {
+    briefingAudioRequestInFlight = false;
+    updateResearchButtons();
   }
 }
 
@@ -6877,6 +7093,9 @@ function _renderShareDialog() {
       '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:0.88rem;cursor:pointer;">' +
         '<input type="checkbox" id="shareAllowWikiAI"> Allow AI Wikipedia lookup' +
       '</label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:0.88rem;cursor:pointer;">' +
+        '<input type="checkbox" id="shareAllowBriefingAudio"> Allow cached briefing audio playback' +
+      '</label>' +
       '<button class="btn btn-secondary" type="button" id="generateShareBtn" onclick="generateShareLink()">' +
         'Generate Share Link' +
       '</button>';
@@ -6889,6 +7108,7 @@ function _renderShareDialog() {
         'Active since ' + esc(createdDate) +
         (linkData.includePersonalNotes ? ' &middot; <em>includes personal notes</em>' : '') +
         (linkData.allowWikiAI ? ' &middot; <em>AI Wikipedia enabled</em>' : '') +
+        (linkData.allowBriefingAudio ? ' &middot; <em>briefing audio enabled</em>' : '') +
       '</p>' +
       '<div style="display:flex;gap:8px;margin-bottom:6px;">' +
         '<input type="text" id="shareUrlInput" value="' + escapeAttribute(url) + '" readonly' +
@@ -6913,9 +7133,11 @@ async function generateShareLink() {
     ? document.getElementById("shareIncludeNotes").checked : false;
   const allowWikiAI = document.getElementById("shareAllowWikiAI")
     ? document.getElementById("shareAllowWikiAI").checked : false;
+  const allowBriefingAudio = document.getElementById("shareAllowBriefingAudio")
+    ? document.getElementById("shareAllowBriefingAudio").checked : false;
   try {
     const fn = functions.httpsCallable("createShareLink");
-    const result = await fn({ shelfId, includePersonalNotes, allowWikiAI });
+    const result = await fn({ shelfId, includePersonalNotes, allowWikiAI, allowBriefingAudio });
     const token = result.data.token;
     const shelf = shelves.find(function(s) { return s.id === shelfId; });
     shareLinks[token] = {
@@ -6923,6 +7145,7 @@ async function generateShareLink() {
       shelfName: shelf ? shelf.name : "",
       includePersonalNotes,
       allowWikiAI,
+      allowBriefingAudio,
       createdAt: Date.now()
     };
     _renderShareDialog();
@@ -6990,6 +7213,7 @@ function _renderSharedShelvesSection() {
           'Shared ' + esc(createdDate) +
           (link.includePersonalNotes ? ' &middot; includes personal notes' : '') +
           (link.allowWikiAI ? ' &middot; AI Wikipedia enabled' : '') +
+          (link.allowBriefingAudio ? ' &middot; briefing audio enabled' : '') +
         '</div>' +
       '</div>' +
       '<button class="btn btn-danger btn-sm" type="button" ' +
@@ -8255,6 +8479,7 @@ let _pendingSignOut = null;
 function _doSignOut() {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
+  if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
   document.getElementById("authOverlay").style.display = "flex";
   document.getElementById("guestBanner").style.display = "none";
   const icon = document.getElementById("userEmailIcon");
@@ -8265,6 +8490,8 @@ function _doSignOut() {
   _booksOwnedByUid = null;
   books = [];
   researchCache = {};
+  briefingAudioCache = {};
+  briefingAudioUrls = {};
   pendingBriefingIds = [];
   shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
   currentShelfId = "default";
@@ -8366,6 +8593,8 @@ auth.onAuthStateChanged(async (user) => {
     _booksOwnedByUid = null; // reset until loadCatalogData sets it
     books = [];
     researchCache = {};
+    briefingAudioCache = {};
+    briefingAudioUrls = {};
     shelves = [];
     pendingBriefingIds = [];
     currentShelfId = "default";
