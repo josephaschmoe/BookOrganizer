@@ -8,12 +8,12 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 
 - **Book Catalog** — Add, edit, and search books with title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading status, dates, rating, and notes
 - **TomeShelves** — Organise books into multiple named shelves (e.g. Reading List, Cookbooks, Borrowed); create, rename, and delete shelves; last-viewed shelf restored on next open
-- **Multi-book Selection** — Select any or all books on a shelf; move the selection to another shelf or delete in bulk with confirmation
+- **Multi-book Selection** — Select any or all books on a shelf; move the selection to another shelf or delete in bulk with confirmation; deleted books (single or bulk) can be immediately restored via an Undo button in the confirmation toast
 - **Barcode Scanning** — Scan ISBN barcodes with your phone camera; falls back to `html5-qrcode` on browsers without native `BarcodeDetector` support
 - **Photo Book Lookup** — Photograph a book's cover, spine, title page, or copyright page (up to 3 images); also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details. When multiple candidates are found, all are shown with cover thumbnails; selecting an alternate candidate swaps it to the top while keeping the previous pick accessible
 - **Bulk Load** — Add many books at once without entering them one by one:
   - **Books** — photograph a bookshelf, stack of covers, or any group of books; AI reads every visible spine and cover
-  - **Batch Photos** — select up to 20 individual book photos at once; each image is treated as one book; AI identifies each independently; review before anything is added; manual correction fallback for unmatched items
+  - **Batch Photos** — select up to 20 individual book photos at once; each image is treated as one book; AI identifies each independently; alternate search candidates shown per item; long-press the cover thumbnail to choose between the book photo and API cover art; manual correction fallback for unmatched items
   - **Titles in Text** — photograph an article, reading list, or bibliography; AI extracts every book title mentioned in the text
   - After AI identification, review a ✓/✗ card list before anything is added; Books mode includes a second-pass cover photo step and manual correction fallback for unmatched titles
 - **Cover Images** — Finds covers via Open Library and Google Books across all entry methods; automatic API key rotation when daily quota is reached
@@ -29,9 +29,9 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 - **Guest Mode** — Try the full app without signing in; books are saved to Firestore under an anonymous account. Sign in with Google at any time to permanently link the library to your account
 - **Cloud Sync** — Catalog and briefing cache stored in Firestore, isolated per account; real-time sync means background-generated briefings appear automatically without a page reload
 - **Account Settings** — Export a JSON backup or permanently delete your account and all associated data
-- **Shelf Sharing** — Generate a public, read-only share link for any shelf; viewers need no account. Per-share controls: include personal notes (off by default) and enable AI-powered Wikipedia lookup for viewers. One active link per shelf at a time; revoke from the shelf settings or Account Settings at any time. All active links visible and manageable in Account Settings
+- **Shelf Sharing** — Generate a public, read-only share link for any shelf; viewers need no account. Per-share controls: include personal notes (off by default) and enable AI-powered Wikipedia lookup for viewers. One active link per shelf at a time; revoke from the shelf settings or Account Settings at any time. All active links visible and manageable in Account Settings. The shared detail panel has an expand toggle for a wider reading view (state persists). Cover lightbox automatically attempts a higher-resolution Google Books image before falling back to the original
 - **Import / Export** — Export to JSON or CSV; import from JSON, this app's CSV, or a Goodreads export CSV (auto-enriched from Open Library and Google Books)
-- **Desktop Layout** — Three-column layout with collapsible Add panel (collapses to a narrow sidebar) and expandable Briefing panel (wider focus mode); states persist across sessions; compact UI mode hides helper text for a denser view
+- **Desktop Layout** — Three-column layout with collapsible Add panel (collapses to a narrow sidebar) and expandable Briefing panel (wider focus mode); states persist across sessions; compact UI mode hides helper text for a denser view; add-flow tab and sub-mode selection persist across sessions and survive camera launches
 - **Mobile-first UI** — Bottom navigation bar, hardware back button support, safe-area insets for iPhone home bar
 - **Vintage design** — Parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces
 

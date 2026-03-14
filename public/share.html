@@ -96,6 +96,10 @@
       gap: 28px;
       align-items: start;
     }
+    body.share-detail-expanded .share-layout {
+      max-width: 1380px;
+      grid-template-columns: minmax(300px, 0.8fr) minmax(560px, 1.25fr);
+    }
 
     @media (max-width: 900px) {
       .share-layout { grid-template-columns: 1fr; }
@@ -126,7 +130,8 @@
     }
 
     .panel-header .back-btn,
-    .panel-header .nav-btn {
+    .panel-header .nav-btn,
+    .panel-header .panel-focus-toggle {
       background: none;
       border: none;
       color: var(--cream);
@@ -139,10 +144,13 @@
     .panel-header .nav-btn { opacity: 0.4; }
     .panel-header .nav-btn:not(:disabled) { opacity: 1; }
     .panel-header .nav-btn:disabled { cursor: default; }
+    .panel-header .panel-focus-toggle { opacity: 0.85; }
+    .panel-header .panel-focus-toggle:hover { opacity: 1; }
     .panel-header .nav-group { margin-left: auto; display: flex; gap: 2px; }
 
     @media (max-width: 900px) {
       .panel-header .back-btn { display: inline; }
+      .panel-header .panel-focus-toggle { display: none; }
     }
 
     .panel-body { padding: 14px 16px; }
@@ -969,12 +977,14 @@ let showSpoilers      = false;
 let currentFilter     = "";
 let currentSort       = "added";
 let isMobileDetail    = false; // tracks if mobile user is in detail view
+let shareDetailExpanded = false;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 const token = (window.location.pathname.split("/share/")[1] || "").split("?")[0].trim();
 
 window.addEventListener("DOMContentLoaded", async function() {
   if (!token) { showError("Invalid share link."); return; }
+  restoreShareDetailExpanded();
   await loadSharedShelf();
 });
 
@@ -998,6 +1008,35 @@ async function loadSharedShelf() {
       ? "This share link is no longer active."
       : "Could not load this shelf. Please try again later.");
   }
+}
+
+function applyShareDetailExpanded() {
+  const enabled = shareDetailExpanded && window.innerWidth > 900;
+  document.body.classList.toggle("share-detail-expanded", enabled);
+  const btn = document.getElementById("shareDetailToggle");
+  if (btn) {
+    btn.title = enabled ? "Shrink detail panel" : "Expand detail panel";
+    btn.setAttribute("aria-label", enabled ? "Shrink detail panel" : "Expand detail panel");
+  }
+}
+
+function setShareDetailExpanded(expanded) {
+  shareDetailExpanded = Boolean(expanded);
+  applyShareDetailExpanded();
+  try { localStorage.setItem("tomeshelf-share-detail-expanded", shareDetailExpanded ? "1" : "0"); } catch (e) {}
+}
+
+function toggleShareDetailExpanded() {
+  setShareDetailExpanded(!shareDetailExpanded);
+}
+
+function restoreShareDetailExpanded() {
+  try {
+    shareDetailExpanded = localStorage.getItem("tomeshelf-share-detail-expanded") === "1";
+  } catch (e) {
+    shareDetailExpanded = false;
+  }
+  applyShareDetailExpanded();
 }
 
 function loadingHtml(msg) {
@@ -1040,6 +1079,7 @@ function renderLayout() {
           '<button class="back-btn" onclick="goBackToList()" title="Back">&#8592;</button>' +
           '<span>Book Details &amp; Discussion Guide</span>' +
           '<div class="nav-group">' +
+            '<button class="panel-focus-toggle" id="shareDetailToggle" type="button" onclick="toggleShareDetailExpanded()" title="Expand detail panel" aria-label="Expand detail panel">&#8596;</button>' +
             '<button class="nav-btn" id="prevBookBtn" onclick="navigateBook(-1)" title="Previous book" disabled>&#8592;</button>' +
             '<button class="nav-btn" id="nextBookBtn" onclick="navigateBook(1)"  title="Next book"     disabled>&#8594;</button>' +
           '</div>' +
@@ -1050,6 +1090,7 @@ function renderLayout() {
       '</div>' +
     '</div>';
 
+  applyShareDetailExpanded();
   renderBookList();
   _attachDetailSwipe();
 }
@@ -1328,14 +1369,40 @@ window.addEventListener("keydown", function(e) {
   else if (e.key === "ArrowLeft")  { navigateBook(-1); e.preventDefault(); }
 });
 
+window.addEventListener("resize", function() {
+  applyShareDetailExpanded();
+});
+
 // ── Cover lightbox ─────────────────────────────────────────────────────────────
 function showCoverLightbox(url) {
-  document.getElementById("coverLightboxImg").src = url;
+  let largeUrl = url;
+  if (/books\.google(?:usercontent)?\.com|googleusercontent\.com|books\.google\.com/.test(url) || /zoom=\d+/.test(url)) {
+    largeUrl = url.replace(/zoom=\d+/, "zoom=0").replace(/[&?]edge=curl/, "");
+  }
+  const img = document.getElementById("coverLightboxImg");
+  img.style.minWidth = "";
+  img.onload = function() {
+    if (img.src !== url && img.naturalWidth === 575 && img.naturalHeight === 750) {
+      img.onload = null;
+      img.style.minWidth = "min(80vw, 350px)";
+      img.src = url;
+    }
+  };
+  img.onerror = function() {
+    if (img.src !== url) {
+      img.onerror = null;
+      img.src = url;
+    }
+  };
+  img.src = largeUrl;
   document.getElementById("coverLightbox").classList.add("open");
 }
 
 function closeCoverLightbox() {
   document.getElementById("coverLightbox").classList.remove("open");
+  const img = document.getElementById("coverLightboxImg");
+  img.style.minWidth = "";
+  img.src = "";
 }
 
 // ── Wikipedia (Pass A: direct REST; Pass B: search URL fallback) ──────────────
