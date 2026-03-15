@@ -1,5 +1,6 @@
 # Environment / secrets
 .env
+tools/*.local.json
 
 # Personal catalog data
 catalog-data.json

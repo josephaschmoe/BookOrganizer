@@ -12,6 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <!-- Barcode scanning fallback for browsers without native BarcodeDetector -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <!--
@@ -3164,9 +3165,9 @@ const firebaseConfig = {
           Data &#9663;
         </button>
         <div class="data-menu" id="dataMenu">
-          <button type="button" onclick="exportJSON(); toggleDataMenu()">Export JSON</button>
+          <button type="button" onclick="exportJSON(); toggleDataMenu()">Export Backup ZIP</button>
           <button type="button" onclick="exportCSV(); toggleDataMenu()">Export CSV</button>
-          <label>Import JSON/CSV<input type="file" id="importInput" accept=".json,.csv,text/csv,application/json" style="display:none" onchange="importCatalog(this)"></label>
+          <label>Import ZIP/JSON/CSV<input type="file" id="importInput" accept=".zip,.json,.csv,application/zip,text/csv,application/json" style="display:none" onchange="importCatalog(this)"></label>
         </div>
       </div>
     </div>
@@ -3362,7 +3363,7 @@ const firebaseConfig = {
       <ul class="about-more-list">
         <li>Generated <strong>automatically in the background</strong> as you add books — no manual action needed; briefings appear in real time</li>
         <li>Small batches (&#8804; 25 books) generate immediately via a background trigger; larger batches queue for a scheduled function running every 2 hours</li>
-        <li>Books published <strong>before 2024</strong> &#8594; Google Gemini 2.5 Flash &nbsp;|&nbsp; Books from <strong>2024 onward</strong> &#8594; Perplexity Sonar Pro (web-grounded, post-cutoff knowledge)</li>
+        <li>Book briefings use <strong>Perplexity Sonar Pro</strong> with web-grounded verification and structured output for fiction, non-fiction, and reference books</li>
         <li>Coverage per book: genre, quick take, major themes, historical context, impact, literary analysis, and discussion questions</li>
         <li><strong>Fiction</strong> briefings include spoiler and spoiler-free versions of summaries, character notes, and discussion questions — toggle with one tap</li>
         <li>A <strong>Regenerate</strong> button appears only when a book&#8217;s existing briefing was produced by an older or less appropriate model</li>
@@ -3506,7 +3507,7 @@ const firebaseConfig = {
       <div style="border-top:1px solid var(--tan);padding-top:14px;">
         <p style="font-size:0.82rem;color:#666;margin-bottom:12px;line-height:1.5;">Export a backup of your current guest library before signing in.</p>
         <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()" style="width:100%;">
-          Export JSON Backup
+          Export Backup ZIP
         </button>
       </div>
     </div>
@@ -3519,13 +3520,19 @@ const firebaseConfig = {
       </p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()" style="flex:1;min-width:120px;">
-          Export JSON Backup
+          Export Backup ZIP
         </button>
         <button class="btn btn-sm" type="button" onclick="confirmDeleteAccount()"
           style="flex:1;min-width:120px;background:#b33;border-color:#b33;color:#fff;">
           Delete Everything
         </button>
       </div>
+    </div>
+
+    <!-- Shared Shelves section — shown for signed-in non-guest users -->
+    <div id="accountSettingsBackupsSection" style="display:none;border-top:1px solid var(--tan);padding-top:16px;margin-top:16px;">
+      <p style="font-size:0.88rem;color:var(--ink);margin-bottom:10px;"><strong>Backups</strong></p>
+      <div id="backupJobsList"></div>
     </div>
 
     <!-- Shared Shelves section — shown for signed-in non-guest users -->
@@ -3564,6 +3571,7 @@ const firebaseConfig = {
 let books = [];
 let researchCache = {};
 let briefingAudioCache = {};
+let backupJobsCache = {};
 let shelves = [];
 let shareLinks = {};
 let currentShelfId = "default";
@@ -3584,6 +3592,7 @@ let editingBookId = null;
 let _filteredBookIds = [];
 let pendingCoverBlob = null;
 let _coverUploadBookId = null;
+restoreBriefingAdminOverrideSession();
 let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
@@ -3618,18 +3627,21 @@ let bulkProgress = { total: 0, processed: 0, stage: "", manual: 0, duplicates: 0
 let selectionMode    = false;
 let selectedBookIds  = new Set();
 let pendingBriefingIds = [];
-// Return the expected briefing model for a given book.
-// Books published 2024+ use Perplexity Sonar (web-grounded); older books use Gemini.
+// Briefings now use Perplexity Sonar for all books.
 function expectedBriefingModel(book) {
-  const year = parseInt(String((book && book.year) || ""), 10);
-  return !isNaN(year) && year >= 2024 ? "perplexity-sonar-pro" : "gemini-2.5-flash";
+  return "perplexity-sonar-pro";
 }
 let _catalogUnsubscribe = null;  // snapshot listener teardown
 let _briefingsUnsubscribe = null; // briefings subcollection listener teardown
 let _briefingAudioUnsubscribe = null; // briefing audio subcollection listener teardown
+let _backupJobsUnsubscribe = null; // backup jobs subcollection listener teardown
 let _allowDuplicateOverride = false;
 let briefingAudioRequestInFlight = false;
 let briefingAudioUrls = {};
+let briefingAudioUrlErrors = {};
+const AUDIO_GENERATING_STALE_MS = 20 * 60 * 1000;
+const BRIEFING_ADMIN_PASSWORD = "";
+let briefingAdminOverrideSession = false;
 
 function safeLoad(key, fallback) {
   try {
@@ -3678,6 +3690,7 @@ function subscribeToBackgroundUpdates(uid) {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
   if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
+  if (_backupJobsUnsubscribe) { _backupJobsUnsubscribe(); _backupJobsUnsubscribe = null; }
 
   const catalog = db.collection("users").doc(uid).collection("catalog");
 
@@ -3726,9 +3739,11 @@ function subscribeToBackgroundUpdates(uid) {
     let changed = false;
     snap.docChanges().forEach(function(change) {
       if (change.type === "added" || change.type === "modified") {
+        const previousData = briefingAudioCache[change.doc.id];
         const newData = change.doc.data();
-        if (JSON.stringify(briefingAudioCache[change.doc.id]) !== JSON.stringify(newData)) {
+        if (JSON.stringify(previousData) !== JSON.stringify(newData)) {
           briefingAudioCache[change.doc.id] = newData;
+          handleSelectedBriefingAudioUpdate(change.doc.id, previousData, newData);
           changed = true;
         }
       } else if (change.type === "removed") {
@@ -3736,6 +3751,8 @@ function subscribeToBackgroundUpdates(uid) {
           delete briefingAudioCache[change.doc.id];
           delete briefingAudioUrls[change.doc.id + ":safe"];
           delete briefingAudioUrls[change.doc.id + ":spoiler"];
+          delete briefingAudioUrlErrors[change.doc.id + ":safe"];
+          delete briefingAudioUrlErrors[change.doc.id + ":spoiler"];
           changed = true;
         }
       }
@@ -3745,6 +3762,19 @@ function subscribeToBackgroundUpdates(uid) {
       updateResearchButtons();
     }
   }, (err) => { console.error("[subscribeToBackgroundUpdates] briefingAudio snapshot error:", err); });
+
+  _backupJobsUnsubscribe = db.collection("users").doc(uid).collection("backupJobs").orderBy("createdAt", "desc").limit(10).onSnapshot((snap) => {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    const next = {};
+    snap.forEach(function(doc) { next[doc.id] = doc.data(); });
+    if (JSON.stringify(next) !== JSON.stringify(backupJobsCache)) {
+      backupJobsCache = next;
+      const modal = document.getElementById("accountSettingsModal");
+      if (modal && modal.classList.contains("open")) {
+        _renderBackupJobsSection();
+      }
+    }
+  }, (err) => { console.error("[subscribeToBackgroundUpdates] backupJobs snapshot error:", err); });
 }
 
 async function saveBooks() {
@@ -3760,12 +3790,17 @@ async function loadCatalogData() {
     const catalog = db.collection("users").doc(uid).collection("catalog");
     const briefingsCol = db.collection("users").doc(uid).collection("briefings");
     const briefingAudioCol = db.collection("users").doc(uid).collection("briefingAudio");
-    const [dataSnap, researchSnap, briefingsSnap, briefingAudioResult] = await Promise.all([
+    const backupJobsCol = db.collection("users").doc(uid).collection("backupJobs");
+    const [dataSnap, researchSnap, briefingsSnap, briefingAudioResult, backupJobsSnap] = await Promise.all([
       catalog.doc("data").get({ source: "server" }),
       catalog.doc("research").get({ source: "server" }),
       briefingsCol.get({ source: "server" }),
       briefingAudioCol.get({ source: "server" }).catch(function(error) {
         console.warn("[loadCatalogData] briefingAudio fetch failed; continuing without audio cache:", error);
+        return null;
+      }),
+      backupJobsCol.orderBy("createdAt", "desc").limit(10).get({ source: "server" }).catch(function(error) {
+        console.warn("[loadCatalogData] backupJobs fetch failed; continuing without backup cache:", error);
         return null;
       })
     ]);
@@ -3806,9 +3841,14 @@ async function loadCatalogData() {
     if (briefingAudioResult && typeof briefingAudioResult.forEach === "function") {
       briefingAudioResult.forEach(function(doc) { audioCache[doc.id] = doc.data(); });
     }
+    const backupCache = {};
+    if (backupJobsSnap && typeof backupJobsSnap.forEach === "function") {
+      backupJobsSnap.forEach(function(doc) { backupCache[doc.id] = doc.data(); });
+    }
 
     researchCache = Object.assign({}, legacyDataCache, legacyResearchCache, subcollectionCache);
     briefingAudioCache = audioCache;
+    backupJobsCache = backupCache;
     console.log("[loadCatalogData] briefings in cache:", Object.keys(researchCache).length,
       "(subcollection:", briefingsSnap.size, "legacy-research:", Object.keys(legacyResearchCache).length,
       "legacy-data:", Object.keys(legacyDataCache).length, ")");
@@ -4980,11 +5020,14 @@ async function generateResearchForSelected(forceRefresh) {
   researchRequestInFlight = true;
   updateResearchButtons();
   setResearchStatus(`Generating a briefing for \"${book.title}\"...`, "");
-  document.getElementById("briefingContent").innerHTML = `<div class="briefing-empty"><p>Gemini is preparing a structured discussion guide.</p></div>`;
+  document.getElementById("briefingContent").innerHTML = `<div class="briefing-empty"><p>Perplexity is preparing a structured discussion guide.</p></div>`;
 
   try {
     const generateBriefingFn = functions.httpsCallable("generateBriefing");
-    const result = await generateBriefingFn({ book });
+    const result = await generateBriefingFn({
+      book,
+      adminPassword: briefingAdminOverrideSession ? BRIEFING_ADMIN_PASSWORD : ""
+    });
     const research = result.data && result.data.research;
     if (!research || typeof research !== "object") {
       throw new Error("The server returned an empty briefing. Please try again.");
@@ -5000,7 +5043,20 @@ async function generateResearchForSelected(forceRefresh) {
     renderBriefingPanel();
     setResearchStatus(`Briefing ready for \"${book.title}\".`, "success");
   } catch (error) {
-    setResearchStatus(error.message || "Research request failed.", "error");
+    const message = getCallableErrorMessage(error, "Research request failed.");
+    if (error && error.code === "resource-exhausted") {
+      const entered = prompt(message + "\n\nAdmin Access: enter override password to continue for this login session.");
+      if (entered === BRIEFING_ADMIN_PASSWORD) {
+        setBriefingAdminOverrideSession(true);
+        researchRequestInFlight = false;
+        updateResearchButtons();
+        setResearchStatus("Admin Access enabled for this login session. Retrying briefing generation...", "");
+        return generateResearchForSelected(forceRefresh);
+      }
+      setResearchStatus(message, "error");
+    } else {
+      setResearchStatus(message, "error");
+    }
     renderBriefingPanel();
   } finally {
     researchRequestInFlight = false;
@@ -5082,35 +5138,56 @@ function renderBriefingPanel() {
     return;
   }
 
-  const isFiction = (briefing.genre || "").toLowerCase() !== "non-fiction";
+  const genre = (briefing.genre || "").toLowerCase();
+  const isFiction = genre === "fiction";
+  const isReference = genre === "reference";
   const spoilerToggle = document.getElementById("spoilerToggleLabel");
   spoilerToggle.style.display = isFiction ? "" : "none";
   const showSpoilers = isFiction && document.getElementById("spoilerToggle").checked;
 
   // Pick the right field variant based on genre and spoiler toggle
-  const summaryText    = isFiction ? (showSpoilers ? briefing.summary_spoiler : briefing.summary_safe) : briefing.summary;
-  const keyElems       = isFiction ? (showSpoilers ? briefing.key_elements_spoiler : briefing.key_elements_safe) : briefing.key_elements;
-  const craftText      = isFiction ? (showSpoilers ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : briefing.craft_analysis;
-  const discussionList = isFiction ? (showSpoilers ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : briefing.discussion_questions;
+  const summaryText    = isFiction ? (showSpoilers ? briefing.summary_spoiler : briefing.summary_safe) : (isReference ? briefing.editorial_approach : briefing.summary);
+  const keyElems       = isFiction ? (showSpoilers ? briefing.key_elements_spoiler : briefing.key_elements_safe) : (isReference ? briefing.contents_overview : briefing.key_elements);
+  const craftText      = isFiction ? (showSpoilers ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : (isReference ? briefing.production_notes : briefing.craft_analysis);
+  const discussionList = isFiction ? (showSpoilers ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : (isReference ? briefing.notable_features : briefing.discussion_questions);
   const spoilerMode    = showSpoilers ? "spoiler" : "safe";
   const audioVariant   = getBriefingAudioVariant(book.id, spoilerMode);
-  const audioUrl       = briefingAudioUrls[currentAudioKey(book.id, spoilerMode)] || "";
+  const audioKey       = currentAudioKey(book.id, spoilerMode);
+  const audioUrl       = briefingAudioUrls[audioKey] || "";
+  const audioUrlError  = briefingAudioUrlErrors[audioKey] || "";
 
-  if (audioVariant && audioVariant.status === "ready" && audioVariant.audioPath && !audioUrl) {
+  if (audioVariant && audioVariant.status === "ready" && audioVariant.audioPath && !audioUrl && !audioUrlError) {
     ensureBriefingAudioUrl(book.id, spoilerMode, audioVariant);
   }
 
-  const takeawaysHtml = !isFiction && briefing.key_takeaways && briefing.key_takeaways.length
+  const takeawaysHtml = !isFiction && !isReference && briefing.key_takeaways && briefing.key_takeaways.length
     ? `<div class="briefing-section">
         <h3>Key Takeaways</h3>
         ${renderList(briefing.key_takeaways, "briefing-list")}
       </div>` : "";
+  const idealForHtml = isReference && briefing.ideal_for
+    ? `<div class="briefing-section">
+        <h3>Ideal For</h3>
+        <p>${paragraphize(briefing.ideal_for)}</p>
+      </div>` : "";
 
   const audioHtml = !audioVariant ? ""
     : audioVariant.status === "generating"
-      ? `<div class="briefing-section"><h3>Audio Overview</h3><p>Preparing an audio version of this briefing...</p></div>`
+      ? (isBriefingAudioGeneratingStale(audioVariant)
+          ? `<div class="briefing-section">
+              <h3>Audio Overview</h3>
+              <p>A previous audio generation attempt appears to be stuck.</p>
+              <button class="btn btn-light btn-sm" type="button" onclick="generateBriefingAudioForSelected(true)">Retry Audio</button>
+            </div>`
+          : `<div class="briefing-section"><h3>Audio Overview</h3><p>Preparing an audio version of this briefing...</p></div>`)
       : audioVariant.status === "error"
         ? `<div class="briefing-section"><h3>Audio Overview</h3><p>${esc(audioVariant.error || "Audio generation failed.")}</p></div>`
+        : audioUrlError
+          ? `<div class="briefing-section">
+              <h3>Audio Overview</h3>
+              <p>${esc(audioUrlError)}</p>
+              <button class="btn btn-light btn-sm" type="button" onclick="retryBriefingAudioUrl('${escapeAttribute(book.id)}', '${spoilerMode}')">Retry Player</button>
+            </div>`
         : `<div class="briefing-section">
             <h3>Audio Overview</h3>
             <p>Voice: ${esc(audioVariant.voice || "Kore")} ${audioVariant.durationSec ? `&middot; Approx. ${Math.max(1, Math.round(audioVariant.durationSec / 60))} min` : ""}</p>
@@ -5126,7 +5203,7 @@ function renderBriefingPanel() {
       <p>${esc(briefing.quick_take)}</p>
     </div>
     <div class="briefing-section">
-      <h3>${isFiction ? "Plot Summary" : "Overview"}</h3>
+      <h3>${isFiction ? "Plot Summary" : (isReference ? "Editorial Approach" : "Overview")}</h3>
       <p>${paragraphize(summaryText)}</p>
     </div>
     <div class="briefing-section">
@@ -5134,7 +5211,7 @@ function renderBriefingPanel() {
       ${renderList(briefing.major_themes, "briefing-list")}
     </div>
     <div class="briefing-section">
-      <h3>${isFiction ? "Characters" : "Key Concepts &amp; Figures"}</h3>
+      <h3>${isFiction ? "Characters" : (isReference ? "Contents Overview" : "Key Concepts &amp; Figures")}</h3>
       ${renderList(keyElems, "briefing-list")}
     </div>
     <div class="briefing-section">
@@ -5142,16 +5219,17 @@ function renderBriefingPanel() {
       <p>${paragraphize(briefing.historical_context)}</p>
     </div>
     <div class="briefing-section">
-      <h3>${isFiction ? "Literary Analysis" : "Analysis &amp; Methodology"}</h3>
+      <h3>${isFiction ? "Literary Analysis" : (isReference ? "Production Notes" : "Analysis &amp; Methodology")}</h3>
       <p>${paragraphize(craftText)}</p>
     </div>
     ${takeawaysHtml}
+    ${idealForHtml}
     <div class="briefing-section">
       <h3>Impact</h3>
       <p>${paragraphize(briefing.impact)}</p>
     </div>
     <div class="briefing-section">
-      <h3>Discussion Questions</h3>
+      <h3>${isReference ? "Notable Features" : "Discussion Questions"}</h3>
       ${renderList(discussionList, "questions-list")}
     </div>
     <div class="briefing-section">
@@ -5449,9 +5527,15 @@ function updateResearchButtons() {
     audioBtn.textContent = "Play Audio";
     audioBtn.onclick = () => generateBriefingAudioForSelected(false);
   } else if (audioVariant && audioVariant.status === "generating") {
-    audioBtn.disabled = true;
-    audioBtn.textContent = "Preparing...";
-    audioBtn.onclick = null;
+    if (isBriefingAudioGeneratingStale(audioVariant)) {
+      audioBtn.disabled = false;
+      audioBtn.textContent = "Retry Audio";
+      audioBtn.onclick = () => generateBriefingAudioForSelected(true);
+    } else {
+      audioBtn.disabled = true;
+      audioBtn.textContent = "Preparing...";
+      audioBtn.onclick = null;
+    }
   } else {
     audioBtn.disabled = false;
     audioBtn.textContent = "Listen";
@@ -5881,12 +5965,25 @@ function getBriefingAudioVariant(bookId, spoilerMode) {
 }
 
 function currentSpoilerModeForBook(book, briefing) {
-  const isFiction = briefing && (briefing.genre || "").toLowerCase() !== "non-fiction";
+  const isFiction = briefing && (briefing.genre || "").toLowerCase() === "fiction";
   return isFiction && document.getElementById("spoilerToggle")?.checked ? "spoiler" : "safe";
 }
 
 function currentAudioKey(bookId, spoilerMode) {
   return bookId + ":" + spoilerMode;
+}
+
+function isBriefingAudioGeneratingStale(variant) {
+  if (!variant || variant.status !== "generating") return false;
+  const stamp = Date.parse(String(variant.generatedAt || variant.updatedAt || ""));
+  if (!Number.isFinite(stamp)) return false;
+  return (Date.now() - stamp) > AUDIO_GENERATING_STALE_MS;
+}
+
+function clearBriefingAudioUrlState(bookId, spoilerMode) {
+  const key = currentAudioKey(bookId, spoilerMode);
+  delete briefingAudioUrls[key];
+  delete briefingAudioUrlErrors[key];
 }
 
 function getCallableErrorMessage(error, fallback) {
@@ -5901,21 +5998,45 @@ function getCallableErrorMessage(error, fallback) {
   return fallback;
 }
 
+function restoreBriefingAdminOverrideSession() {
+  try {
+    briefingAdminOverrideSession = sessionStorage.getItem("tomeshelf-briefing-admin-override") === "1";
+  } catch (error) {
+    briefingAdminOverrideSession = false;
+  }
+}
+
+function setBriefingAdminOverrideSession(enabled) {
+  briefingAdminOverrideSession = Boolean(enabled);
+  try {
+    if (briefingAdminOverrideSession) {
+      sessionStorage.setItem("tomeshelf-briefing-admin-override", "1");
+    } else {
+      sessionStorage.removeItem("tomeshelf-briefing-admin-override");
+    }
+  } catch (error) {}
+}
+
 async function ensureBriefingAudioUrl(bookId, spoilerMode, variant) {
   if (!variant || variant.status !== "ready" || !variant.audioPath) return "";
   const key = currentAudioKey(bookId, spoilerMode);
   if (briefingAudioUrls[key]) return briefingAudioUrls[key];
+  if (briefingAudioUrlErrors[key]) return "";
   try {
     const fn = functions.httpsCallable("getBriefingAudio");
     const result = await fn({ bookId, spoilerMode });
     const url = result.data && result.data.audioUrl ? result.data.audioUrl : "";
     if (url) {
       briefingAudioUrls[key] = url;
+      delete briefingAudioUrlErrors[key];
       if (selectedBookId === bookId) renderBriefingPanel();
     }
     return url;
   } catch (error) {
+    const message = getCallableErrorMessage(error, "Could not load audio.");
+    briefingAudioUrlErrors[key] = message;
     console.error("[ensureBriefingAudioUrl] signed URL fetch failed:", error);
+    if (selectedBookId === bookId) renderBriefingPanel();
     return "";
   }
 }
@@ -5928,6 +6049,33 @@ async function waitForBriefingAudioError(bookId, spoilerMode, timeoutMs) {
     await new Promise(function(resolve) { setTimeout(resolve, 150); });
   }
   return "";
+}
+
+function retryBriefingAudioUrl(bookId, spoilerMode) {
+  const variant = getBriefingAudioVariant(bookId, spoilerMode);
+  clearBriefingAudioUrlState(bookId, spoilerMode);
+  renderBriefingPanel();
+  if (variant && variant.status === "ready") {
+    ensureBriefingAudioUrl(bookId, spoilerMode, variant);
+  }
+}
+
+function handleSelectedBriefingAudioUpdate(bookId, previousDoc, nextDoc) {
+  if (!selectedBookId || selectedBookId !== bookId) return;
+  const book = findBook(bookId);
+  const briefing = book && researchCache[bookId];
+  if (!book || !briefing) return;
+  const spoilerMode = currentSpoilerModeForBook(book, briefing);
+  const prevVariants = previousDoc && typeof previousDoc.variants === "object" ? previousDoc.variants : {};
+  const nextVariants = nextDoc && typeof nextDoc.variants === "object" ? nextDoc.variants : {};
+  const prevVariant = prevVariants[spoilerMode] && typeof prevVariants[spoilerMode] === "object" ? prevVariants[spoilerMode] : null;
+  const nextVariant = nextVariants[spoilerMode] && typeof nextVariants[spoilerMode] === "object" ? nextVariants[spoilerMode] : null;
+  if (!nextVariant) return;
+  if (nextVariant.status === "ready" && (!prevVariant || prevVariant.status !== "ready")) {
+    setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+  } else if (nextVariant.status === "error" && (!prevVariant || prevVariant.status !== "error")) {
+    setResearchStatus(nextVariant.error || "Audio generation failed.", "error");
+  }
 }
 
 async function generateBriefingAudioForSelected(forceRefresh) {
@@ -5944,7 +6092,7 @@ async function generateBriefingAudioForSelected(forceRefresh) {
   if (briefingAudioRequestInFlight) return;
 
   const spoilerMode = currentSpoilerModeForBook(book, briefing);
-  const isFiction = (briefing.genre || "").toLowerCase() !== "non-fiction";
+  const isFiction = (briefing.genre || "").toLowerCase() === "fiction";
   if (isFiction && spoilerMode === "spoiler" && !forceRefresh) {
     const proceed = confirm("This audio overview may reveal major plot points. Generate spoiler-inclusive audio?");
     if (!proceed) return;
@@ -5959,7 +6107,7 @@ async function generateBriefingAudioForSelected(forceRefresh) {
 
   briefingAudioRequestInFlight = true;
   updateResearchButtons();
-  setResearchStatus(`Preparing audio overview for "${book.title}"...`, "");
+  setResearchStatus(`Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`, "");
   renderBriefingPanel();
 
   try {
@@ -5983,15 +6131,19 @@ async function generateBriefingAudioForSelected(forceRefresh) {
         [resolvedMode]: metadata
       }
     };
+    clearBriefingAudioUrlState(book.id, resolvedMode);
     if (audioUrl) {
       briefingAudioUrls[currentAudioKey(book.id, resolvedMode)] = audioUrl;
     }
     renderBriefingPanel();
-    setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+    if (result.data && result.data.queued) {
+      setResearchStatus(`Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`, "");
+    } else {
+      setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+    }
   } catch (error) {
     const latestVariant = getBriefingAudioVariant(book.id, spoilerMode);
-    const immediateError = latestVariant && latestVariant.status === "error" ? latestVariant.error : "";
-    const storedError = immediateError || await waitForBriefingAudioError(book.id, spoilerMode, 1200);
+    const storedError = latestVariant && latestVariant.status === "error" ? latestVariant.error : "";
     setResearchStatus(storedError || getCallableErrorMessage(error, "Audio generation failed."), "error");
     renderBriefingPanel();
   } finally {
@@ -6563,15 +6715,423 @@ function setFilter(status) {
   renderCatalog();
 }
 
-function exportJSON() {
-  const data = JSON.stringify({ books, researchCache, shelves }, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+const BACKUP_SCHEMA_VERSION = 1;
+
+function extFromContentType(contentType, fallback) {
+  const value = String(contentType || "").toLowerCase();
+  if (value.includes("jpeg")) return ".jpg";
+  if (value.includes("png")) return ".png";
+  if (value.includes("webp")) return ".webp";
+  if (value.includes("wav")) return ".wav";
+  if (value.includes("mpeg")) return ".mp3";
+  if (value.includes("ogg")) return ".ogg";
+  return fallback || "";
+}
+
+function triggerBrowserDownload(url, filename) {
   const a = document.createElement("a");
   a.href = url;
-  a.download = `my-library-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename || "";
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+function _renderBackupJobsSection() {
+  const list = document.getElementById("backupJobsList");
+  if (!list) return;
+  const entries = Object.entries(backupJobsCache || {}).sort(function(a, b) {
+    return String((b[1] || {}).createdAt || "").localeCompare(String((a[1] || {}).createdAt || ""));
+  });
+  if (!entries.length) {
+    list.innerHTML = '<p style="font-size:0.82rem;color:#888;">No recent backups yet.</p>';
+    return;
+  }
+  list.innerHTML = entries.map(function([id, job]) {
+    const status = String(job.status || "queued");
+    const created = job.createdAt ? new Date(job.createdAt).toLocaleString() : "";
+    const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleString() : "";
+    const expires = job.expiresAt ? new Date(job.expiresAt).toLocaleString() : "";
+    const stats = job.exportStats || {};
+    const details = [];
+    const report = [];
+    if (job.bookCount) details.push(`${job.bookCount} books`);
+    if (job.assetCount || stats.audioAdded || stats.coversAdded) details.push(`${job.assetCount || 0} assets`);
+    if (typeof stats.briefingsCount === "number") report.push(`${stats.briefingsCount} briefings`);
+    if (typeof stats.coversAdded === "number" || typeof stats.coversSkipped === "number") {
+      report.push(`covers ${stats.coversAdded || 0} added, ${stats.coversSkipped || 0} skipped`);
+    }
+    if (typeof stats.audioAdded === "number" || typeof stats.audioSkipped === "number") {
+      report.push(`audio ${stats.audioAdded || 0} added, ${stats.audioSkipped || 0} skipped`);
+    }
+    if (job.schemaVersion) report.push(`schema v${job.schemaVersion}`);
+    let actionHtml = '';
+    if (status === "ready" && job.downloadUrl) {
+      actionHtml = '<a class="btn btn-secondary btn-sm" href="' + escapeAttribute(job.downloadUrl) + '" target="_blank" rel="noopener">Download</a>';
+    } else if (status === "running" || status === "queued") {
+      actionHtml = '<span style="font-size:0.78rem;color:var(--brown);">Preparing…</span>';
+    } else if (status === "expired") {
+      actionHtml = '<span style="font-size:0.78rem;color:#888;">Expired</span>';
+    } else if (status === "error") {
+      actionHtml = '<span style="font-size:0.78rem;color:#b33;">' + esc(job.error || "Failed") + '</span>';
+    }
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--tan);flex-wrap:wrap;">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:0.88rem;font-weight:600;color:var(--dark);text-transform:capitalize;">' + esc(status) + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--brown);margin-top:2px;">' + esc(created) + (details.length ? ' &middot; ' + esc(details.join(' · ')) : '') + '</div>' +
+        (report.length
+          ? '<div style="font-size:0.74rem;color:#666;margin-top:4px;">' + esc(report.join(' | ')) + '</div>'
+          : '') +
+        (finished || expires
+          ? '<div style="font-size:0.72rem;color:#777;margin-top:4px;">' +
+              (finished ? 'Ready ' + esc(finished) : '') +
+              (finished && expires ? ' | ' : '') +
+              (expires ? 'Expires ' + esc(expires) : '') +
+            '</div>'
+          : '') +
+      '</div>' +
+      actionHtml +
+    '</div>';
+  }).join("");
+}
+
+function extFromPath(path, fallback) {
+  const match = String(path || "").match(/(\.[a-z0-9]+)(?:\?|$)/i);
+  return match ? match[1].toLowerCase() : (fallback || "");
+}
+
+function coverAssetForBook(bookId, manifest) {
+  const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+  return assets.find((asset) => asset && asset.bookId === bookId && asset.kind === "cover") || null;
+}
+
+function audioAssetForBook(bookId, variant, manifest) {
+  const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+  return assets.find((asset) => asset && asset.bookId === bookId && asset.kind === "audio" && asset.variant === variant) || null;
+}
+
+function guessContentTypeFromUrl(url) {
+  const value = String(url || "").toLowerCase();
+  if (value.includes(".png")) return "image/png";
+  if (value.includes(".webp")) return "image/webp";
+  if (value.includes(".wav")) return "audio/wav";
+  return "image/jpeg";
+}
+
+async function fetchBlobForBackup(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return await response.blob();
+}
+
+async function getOwnerAudioUrl(bookId, spoilerMode) {
+  const fn = functions.httpsCallable("getBriefingAudio");
+  const result = await fn({ bookId, spoilerMode });
+  return result.data && result.data.audioUrl ? result.data.audioUrl : "";
+}
+
+async function addCoverAssetToZip(zip, manifest, book) {
+  if (!book || !book.id || !book.coverUrl) return;
+  try {
+    const blob = await fetchBlobForBackup(book.coverUrl);
+    const contentType = blob.type || guessContentTypeFromUrl(book.coverUrl);
+    const ext = extFromContentType(contentType, extFromPath(book.coverUrl, ".jpg")) || ".jpg";
+    const pathInZip = `files/covers/${book.id}${ext}`;
+    zip.file(pathInZip, blob);
+    manifest.assets.push({
+      assetId: `cover-${book.id}`,
+      bookId: book.id,
+      kind: "cover",
+      contentType,
+      pathInZip,
+      sourceUrl: book.coverUrl
+    });
+  } catch (error) {
+    console.warn("[exportJSON] cover export skipped:", book.title, error);
+  }
+}
+
+async function addAudioAssetsToZip(zip, manifest, audioDoc, bookId) {
+  const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
+  for (const variant of Object.keys(variants)) {
+    const entry = variants[variant];
+    if (!entry || entry.status !== "ready" || !entry.audioPath) continue;
+    try {
+      const audioUrl = await getOwnerAudioUrl(bookId, variant);
+      if (!audioUrl) continue;
+      const blob = await fetchBlobForBackup(audioUrl);
+      const contentType = blob.type || "audio/wav";
+      const ext = extFromContentType(contentType, extFromPath(entry.audioPath, ".wav")) || ".wav";
+      const pathInZip = `files/audio/${bookId}-${variant}${ext}`;
+      zip.file(pathInZip, blob);
+      manifest.assets.push({
+        assetId: `audio-${bookId}-${variant}`,
+        bookId,
+        kind: "audio",
+        variant,
+        contentType,
+        pathInZip,
+        sourcePath: entry.audioPath
+      });
+    } catch (error) {
+      console.warn("[exportJSON] audio export skipped:", bookId, variant, error);
+    }
+  }
+}
+
+function buildBackupManifest() {
+  const sanitizedBriefingAudio = {};
+  Object.entries(briefingAudioCache || {}).forEach(function([bookId, doc]) {
+    const variants = doc && typeof doc.variants === "object" ? doc.variants : {};
+    const sanitizedVariants = {};
+    Object.entries(variants).forEach(function([variant, entry]) {
+      if (!entry || typeof entry !== "object") return;
+      sanitizedVariants[variant] = {
+        status: entry.status || "",
+        voice: entry.voice || "",
+        generatedAt: entry.generatedAt || "",
+        sourceBriefingGeneratedAt: entry.sourceBriefingGeneratedAt || "",
+        scriptModel: entry.scriptModel || "",
+        ttsModel: entry.ttsModel || "",
+        durationSec: entry.durationSec || 0,
+        audioPath: entry.audioPath || ""
+      };
+      if (entry.error) sanitizedVariants[variant].error = entry.error;
+    });
+    if (Object.keys(sanitizedVariants).length) {
+      sanitizedBriefingAudio[bookId] = {
+        updatedAt: doc && doc.updatedAt ? doc.updatedAt : "",
+        variants: sanitizedVariants
+      };
+    }
+  });
+
+  return {
+    schemaVersion: BACKUP_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    app: "TomeShelf",
+    sections: {
+      books: true,
+      shelves: true,
+      briefings: true,
+      briefingAudio: true,
+      assets: true
+    },
+    preferences: {
+      currentShelfId: currentShelfId || "default"
+    },
+    books: books.map((book) => JSON.parse(JSON.stringify(book))),
+    shelves: shelves.map((shelf) => JSON.parse(JSON.stringify(shelf))),
+    briefings: JSON.parse(JSON.stringify(researchCache || {})),
+    briefingAudio: sanitizedBriefingAudio,
+    assets: []
+  };
+}
+
+async function exportJSON() {
+  try {
+    const fn = functions.httpsCallable("requestBackupExport");
+    const result = await fn({});
+    if (result.data && result.data.ok === false) {
+      throw new Error(result.data.error || "Backup export failed.");
+    }
+    setStatus("addStatus", "Backup export started. It may take a few minutes.", "success");
+    showToast(
+      "Backup ZIP is being prepared. You can keep using TomeShelf while it runs. When it is ready, open Account Settings and use the Download link in Backups.",
+      "Open Settings",
+      openAccountSettings
+    );
+    const modal = document.getElementById("accountSettingsModal");
+    if (modal && modal.classList.contains("open")) _renderBackupJobsSection();
+  } catch (error) {
+    console.error("[exportJSON] backup export failed:", error);
+    setStatus("addStatus", `Backup export failed: ${error.message}`, "error");
+  }
+}
+
+function normalizeBackupManifest(raw) {
+  const manifest = raw && typeof raw === "object" ? raw : {};
+  return {
+    schemaVersion: Number(manifest.schemaVersion || 0),
+    books: Array.isArray(manifest.books) ? manifest.books : [],
+    shelves: Array.isArray(manifest.shelves) ? manifest.shelves : [],
+    briefings: manifest.briefings && typeof manifest.briefings === "object" ? manifest.briefings : {},
+    briefingAudio: manifest.briefingAudio && typeof manifest.briefingAudio === "object" ? manifest.briefingAudio : {},
+    assets: Array.isArray(manifest.assets) ? manifest.assets : [],
+    preferences: manifest.preferences && typeof manifest.preferences === "object" ? manifest.preferences : {}
+  };
+}
+
+function matchImportedBookIndex(book) {
+  return books.findIndex((existing) => {
+    if (book.isbn && existing.isbn) return existing.isbn === book.isbn;
+    return (existing.title || "").toLowerCase() === (book.title || "").toLowerCase()
+      && (existing.author || "").toLowerCase() === (book.author || "").toLowerCase();
+  });
+}
+
+function upsertBackupBooks(imported) {
+  let added = 0;
+  let updated = 0;
+  const idMap = {};
+
+  for (const rawBook of imported) {
+    const book = normalizeBook(rawBook);
+    const existingIdx = matchImportedBookIndex(book);
+    if (existingIdx === -1) {
+      books.push(book);
+      added++;
+      idMap[rawBook.id] = book.id;
+    } else {
+      const existing = books[existingIdx];
+      const merged = normalizeBook({ ...existing, ...book, id: existing.id });
+      books[existingIdx] = merged;
+      updated++;
+      idMap[rawBook.id] = existing.id;
+    }
+  }
+
+  return { added, updated, idMap };
+}
+
+async function uploadImportedBlob(storagePath, blob, contentType) {
+  const ref = storage.ref(storagePath);
+  await ref.put(blob, { contentType: contentType || blob.type || "application/octet-stream" });
+  return await ref.getDownloadURL();
+}
+
+async function importBackupZip(file) {
+  if (typeof JSZip === "undefined") throw new Error("Backup ZIP library failed to load.");
+  const zip = await JSZip.loadAsync(file);
+  const manifestEntry = zip.file("manifest.json");
+  if (!manifestEntry) throw new Error("Backup ZIP is missing manifest.json.");
+
+  const manifest = normalizeBackupManifest(JSON.parse(await manifestEntry.async("string")));
+  if (!manifest.books.length) throw new Error("Backup ZIP does not contain any books.");
+  if (manifest.schemaVersion > BACKUP_SCHEMA_VERSION) {
+    console.warn("[importBackupZip] newer schema version:", manifest.schemaVersion);
+  }
+
+  manifest.shelves.forEach(function(shelf) {
+    if (shelf && shelf.id && shelf.name && !shelves.find(function(existing) { return existing.id === shelf.id; })) {
+      shelves.push(shelf);
+    }
+  });
+
+  const { added, updated, idMap } = upsertBackupBooks(manifest.books);
+  const importUser = auth.currentUser;
+  const importedBriefings = {};
+  Object.entries(manifest.briefings).forEach(function([oldId, briefing]) {
+    const newId = idMap[oldId];
+    if (!newId || !briefing) return;
+    importedBriefings[newId] = briefing;
+    researchCache[newId] = briefing;
+  });
+
+  const importedAudioDocs = {};
+  let restoredCovers = 0;
+  let restoredAudio = 0;
+
+  for (const rawBook of manifest.books) {
+    const targetId = idMap[rawBook.id];
+    if (!targetId) continue;
+    const targetBook = books.find(function(entry) { return entry.id === targetId; });
+    if (!targetBook) continue;
+
+    const coverAsset = coverAssetForBook(rawBook.id, manifest);
+    if (coverAsset && coverAsset.pathInZip && zip.file(coverAsset.pathInZip)) {
+      try {
+        const blob = await zip.file(coverAsset.pathInZip).async("blob");
+        const ext = extFromPath(coverAsset.pathInZip, extFromContentType(coverAsset.contentType, ".jpg")) || ".jpg";
+        const coverUrl = await uploadImportedBlob(`users/${importUser.uid}/covers/${targetId}${ext}`, blob, coverAsset.contentType);
+        targetBook.coverUrl = coverUrl;
+        restoredCovers++;
+      } catch (error) {
+        console.warn("[importBackupZip] cover restore failed:", rawBook.title, error);
+      }
+    }
+
+    const audioDoc = manifest.briefingAudio && manifest.briefingAudio[rawBook.id];
+    const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
+    const restoredVariants = {};
+    for (const variant of Object.keys(variants)) {
+      const asset = audioAssetForBook(rawBook.id, variant, manifest);
+      if (!asset || !asset.pathInZip || !zip.file(asset.pathInZip)) continue;
+      try {
+        const blob = await zip.file(asset.pathInZip).async("blob");
+        const ext = extFromPath(asset.pathInZip, extFromContentType(asset.contentType, ".wav")) || ".wav";
+        const audioPath = `users/${importUser.uid}/briefing-audio/${targetId}-${variant}${ext}`;
+        await uploadImportedBlob(audioPath, blob, asset.contentType || "audio/wav");
+        restoredVariants[variant] = {
+          ...variants[variant],
+          status: "ready",
+          audioPath
+        };
+        restoredAudio++;
+      } catch (error) {
+        console.warn("[importBackupZip] audio restore failed:", rawBook.title, variant, error);
+      }
+    }
+    if (Object.keys(restoredVariants).length) {
+      const existingAudioDoc = briefingAudioCache[targetId] && typeof briefingAudioCache[targetId] === "object"
+        ? briefingAudioCache[targetId]
+        : {};
+      const existingVariants = existingAudioDoc.variants && typeof existingAudioDoc.variants === "object"
+        ? existingAudioDoc.variants
+        : {};
+      importedAudioDocs[targetId] = {
+        updatedAt: new Date().toISOString(),
+        variants: { ...existingVariants, ...restoredVariants }
+      };
+      briefingAudioCache[targetId] = importedAudioDocs[targetId];
+    }
+  }
+
+  await persistCatalog();
+
+  if (importUser && Object.keys(importedBriefings).length > 0) {
+    try {
+      const batch = db.batch();
+      Object.entries(importedBriefings).forEach(function([id, data]) {
+        batch.set(db.collection("users").doc(importUser.uid).collection("briefings").doc(id), data);
+      });
+      await batch.commit();
+    } catch (err) { console.error("[importBackupZip] briefing save failed:", err); }
+  }
+
+  if (importUser && Object.keys(importedAudioDocs).length > 0) {
+    try {
+      const batch = db.batch();
+      Object.entries(importedAudioDocs).forEach(function([id, data]) {
+        batch.set(db.collection("users").doc(importUser.uid).collection("briefingAudio").doc(id), data);
+      });
+      await batch.commit();
+    } catch (err) { console.error("[importBackupZip] briefing audio save failed:", err); }
+  }
+
+  if (manifest.preferences.currentShelfId && shelves.find(function(s) { return s.id === manifest.preferences.currentShelfId; })) {
+    currentShelfId = manifest.preferences.currentShelfId;
+    saveCurrentShelfId();
+  }
+
+  updateShelfLabel();
+  updateShelfSelector();
+  renderCatalog();
+  renderBriefingPanel();
+  updateResearchButtons();
+
+  const parts = [];
+  if (added > 0) parts.push(`${added} new book${added === 1 ? "" : "s"} added`);
+  if (updated > 0) parts.push(`${updated} existing book${updated === 1 ? "" : "s"} restored`);
+  if (Object.keys(importedBriefings).length > 0) parts.push(`${Object.keys(importedBriefings).length} briefing${Object.keys(importedBriefings).length === 1 ? "" : "s"} restored`);
+  if (restoredCovers > 0) parts.push(`${restoredCovers} cover image${restoredCovers === 1 ? "" : "s"} restored`);
+  if (restoredAudio > 0) parts.push(`${restoredAudio} audio file${restoredAudio === 1 ? "" : "s"} restored`);
+  if (parts.length === 0) parts.push("no changes");
+  setStatus("addStatus", `Backup import complete: ${parts.join(", ")}.`, "success");
+  setTimeout(() => setStatus("addStatus", "", ""), 5000);
 }
 
 const EXPORT_CSV_HEADERS = ["Title", "Author", "ISBN", "Year", "Publisher", "Edition", "Subjects", "Condition", "Shelf", "Reading Status", "Start Date", "Finish Date", "Rating", "Notes", "Personal Notes"];
@@ -6872,25 +7432,34 @@ async function enrichImportedBooksFromOpenLibrary(importedBooks) {
   return enrichedCount;
 }
 
-function mergeImportedBooks(imported) {
+function mergeImportedBooks(imported, options = {}) {
+  const duplicateMode = String(options.duplicateMode || "skip");
   let added = 0;
+  let skipped = 0;
 
   for (const book of imported) {
-    const exists = books.some((existing) => {
+    const matches = books.filter((existing) => {
       if (book.isbn && existing.isbn) {
         return existing.isbn === book.isbn;
       }
       return (existing.title || "").toLowerCase() === (book.title || "").toLowerCase()
         && (existing.author || "").toLowerCase() === (book.author || "").toLowerCase();
     });
+    const exists = matches.length > 0;
+    const existsOnTargetShelf = matches.some((existing) => (existing.listShelfId || "default") === currentShelfId);
+    const shouldImport = !exists
+      || duplicateMode === "import_all"
+      || (duplicateMode === "import_other_shelves" && !existsOnTargetShelf);
 
-    if (!exists) {
+    if (shouldImport) {
       books.push(book);
       added++;
+    } else {
+      skipped++;
     }
   }
 
-  return added;
+  return { added, skipped };
 }
 
 // JSON import uses upsert: adds new books AND updates listShelfId on existing ones
@@ -6938,16 +7507,33 @@ async function importCsvCatalog(text) {
     throw new Error("No importable books were found in the CSV.");
   }
 
+  let duplicateMode = "skip";
+  if (confirm("Import books that already exist in your catalog as separate copies?\n\nChoose OK to review duplicate handling options. Choose Cancel to skip books that already exist.")) {
+    duplicateMode = confirm("Only import a duplicate when the existing match is on a different shelf?\n\nChoose OK for shelf-aware importing. Choose Cancel to import all duplicates as separate copies.")
+      ? "import_other_shelves"
+      : "import_all";
+  }
+
   let enrichedCount = 0;
   const shouldEnrich = confirm("Fetch covers and subjects from Open Library for imported CSV books? This may take a little longer.");
   if (shouldEnrich) {
     enrichedCount = await enrichImportedBooksFromOpenLibrary(imported);
   }
 
-  const added = mergeImportedBooks(imported);
+  const mergeResult = mergeImportedBooks(imported, { duplicateMode });
+  const added = mergeResult.added;
+  const skipped = mergeResult.skipped;
   await persistCatalog();
   renderCatalog();
-  setStatus("addStatus", `Imported ${added} new book${added === 1 ? "" : "s"} (${imported.length - added} already existed)${shouldEnrich ? "; enriched " + enrichedCount + "." : "."}`, "success");
+  let duplicateText = "";
+  if (duplicateMode === "import_all") {
+    duplicateText = " including duplicate copies.";
+  } else if (duplicateMode === "import_other_shelves") {
+    duplicateText = ` (${skipped} already on this shelf and were skipped).`;
+  } else {
+    duplicateText = ` (${skipped} already existed and were skipped).`;
+  }
+  setStatus("addStatus", `Imported ${added} book${added === 1 ? "" : "s"}${duplicateText}${shouldEnrich ? " Enriched " + enrichedCount + "." : ""}`, "success");
   setTimeout(() => setStatus("addStatus", "", ""), 5000);
 }
 
@@ -6955,6 +7541,13 @@ async function importCatalog(input) {
   const file = input.files[0];
   if (!file) { return; }
   try {
+    const isZip = /\.zip$/i.test(file.name) || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+    if (isZip) {
+      await importBackupZip(file);
+      input.value = "";
+      return;
+    }
+
     const text = await file.text();
     const trimmed = text.trimStart();
     const isJson = /\.json$/i.test(file.name) || trimmed.startsWith("{") || trimmed.startsWith("[");
@@ -6970,6 +7563,7 @@ async function importCatalog(input) {
     }
     const imported = data.books.map(normalizeBook);
     const importedResearch = data.researchCache && typeof data.researchCache === "object" ? data.researchCache : {};
+    const importedBriefingAudio = data.briefingAudio && typeof data.briefingAudio === "object" ? data.briefingAudio : {};
     // Merge any shelves from the import (add ones not already present by id)
     if (Array.isArray(data.shelves)) {
       data.shelves.forEach(function(s) {
@@ -6980,6 +7574,7 @@ async function importCatalog(input) {
     }
     const { added, updated } = upsertImportedBooks(imported);
     Object.assign(researchCache, importedResearch);
+    Object.assign(briefingAudioCache, importedBriefingAudio);
     await persistCatalog();
     // Persist any imported briefings to the subcollection
     const importUser = auth.currentUser;
@@ -6991,6 +7586,15 @@ async function importCatalog(input) {
         });
         await batch.commit();
       } catch (err) { console.error("[import] briefing save failed:", err); }
+    }
+    if (importUser && Object.keys(importedBriefingAudio).length > 0) {
+      try {
+        const batch = db.batch();
+        Object.entries(importedBriefingAudio).forEach(function([id, data]) {
+          batch.set(db.collection("users").doc(importUser.uid).collection("briefingAudio").doc(id), data);
+        });
+        await batch.commit();
+      } catch (err) { console.error("[import] briefingAudio save failed:", err); }
     }
     updateShelfSelector();
     renderCatalog();
@@ -7492,6 +8096,7 @@ async function signOutUser() {
     // Clean up orphaned anonymous Firestore data before signing out
     try { await db.collection("users").doc(user.uid).collection("catalog").doc("data").delete(); } catch (_) {}
   }
+  _explicitSignOut = true;
   await auth.signOut();
 }
 
@@ -7505,6 +8110,11 @@ function openAccountSettings() {
   if (modeSelect) modeSelect.value = uiDetailMode;
   document.getElementById("accountSettingsGuestSection").style.display = isGuest ? "" : "none";
   document.getElementById("accountSettingsUserSection").style.display  = isGuest ? "none" : "";
+  const backupsSection = document.getElementById("accountSettingsBackupsSection");
+  if (backupsSection) {
+    backupsSection.style.display = (!isGuest && user) ? "" : "none";
+    if (!isGuest && user) _renderBackupJobsSection();
+  }
   const shareSection = document.getElementById("accountSettingsShareSection");
   if (shareSection) {
     shareSection.style.display = (!isGuest && user) ? "" : "none";
@@ -8475,11 +9085,13 @@ function finishBulkCorrection() {
 // Firebase briefly fires null then re-fires the user when the app returns to foreground.
 // Without this guard, that null event wipes all state mid-workflow.
 let _pendingSignOut = null;
+let _explicitSignOut = false;
 
 function _doSignOut() {
   if (_catalogUnsubscribe) { _catalogUnsubscribe(); _catalogUnsubscribe = null; }
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
   if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
+  if (_backupJobsUnsubscribe) { _backupJobsUnsubscribe(); _backupJobsUnsubscribe = null; }
   document.getElementById("authOverlay").style.display = "flex";
   document.getElementById("guestBanner").style.display = "none";
   const icon = document.getElementById("userEmailIcon");
@@ -8488,10 +9100,13 @@ function _doSignOut() {
   icon.src = "";
   emailText.style.display = "none";
   _booksOwnedByUid = null;
+  setBriefingAdminOverrideSession(false);
   books = [];
   researchCache = {};
   briefingAudioCache = {};
+  backupJobsCache = {};
   briefingAudioUrls = {};
+  briefingAudioUrlErrors = {};
   pendingBriefingIds = [];
   shelves = [{ id: "default", name: "Reading List", createdAt: Date.now() }];
   currentShelfId = "default";
@@ -8547,6 +9162,7 @@ auth.onAuthStateChanged(async (user) => {
     "prev booksOwner:", _booksOwnedByUid);
 
   if (user) {
+    _explicitSignOut = false;
     // Cancel any pending sign-out — this was a transient null (e.g. camera return)
     if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
     // Read the camera-return flag BEFORE clearing it so initializeApp() can use it
@@ -8594,7 +9210,9 @@ auth.onAuthStateChanged(async (user) => {
     books = [];
     researchCache = {};
     briefingAudioCache = {};
+    backupJobsCache = {};
     briefingAudioUrls = {};
+    briefingAudioUrlErrors = {};
     shelves = [];
     pendingBriefingIds = [];
     currentShelfId = "default";
@@ -8602,6 +9220,12 @@ auth.onAuthStateChanged(async (user) => {
     subscribeToBackgroundUpdates(user.uid);
 
   } else {
+    if (_explicitSignOut) {
+      _explicitSignOut = false;
+      if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
+      _doSignOut();
+      return;
+    }
     // user = null: could be transient (camera / background return) or a real logout.
     // Check the camera flag FIRST so we can suppress visual changes during a
     // camera return — the overlay pre-hid itself and we don't want the header

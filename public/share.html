@@ -982,6 +982,7 @@ let isMobileDetail    = false; // tracks if mobile user is in detail view
 let shareDetailExpanded = false;
 let sharedAudioUrls   = {};
 let sharedAudioLoading = {};
+let sharedAudioUrlErrors = {};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 const token = (window.location.pathname.split("/share/")[1] || "").split("?")[0].trim();
@@ -1223,20 +1224,37 @@ function sharedAudioKey(bookId, spoilerMode) {
   return bookId + ":" + spoilerMode;
 }
 
+function clearSharedAudioUrlState(bookId, spoilerMode) {
+  const key = sharedAudioKey(bookId, spoilerMode);
+  delete sharedAudioUrls[key];
+  delete sharedAudioLoading[key];
+  delete sharedAudioUrlErrors[key];
+}
+
+function retrySharedAudioUrl(bookId, spoilerMode) {
+  clearSharedAudioUrlState(bookId, spoilerMode);
+  ensureSharedAudioUrl(bookId, spoilerMode);
+  if (selectedBookId === bookId) renderBookDetail();
+}
+
 async function ensureSharedAudioUrl(bookId, spoilerMode) {
   const key = sharedAudioKey(bookId, spoilerMode);
   if (sharedAudioUrls[key]) return sharedAudioUrls[key];
   if (sharedAudioLoading[key]) return "";
   sharedAudioLoading[key] = true;
+  delete sharedAudioUrlErrors[key];
   try {
     const fn = functions.httpsCallable("getSharedBriefingAudio");
     const result = await fn({ token, bookId, spoilerMode });
     const audioUrl = result.data && result.data.audioUrl ? result.data.audioUrl : "";
     if (audioUrl) sharedAudioUrls[key] = audioUrl;
+    else sharedAudioUrlErrors[key] = "Audio player URL was not returned.";
     if (selectedBookId === bookId) renderBookDetail();
     return audioUrl;
   } catch (err) {
     console.error("[ensureSharedAudioUrl]", err);
+    sharedAudioUrlErrors[key] = err && (err.message || err.code) ? String(err.message || err.code) : "Audio player could not be loaded.";
+    if (selectedBookId === bookId) renderBookDetail();
     return "";
   } finally {
     delete sharedAudioLoading[key];
@@ -1297,7 +1315,9 @@ function renderBookDetail() {
 
   // ── Action buttons ──
   const briefing  = sharedCache[book.id];
-  const isFiction = briefing ? (briefing.genre || "").toLowerCase() !== "non-fiction" : false;
+  const genre = briefing ? (briefing.genre || "").toLowerCase() : "";
+  const isFiction = genre === "fiction";
+  const isReference = genre === "reference";
   const spoilerToggleHtml = (briefing && isFiction)
     ? '<label class="spoiler-toggle" id="spoilerToggleLabel">' +
         '<input type="checkbox" id="spoilerToggle"' + (showSpoilers ? " checked" : "") +
@@ -1308,7 +1328,9 @@ function renderBookDetail() {
     : '';
   const spoilerMode = isFiction && showSpoilers ? "spoiler" : "safe";
   const audioVariant = sharedAllowBriefingAudio && briefing ? sharedAudioVariant(book.id, spoilerMode) : null;
-  const audioUrl = sharedAudioUrls[sharedAudioKey(book.id, spoilerMode)] || "";
+  const audioKey = sharedAudioKey(book.id, spoilerMode);
+  const audioUrl = sharedAudioUrls[audioKey] || "";
+  const audioUrlError = sharedAudioUrlErrors[audioKey] || "";
 
   if (audioVariant && audioVariant.status === "ready" && !audioUrl) {
     ensureSharedAudioUrl(book.id, spoilerMode);
@@ -1331,13 +1353,15 @@ function renderBookDetail() {
     briefingHtml = '<div class="briefing-empty"><p>No discussion guide available for this book.</p></div>';
   } else {
     const s = showSpoilers;
-    const summaryText    = isFiction ? (s ? briefing.summary_spoiler   : briefing.summary_safe)   : briefing.summary;
-    const keyElems       = isFiction ? (s ? briefing.key_elements_spoiler : briefing.key_elements_safe) : briefing.key_elements;
-    const craftText      = isFiction ? (s ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : briefing.craft_analysis;
-    const discussionList = isFiction ? (s ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : briefing.discussion_questions;
+    const summaryText    = isFiction ? (s ? briefing.summary_spoiler   : briefing.summary_safe)   : (isReference ? briefing.editorial_approach : briefing.summary);
+    const keyElems       = isFiction ? (s ? briefing.key_elements_spoiler : briefing.key_elements_safe) : (isReference ? briefing.contents_overview : briefing.key_elements);
+    const craftText      = isFiction ? (s ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : (isReference ? briefing.production_notes : briefing.craft_analysis);
+    const discussionList = isFiction ? (s ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : (isReference ? briefing.notable_features : briefing.discussion_questions);
 
-    const takeawaysHtml = (!isFiction && briefing.key_takeaways && briefing.key_takeaways.length)
+    const takeawaysHtml = (!isFiction && !isReference && briefing.key_takeaways && briefing.key_takeaways.length)
       ? '<div class="briefing-section"><h3>Key Takeaways</h3>' + renderList(briefing.key_takeaways, "briefing-list") + '</div>' : "";
+    const idealForHtml = (isReference && briefing.ideal_for)
+      ? '<div class="briefing-section"><h3>Ideal For</h3><p>' + paragraphize(briefing.ideal_for) + '</p></div>' : "";
     const audioHtml = !audioVariant ? ""
       : '<div class="briefing-section"><h3>Audio Overview</h3>' +
           '<p>Voice: ' + esc(audioVariant.voice || "Kore") +
@@ -1345,6 +1369,9 @@ function renderBookDetail() {
           '</p>' +
           (audioUrl
             ? '<audio controls preload="none" style="width:100%;margin-top:8px;"><source src="' + escapeAttribute(audioUrl) + '" type="audio/wav"></audio>'
+            : audioUrlError
+              ? '<p style="color:#b33;">' + esc(audioUrlError) + '</p>' +
+                '<button class="btn btn-light btn-sm" type="button" onclick="retrySharedAudioUrl(\'' + escapeAttribute(book.id) + '\', \'' + spoilerMode + '\')">Retry Player</button>'
             : '<p>Loading audio player...</p>') +
         '</div>';
 
@@ -1352,14 +1379,15 @@ function renderBookDetail() {
       '<div class="briefing-scroll">' +
         audioHtml +
         '<div class="briefing-section"><h3>Quick Take</h3><p>' + esc(briefing.quick_take) + '</p></div>' +
-        '<div class="briefing-section"><h3>' + (isFiction ? "Plot Summary" : "Overview") + '</h3><p>' + paragraphize(summaryText) + '</p></div>' +
+        '<div class="briefing-section"><h3>' + (isFiction ? "Plot Summary" : (isReference ? "Editorial Approach" : "Overview")) + '</h3><p>' + paragraphize(summaryText) + '</p></div>' +
         '<div class="briefing-section"><h3>Major Themes</h3>' + renderList(briefing.major_themes, "briefing-list") + '</div>' +
-        '<div class="briefing-section"><h3>' + (isFiction ? "Characters" : "Key Concepts &amp; Figures") + '</h3>' + renderList(keyElems, "briefing-list") + '</div>' +
+        '<div class="briefing-section"><h3>' + (isFiction ? "Characters" : (isReference ? "Contents Overview" : "Key Concepts &amp; Figures")) + '</h3>' + renderList(keyElems, "briefing-list") + '</div>' +
         '<div class="briefing-section"><h3>Historical and Cultural Context</h3><p>' + paragraphize(briefing.historical_context) + '</p></div>' +
-        '<div class="briefing-section"><h3>' + (isFiction ? "Literary Analysis" : "Analysis &amp; Methodology") + '</h3><p>' + paragraphize(craftText) + '</p></div>' +
+        '<div class="briefing-section"><h3>' + (isFiction ? "Literary Analysis" : (isReference ? "Production Notes" : "Analysis &amp; Methodology")) + '</h3><p>' + paragraphize(craftText) + '</p></div>' +
         takeawaysHtml +
+        idealForHtml +
         '<div class="briefing-section"><h3>Impact</h3><p>' + paragraphize(briefing.impact) + '</p></div>' +
-        '<div class="briefing-section"><h3>Discussion Questions</h3>' + renderList(discussionList, "questions-list") + '</div>' +
+        '<div class="briefing-section"><h3>' + (isReference ? "Notable Features" : "Discussion Questions") + '</h3>' + renderList(discussionList, "questions-list") + '</div>' +
         '<div class="briefing-section"><h3>Confidence Note</h3><p>' + paragraphize(briefing.confidence_note) + '</p>' +
           '<div class="book-research-meta">' +
             '<span>Generated ' + esc((briefing.generated_at || "").slice(0, 10)) + '</span>' +

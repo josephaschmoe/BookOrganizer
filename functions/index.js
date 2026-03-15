@@ -1,10 +1,11 @@
 "use strict";
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentWritten }  = require("firebase-functions/v2/firestore");
+const { onDocumentWritten, onDocumentCreated }  = require("firebase-functions/v2/firestore");
 const { onSchedule }         = require("firebase-functions/v2/scheduler");
 const { defineSecret }       = require("firebase-functions/params");
 const crypto = require("crypto");
+const JSZip = require("jszip");
 const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
@@ -20,6 +21,9 @@ const TTS_MODEL = "gemini-2.5-pro-preview-tts";
 const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
 const DEFAULT_AUDIO_VOICE = "Kore";
 const AUDIO_VOICES = new Set(["Kore", "Puck", "Charon"]);
+const AUDIO_GENERATING_STALE_MS = 20 * 60 * 1000;
+const DAILY_BRIEFING_LIMIT = 100;
+const BRIEFING_ADMIN_PASSWORD = "";
 
 const PERPLEXITY_MODEL   = "sonar-pro";
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
@@ -58,7 +62,13 @@ const researchSchema = {
     craft_analysis_spoiler:       { type: "string" },
     craft_analysis_safe:          { type: "string" },
     discussion_questions_spoiler: { type: "array", items: { type: "string" } },
-    discussion_questions_safe:    { type: "array", items: { type: "string" } }
+    discussion_questions_safe:    { type: "array", items: { type: "string" } },
+    // reference singular fields
+    editorial_approach:           { type: "string" },
+    contents_overview:            { type: "array", items: { type: "string" } },
+    production_notes:             { type: "string" },
+    notable_features:             { type: "array", items: { type: "string" } },
+    ideal_for:                    { type: "string" }
   },
   required: [
     "genre", "quick_take", "major_themes",
@@ -143,11 +153,16 @@ async function callPerplexityForBook(book, apiKey) {
       {
         role: "system",
         content: [
-          "You are a precise book discussion assistant for both fiction and non-fiction.",
+          "You are a precise book discussion assistant for fiction, non-fiction, and reference books.",
           "Create a college-level book briefing.",
           "Search the web for accurate, up-to-date information about this book.",
-          "First decide if the book is fiction or non-fiction, then populate the genre-appropriate fields.",
+          "First decide if the book is fiction, non-fiction, or reference, then populate the genre-appropriate fields.",
           "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          "Reference books are primarily consulted rather than read straight through.",
+          "If the book straddles reference and non-fiction, classify by primary use and note the ambiguity in confidence_note.",
+          "Verify specific factual claims before asserting them, especially content divisions, volume scope, edition details, recipes, techniques, and reference-book section breakdowns.",
+          "Treat Unknown or blank metadata as missing, not as evidence.",
+          "Inline source references inside JSON string values are allowed when they help anchor verified facts.",
           "Separate factual claims from interpretation when uncertainty exists.",
           "If the book is obscure, the title is ambiguous, or the details may be wrong, say so clearly in confidence_note.",
           "Return valid JSON only — no markdown fences, no backticks, no extra text before or after the JSON object."
@@ -191,9 +206,7 @@ async function callPerplexityForBook(book, apiKey) {
 // ── Route to the right model based on publication year ───────────────────────
 
 async function callBriefingForBook(book, geminiKey, pplxKey) {
-  return isRecentBook(book)
-    ? callPerplexityForBook(book, pplxKey)
-    : callGeminiForBook(book, geminiKey);
+  return callPerplexityForBook(book, pplxKey);
 }
 
 // ── onCall: manual generate (user-triggered) ─────────────────────────────────
@@ -203,9 +216,20 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] },
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
 
+  const uid = request.auth.uid;
   const book = sanitizeBook(request.data && request.data.book);
+  const adminPassword = cleanText(request.data && request.data.adminPassword);
   if (!book.title) {
     throw new HttpsError("invalid-argument", "Book title is required.");
+  }
+
+  const quota = await reserveBriefingQuota(uid, adminPassword);
+  if (!quota.allowed) {
+    throw new HttpsError(
+      "resource-exhausted",
+      `Daily Book Briefing limit reached (${DAILY_BRIEFING_LIMIT}).`,
+      { reason: `Daily Book Briefing limit reached (${DAILY_BRIEFING_LIMIT}).` }
+    );
   }
 
   let research;
@@ -218,11 +242,7 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] },
   return { research };
 });
 
-exports.generateBriefingAudio = onCall({
-  secrets: [geminiApiKey],
-  timeoutSeconds: 300,
-  memory: "1GiB"
-}, async (request) => {
+exports.generateBriefingAudio = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -238,16 +258,82 @@ exports.generateBriefingAudio = onCall({
   }
 
   try {
-    const result = await buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, geminiApiKey.value());
-    const signed = result.metadata && result.metadata.audioPath
-      ? await getPlayableAudioUrl(result.metadata.audioPath)
-      : { audioUrl: "" };
+    const { briefing } = await loadBookAndBriefing(uid, bookId);
+    const isFiction = String(briefing.genre || "").toLowerCase() !== "non-fiction";
+    const variantKey = normalizeSpoilerMode(spoilerMode, isFiction);
+    const normalizedVoice = normalizeVoice(voice);
+    const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
+    const audioRef = briefingAudioDocRef(uid, bookId);
+    const audioSnap = await audioRef.get();
+    const audioDoc = audioSnap.exists ? (audioSnap.data() || {}) : {};
+    const currentVariant = audioVariantFromDoc(audioDoc, variantKey);
+
+    if (
+      !forceRefresh &&
+      currentVariant &&
+      currentVariant.status === "ready" &&
+      currentVariant.voice === normalizedVoice &&
+      currentVariant.sourceBriefingGeneratedAt === sourceBriefingGeneratedAt &&
+      currentVariant.audioPath
+    ) {
+      const signed = await getPlayableStorageUrl(currentVariant.audioPath);
+      return {
+        ok: true,
+        queued: false,
+        cached: true,
+        spoilerMode: variantKey,
+        metadata: currentVariant,
+        audioUrl: signed.audioUrl
+      };
+    }
+
+    if (
+      !forceRefresh &&
+      currentVariant &&
+      currentVariant.status === "generating" &&
+      !isGeneratingVariantStale(currentVariant) &&
+      currentVariant.voice === normalizedVoice &&
+      currentVariant.sourceBriefingGeneratedAt === sourceBriefingGeneratedAt
+    ) {
+      return {
+        ok: true,
+        queued: true,
+        spoilerMode: variantKey,
+        metadata: currentVariant
+      };
+    }
+
+    const now = new Date().toISOString();
+    const generatingMetadata = {
+      status: "generating",
+      voice: normalizedVoice,
+      generatedAt: now,
+      sourceBriefingGeneratedAt
+    };
+    await audioRef.set({
+      updatedAt: now,
+      variants: {
+        [variantKey]: generatingMetadata
+      }
+    }, { merge: true });
+
+    const jobId = db.collection("_").doc().id;
+    await briefingAudioJobRef(uid, jobId).set({
+      status: "queued",
+      bookId,
+      spoilerMode: variantKey,
+      voice: normalizedVoice,
+      forceRefresh,
+      createdAt: now,
+      updatedAt: now
+    });
+
     return {
       ok: true,
-      spoilerMode: result.variantKey,
-      metadata: result.metadata,
-      cached: result.cached,
-      audioUrl: signed.audioUrl
+      queued: true,
+      jobId,
+      spoilerMode: variantKey,
+      metadata: generatingMetadata
     };
   } catch (error) {
     if (error instanceof HttpsError) throw error;
@@ -271,7 +357,7 @@ exports.getBriefingAudio = onCall(async (request) => {
 
   const briefingSnap = await db.collection("users").doc(uid).collection("briefings").doc(bookId).get();
   if (!briefingSnap.exists) throw new HttpsError("not-found", "Briefing not found.");
-  const isFiction = String((briefingSnap.data() || {}).genre || "").toLowerCase() !== "non-fiction";
+  const isFiction = String((briefingSnap.data() || {}).genre || "").toLowerCase() === "fiction";
   const variantKey = normalizeSpoilerMode(requestedMode, isFiction);
 
   const audioSnap = await briefingAudioDocRef(uid, bookId).get();
@@ -281,7 +367,7 @@ exports.getBriefingAudio = onCall(async (request) => {
     throw new HttpsError("not-found", "Audio has not been generated for this mode.");
   }
 
-  const signed = await getPlayableAudioUrl(variant.audioPath);
+  const signed = await getPlayableStorageUrl(variant.audioPath);
   return {
     spoilerMode: variantKey,
     voice: variant.voice || DEFAULT_AUDIO_VOICE,
@@ -289,6 +375,22 @@ exports.getBriefingAudio = onCall(async (request) => {
     generatedAt: variant.generatedAt || "",
     ...signed
   };
+});
+
+exports.requestBackupExport = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const backupId = db.collection("_").doc().id;
+  const now = new Date().toISOString();
+  await backupJobRef(uid, backupId).set({
+    status: "queued",
+    createdAt: now,
+    updatedAt: now
+  });
+  return { ok: true, backupId };
 });
 
 // ── Firestore trigger: auto-generate or queue on new books ───────────────────
@@ -320,7 +422,13 @@ exports.onBooksChanged = onDocumentWritten(
     if (newBooks.length <= THRESHOLD) {
       // Generate immediately, one at a time with a short delay
       const failedIds = [];
-      for (const book of newBooks) {
+      for (let idx = 0; idx < newBooks.length; idx++) {
+        const book = newBooks[idx];
+        const quota = await reserveBriefingQuota(uid);
+        if (!quota.allowed) {
+          failedIds.push(...newBooks.slice(idx).map((entry) => entry.id));
+          break;
+        }
         try {
           const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
           await briefingsCol.doc(book.id).set(research);
@@ -383,6 +491,12 @@ exports.processPendingBriefings = onSchedule(
           continue;
         }
 
+        const quota = await reserveBriefingQuota(userRef.id);
+        if (!quota.allowed) {
+          await dataRef.update({ pendingBriefingIds: remaining });
+          break;
+        }
+
         try {
           const research = await callBriefingForBook(sanitizeBook(book), geminiApiKey.value(), perplexityApiKey.value());
           remaining.splice(remaining.indexOf(id), 1);
@@ -395,6 +509,129 @@ exports.processPendingBriefings = onSchedule(
         }
         await new Promise(r => setTimeout(r, 3500));
       }
+    }
+  }
+);
+
+exports.processBackupExportJob = onDocumentCreated(
+  {
+    document: "users/{uid}/backupJobs/{backupId}",
+    timeoutSeconds: 540,
+    memory: "1GiB"
+  },
+  async (event) => {
+    const uid = event.params.uid;
+    const backupId = event.params.backupId;
+    const jobRef = backupJobRef(uid, backupId);
+    await jobRef.set({
+      status: "running",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    try {
+      console.log(`[processBackupExportJob] start uid=${uid} backupId=${backupId}`);
+      const result = await buildBackupZipForUser(uid);
+      const downloadable = await getPlayableStorageUrl(result.backupPath);
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      await jobRef.set({
+        status: "ready",
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        backupPath: result.backupPath,
+        downloadUrl: downloadable.audioUrl,
+        schemaVersion: result.manifest.schemaVersion,
+        assetCount: Array.isArray(result.manifest.assets) ? result.manifest.assets.length : 0,
+        bookCount: Array.isArray(result.manifest.books) ? result.manifest.books.length : 0,
+        exportStats: result.exportStats || {},
+        expiresAt
+      }, { merge: true });
+      console.log(`[processBackupExportJob] ready backupId=${backupId}`);
+    } catch (error) {
+      console.error("[processBackupExportJob] failed:", error && error.message ? error.message : error);
+      await jobRef.set({
+        status: "error",
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        error: error && error.message ? error.message : "Backup export failed."
+      }, { merge: true });
+    }
+  }
+);
+
+exports.processBriefingAudioJob = onDocumentCreated(
+  {
+    document: "users/{uid}/briefingAudioJobs/{jobId}",
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    secrets: [geminiApiKey]
+  },
+  async (event) => {
+    const uid = event.params.uid;
+    const jobId = event.params.jobId;
+    const jobRef = briefingAudioJobRef(uid, jobId);
+    const job = event.data && typeof event.data.data === "function" ? (event.data.data() || {}) : {};
+    const bookId = cleanText(job.bookId || "");
+    const spoilerMode = cleanText(job.spoilerMode || "safe");
+    const voice = cleanText(job.voice || DEFAULT_AUDIO_VOICE);
+    const forceRefresh = Boolean(job.forceRefresh);
+
+    await jobRef.set({
+      status: "running",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    try {
+      if (!bookId) throw new Error("bookId is required.");
+      console.log(`[processBriefingAudioJob] start uid=${uid} jobId=${jobId} bookId=${bookId} spoilerMode=${spoilerMode}`);
+      const result = await buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, geminiApiKey.value());
+      await jobRef.set({
+        status: "ready",
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        bookId,
+        spoilerMode: result.variantKey,
+        cached: Boolean(result.cached),
+        audioPath: result.metadata && result.metadata.audioPath ? result.metadata.audioPath : "",
+        durationSec: result.metadata && result.metadata.durationSec ? result.metadata.durationSec : 0
+      }, { merge: true });
+      console.log(`[processBriefingAudioJob] ready uid=${uid} jobId=${jobId} bookId=${bookId} spoilerMode=${result.variantKey}`);
+    } catch (error) {
+      console.error("[processBriefingAudioJob] failed:", error && error.message ? error.message : error);
+      await jobRef.set({
+        status: "error",
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        error: error && error.message ? error.message : "Audio generation failed."
+      }, { merge: true });
+    }
+  }
+);
+
+exports.cleanupExpiredBackupExports = onSchedule(
+  { schedule: "every 24 hours" },
+  async () => {
+    const nowIso = new Date().toISOString();
+    const expiredSnap = await db.collectionGroup("backupJobs")
+      .where("status", "==", "ready")
+      .where("expiresAt", "<=", nowIso)
+      .get();
+
+    for (const doc of expiredSnap.docs) {
+      const data = doc.data() || {};
+      const backupPath = String(data.backupPath || "");
+      if (backupPath) {
+        try { await admin.storage().bucket().file(backupPath).delete({ ignoreNotFound: true }); } catch (error) {
+          console.warn("[cleanupExpiredBackupExports] storage delete failed:", backupPath, error && error.message ? error.message : error);
+        }
+      }
+      await doc.ref.set({
+        status: "expired",
+        updatedAt: new Date().toISOString(),
+        downloadUrl: "",
+        backupPath: ""
+      }, { merge: true });
     }
   }
 );
@@ -420,12 +657,16 @@ function buildPrompt(book) {
     "Return valid JSON. First, set genre, then populate the fields for that genre.",
     "",
     '--- Always ---',
-    'genre: "fiction" or "non-fiction" — decide based on the book.',
+    'genre: "fiction", "non-fiction", or "reference" — decide based on the book\'s primary purpose.',
+    "- fiction: novels, stories, narrative poetry",
+    "- non-fiction: books that argue, analyze, or narrate (history, biography, memoir, criticism, science)",
+    "- reference: books primarily consulted rather than read (cookbooks, field guides, how-to, craft manuals, travel guides, practical references)",
     "quick_take: 2 to 4 spoiler-free sentences summarizing what the book is and why it matters.",
     "major_themes: 3 to 6 concise bullet-style strings.",
     "historical_context: one paragraph.",
     "impact: one paragraph on why the work matters and how it lands.",
-    "confidence_note: mention ambiguity, factual uncertainty, or edition limits when relevant.",
+    "confidence_note: mention ambiguity, factual uncertainty, edition limits, and classification ambiguity when relevant.",
+    "If the book straddles reference and non-fiction, classify by primary use and note the ambiguity in confidence_note.",
     "",
     "--- If fiction: provide BOTH spoiler and spoiler-free versions of these four fields ---",
     "summary_spoiler: full plot synopsis with spoilers in one or two paragraphs.",
@@ -436,7 +677,7 @@ function buildPrompt(book) {
     "craft_analysis_safe: one or two paragraphs about style and technique without revealing plot points.",
     "discussion_questions_spoiler: 6 strong seminar questions that may reference the full plot.",
     "discussion_questions_safe: 6 strong seminar questions safe for someone who has not finished the book.",
-    "Do NOT populate the singular summary, key_elements, craft_analysis, or discussion_questions fields for fiction.",
+    "Do NOT populate the singular non-fiction or reference fields for fiction.",
     "",
     "--- If non-fiction: use these singular fields (no spoiler variants needed) ---",
     "summary: the core argument, thesis, and structure of the book in one or two paragraphs.",
@@ -444,7 +685,23 @@ function buildPrompt(book) {
     "craft_analysis: one or two paragraphs about methodology, argument quality, evidence, and structure.",
     "discussion_questions: 6 strong seminar questions.",
     "key_takeaways: 3 to 6 bullet-style strings of actionable insights or lessons.",
-    "Do NOT populate the _spoiler or _safe paired fields for non-fiction."
+    "Do NOT populate the fiction or reference fields for non-fiction.",
+    "",
+    "--- If reference (cookbooks, field guides, how-to, craft manuals, catalogs, practical guides): use these singular fields ---",
+    "editorial_approach: one or two paragraphs on the book's organizational logic, target audience, and overall philosophy or point of view.",
+    "contents_overview: 3 to 6 bullet-style strings describing the major sections, categories, recipe types, or structural components.",
+    "production_notes: one paragraph on format, visual design, photography or illustration quality, writing style, and usability as a practical object.",
+    "notable_features: 3 to 6 bullet-style strings on what makes this book distinctive — signature recipes or entries, unusual techniques, cultural specificity, standout design choices.",
+    "ideal_for: 2 to 4 sentences describing the best audience for this book and how they would realistically use it.",
+    "Do NOT populate the fiction or non-fiction fields for reference.",
+    "",
+    "--- Additional Perplexity Verification Rules ---",
+    "Use web search to verify factual claims about publication history, plot content, chapter or canto coverage, character identities, edition-specific details, and the practical scope of reference books.",
+    "Treat metadata fields with values like Unknown, None, or blank as missing hints rather than evidence.",
+    "For claims about specific contents, volume divisions, chapter ranges, canto ranges, subtitles, edition details, recipes, techniques, or section breakdowns, only state them if you found a confirming source.",
+    "If you cannot verify a specific claim, say so explicitly in the relevant field and in confidence_note.",
+    "Within JSON string values, you may include compact inline source references like [Source: https://example.com] or [Sources: https://a, https://b] for verified factual claims.",
+    "If a factual claim is only weakly supported, prefer uncertainty language over confident synthesis."
   ].join("\n");
 }
 
@@ -464,6 +721,225 @@ function sanitizeBook(book) {
 
 function cleanText(value) {
   return String(value || "").trim().slice(0, 600);
+}
+
+function todayUsageKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+}
+
+async function reserveBriefingQuota(uid, adminPassword = "") {
+  const override = cleanText(adminPassword) === BRIEFING_ADMIN_PASSWORD;
+  if (override) {
+    return { allowed: true, overridden: true, limit: DAILY_BRIEFING_LIMIT };
+  }
+
+  const dayKey = todayUsageKey();
+  const ref = db.collection("users").doc(uid).collection("briefingUsage").doc(dayKey);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? (snap.data() || {}) : {};
+    const count = Number(data.count || 0);
+    if (count >= DAILY_BRIEFING_LIMIT) {
+      return { allowed: false, overridden: false, limit: DAILY_BRIEFING_LIMIT, count, dayKey };
+    }
+    tx.set(ref, {
+      count: count + 1,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    return { allowed: true, overridden: false, limit: DAILY_BRIEFING_LIMIT, count: count + 1, dayKey };
+  });
+}
+
+function sanitizeBriefingAudioForBackup(audioCache) {
+  const out = {};
+  Object.entries(audioCache || {}).forEach(([bookId, doc]) => {
+    const variants = doc && typeof doc.variants === "object" ? doc.variants : {};
+    const sanitizedVariants = {};
+    Object.entries(variants).forEach(([variant, entry]) => {
+      if (!entry || typeof entry !== "object") return;
+      sanitizedVariants[variant] = {
+        status: entry.status || "",
+        voice: entry.voice || "",
+        generatedAt: entry.generatedAt || "",
+        sourceBriefingGeneratedAt: entry.sourceBriefingGeneratedAt || "",
+        scriptModel: entry.scriptModel || "",
+        ttsModel: entry.ttsModel || "",
+        durationSec: entry.durationSec || 0,
+        audioPath: entry.audioPath || ""
+      };
+      if (entry.error) sanitizedVariants[variant].error = entry.error;
+    });
+    if (Object.keys(sanitizedVariants).length) {
+      out[bookId] = {
+        updatedAt: doc && doc.updatedAt ? doc.updatedAt : "",
+        variants: sanitizedVariants
+      };
+    }
+  });
+  return out;
+}
+
+function extensionFromPath(filePath, fallback = "") {
+  const match = String(filePath || "").match(/(\.[a-z0-9]+)(?:\?|$)/i);
+  return match ? match[1].toLowerCase() : fallback;
+}
+
+async function addStorageFileToZip(zip, storagePath, pathInZip) {
+  const file = admin.storage().bucket().file(storagePath);
+  const [exists] = await file.exists();
+  if (!exists) return false;
+  const [buffer] = await file.download();
+  zip.file(pathInZip, buffer);
+  return true;
+}
+
+async function buildBackupZipForUser(uid) {
+  console.log(`[buildBackupZipForUser] start uid=${uid}`);
+  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
+  const briefingsCol = db.collection("users").doc(uid).collection("briefings");
+  const briefingAudioCol = db.collection("users").doc(uid).collection("briefingAudio");
+
+  const [catalogSnap, briefingsSnap, briefingAudioSnap] = await Promise.all([
+    catalogRef.get(),
+    briefingsCol.get(),
+    briefingAudioCol.get()
+  ]);
+
+  if (!catalogSnap.exists) {
+    throw new HttpsError("not-found", "Catalog not found.");
+  }
+
+  const catalogData = catalogSnap.data() || {};
+  const books = Array.isArray(catalogData.books) ? catalogData.books : [];
+  const shelves = Array.isArray(catalogData.shelves) ? catalogData.shelves : [];
+  const briefings = {};
+  briefingsSnap.forEach((doc) => { briefings[doc.id] = doc.data(); });
+  const briefingAudio = {};
+  briefingAudioSnap.forEach((doc) => { briefingAudio[doc.id] = doc.data(); });
+  const sanitizedBriefingAudio = sanitizeBriefingAudioForBackup(briefingAudio);
+  console.log(`[buildBackupZipForUser] loaded books=${books.length} briefings=${Object.keys(briefings).length} briefingAudio=${Object.keys(sanitizedBriefingAudio).length}`);
+
+  const manifest = {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    app: "TomeShelf",
+    sections: {
+      books: true,
+      shelves: true,
+      briefings: true,
+      briefingAudio: true,
+      assets: true
+    },
+    books,
+    shelves,
+    briefings,
+    briefingAudio: sanitizedBriefingAudio,
+    assets: []
+  };
+  const exportStats = {
+    coversAdded: 0,
+    coversSkipped: 0,
+    audioAdded: 0,
+    audioSkipped: 0
+  };
+
+  const zip = new JSZip();
+
+  for (const book of books) {
+    const bookId = String(book && book.id || "");
+    if (!bookId) continue;
+
+    for (const ext of [".jpg", ".jpeg", ".png", ".webp"]) {
+      const coverStoragePath = `users/${uid}/covers/${bookId}${ext}`;
+      const pathInZip = `files/covers/${bookId}${ext}`;
+      try {
+        if (await addStorageFileToZip(zip, coverStoragePath, pathInZip)) {
+          manifest.assets.push({
+            assetId: `cover-${bookId}`,
+            bookId,
+            kind: "cover",
+            contentType: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
+            pathInZip,
+            sourcePath: coverStoragePath
+          });
+          exportStats.coversAdded++;
+          break;
+        }
+      } catch (error) {
+        exportStats.coversSkipped++;
+        console.warn(`[buildBackupZipForUser] cover export skipped for ${bookId}:`, error && error.message ? error.message : error);
+      }
+    }
+
+    const audioDoc = sanitizedBriefingAudio[bookId];
+    const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
+    for (const [variant, entry] of Object.entries(variants)) {
+      if (!entry || entry.status !== "ready" || !entry.audioPath) continue;
+      const ext = extensionFromPath(entry.audioPath, ".wav") || ".wav";
+      const pathInZip = `files/audio/${bookId}-${variant}${ext}`;
+      try {
+        if (await addStorageFileToZip(zip, entry.audioPath, pathInZip)) {
+          manifest.assets.push({
+            assetId: `audio-${bookId}-${variant}`,
+            bookId,
+            kind: "audio",
+            variant,
+            contentType: ext === ".mp3" ? "audio/mpeg" : ext === ".ogg" ? "audio/ogg" : "audio/wav",
+            pathInZip,
+            sourcePath: entry.audioPath
+          });
+          exportStats.audioAdded++;
+        } else {
+          exportStats.audioSkipped++;
+          console.warn(`[buildBackupZipForUser] audio file missing for ${bookId}/${variant}: ${entry.audioPath}`);
+        }
+      } catch (error) {
+        exportStats.audioSkipped++;
+        console.warn(`[buildBackupZipForUser] audio export skipped for ${bookId}/${variant}:`, error && error.message ? error.message : error);
+      }
+    }
+  }
+
+  console.log(`[buildBackupZipForUser] assets prepared coversAdded=${exportStats.coversAdded} coversSkipped=${exportStats.coversSkipped} audioAdded=${exportStats.audioAdded} audioSkipped=${exportStats.audioSkipped}`);
+  zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+  console.log("[buildBackupZipForUser] generating zip buffer");
+  const archiveBuffer = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 }
+  });
+  console.log(`[buildBackupZipForUser] zip generated bytes=${archiveBuffer.length}`);
+
+  const backupPath = `users/${uid}/backups/tomeshelf-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+  const file = admin.storage().bucket().file(backupPath);
+  console.log(`[buildBackupZipForUser] saving zip path=${backupPath}`);
+  await file.save(archiveBuffer, {
+    resumable: false,
+    metadata: {
+      contentType: "application/zip",
+      cacheControl: "private, max-age=3600"
+    }
+  });
+  console.log(`[buildBackupZipForUser] zip saved path=${backupPath}`);
+
+  return {
+    backupPath,
+    manifest,
+    exportStats
+  };
+}
+
+function backupJobRef(uid, backupId) {
+  return db.collection("users").doc(uid).collection("backupJobs").doc(backupId);
+}
+
+function briefingAudioJobRef(uid, jobId) {
+  return db.collection("users").doc(uid).collection("briefingAudioJobs").doc(jobId);
 }
 
 function extractCandidateText(data) {
@@ -490,6 +966,13 @@ function briefingAudioDocRef(uid, bookId) {
 function normalizeVoice(voice) {
   const value = cleanText(voice || DEFAULT_AUDIO_VOICE) || DEFAULT_AUDIO_VOICE;
   return AUDIO_VOICES.has(value) ? value : DEFAULT_AUDIO_VOICE;
+}
+
+function isGeneratingVariantStale(variant) {
+  if (!variant || variant.status !== "generating") return false;
+  const stamp = Date.parse(String(variant.generatedAt || variant.updatedAt || ""));
+  if (!Number.isFinite(stamp)) return false;
+  return (Date.now() - stamp) > AUDIO_GENERATING_STALE_MS;
 }
 
 function normalizeSpoilerMode(mode, isFiction) {
@@ -533,20 +1016,22 @@ function listToNarrationLines(items, prefix = "- ") {
 }
 
 function buildNarrationPrompt(book, briefing, spoilerMode) {
-  const isFiction = String(briefing.genre || "").toLowerCase() !== "non-fiction";
+  const genre = String(briefing.genre || "").toLowerCase();
+  const isFiction = genre === "fiction";
+  const isReference = genre === "reference";
   const safeMode = normalizeSpoilerMode(spoilerMode, isFiction);
   const summaryText = isFiction
     ? (safeMode === "spoiler" ? briefing.summary_spoiler : briefing.summary_safe)
-    : briefing.summary;
+    : (isReference ? briefing.editorial_approach : briefing.summary);
   const keyElems = isFiction
     ? (safeMode === "spoiler" ? briefing.key_elements_spoiler : briefing.key_elements_safe)
-    : briefing.key_elements;
+    : (isReference ? briefing.contents_overview : briefing.key_elements);
   const craftText = isFiction
     ? (safeMode === "spoiler" ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe)
-    : briefing.craft_analysis;
+    : (isReference ? briefing.production_notes : briefing.craft_analysis);
   const discussionList = isFiction
     ? (safeMode === "spoiler" ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe)
-    : briefing.discussion_questions;
+    : (isReference ? briefing.notable_features : briefing.discussion_questions);
 
   return [
     `Book title: ${book.title || "Unknown"}`,
@@ -561,7 +1046,9 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     "Aim for roughly 1,000 to 1,400 words and about 8 to 10 minutes of listening time.",
     isFiction
       ? "For fiction, focus on atmosphere, character arc, structure, and prose."
-      : "For non-fiction, focus on utility, argument quality, key ideas, and real-world application.",
+      : (isReference
+          ? "For reference books, focus on organization, usability, standout features, and the book as a practical object."
+          : "For non-fiction, focus on utility, argument quality, key ideas, and real-world application."),
     safeMode === "spoiler"
       ? "Spoilers are allowed. Discuss the full work plainly."
       : "Do not reveal endings, twists, or late-stage character fates beyond the spoiler-safe briefing.",
@@ -571,28 +1058,28 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     "Quick Take",
     String(briefing.quick_take || ""),
     "",
-    isFiction ? "Plot Summary" : "Overview",
+    isFiction ? "Plot Summary" : (isReference ? "Editorial Approach" : "Overview"),
     String(summaryText || ""),
     "",
     "Major Themes",
     listToNarrationLines(briefing.major_themes),
     "",
-    isFiction ? "Characters" : "Key Concepts and Figures",
+    isFiction ? "Characters" : (isReference ? "Contents Overview" : "Key Concepts and Figures"),
     listToNarrationLines(keyElems),
     "",
     "Historical and Cultural Context",
     String(briefing.historical_context || ""),
     "",
-    isFiction ? "Literary Analysis" : "Analysis and Methodology",
+    isFiction ? "Literary Analysis" : (isReference ? "Production Notes" : "Analysis and Methodology"),
     String(craftText || ""),
     "",
-    !isFiction ? "Key Takeaways" : "",
-    !isFiction ? listToNarrationLines(briefing.key_takeaways) : "",
+    !isFiction ? (isReference ? "Ideal For" : "Key Takeaways") : "",
+    !isFiction ? (isReference ? String(briefing.ideal_for || "") : listToNarrationLines(briefing.key_takeaways)) : "",
     !isFiction ? "" : "",
     "Impact",
     String(briefing.impact || ""),
     "",
-    "Discussion Questions",
+    isReference ? "Notable Features" : "Discussion Questions",
     listToNarrationLines(discussionList),
     "",
     "Confidence Note",
@@ -747,7 +1234,7 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
   console.log(`[buildBriefingAudio] start bookId=${bookId} spoilerMode=${spoilerMode || "safe"} forceRefresh=${forceRefresh ? "1" : "0"}`);
   const { book, briefing } = await loadBookAndBriefing(uid, bookId);
   console.log(`[buildBriefingAudio] loaded book="${book.title}" briefingModel=${briefing.model || "unknown"}`);
-  const isFiction = String(briefing.genre || "").toLowerCase() !== "non-fiction";
+  const isFiction = String(briefing.genre || "").toLowerCase() === "fiction";
   const variantKey = normalizeSpoilerMode(spoilerMode, isFiction);
   const audioRef = briefingAudioDocRef(uid, bookId);
   const audioSnap = await audioRef.get();
@@ -840,10 +1327,10 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
   }
 }
 
-async function getPlayableAudioUrl(audioPath) {
-  const file = admin.storage().bucket().file(audioPath);
+async function getPlayableStorageUrl(objectPath) {
+  const file = admin.storage().bucket().file(objectPath);
   const [exists] = await file.exists();
-  if (!exists) throw new HttpsError("not-found", "Audio file not found.");
+  if (!exists) throw new HttpsError("not-found", "Storage file not found.");
   const [metadata] = await file.getMetadata();
   let token = metadata && metadata.metadata && metadata.metadata.firebaseStorageDownloadTokens
     ? String(metadata.metadata.firebaseStorageDownloadTokens).split(",")[0].trim()
@@ -858,7 +1345,7 @@ async function getPlayableAudioUrl(audioPath) {
     });
   }
   const bucket = admin.storage().bucket().name;
-  const encodedPath = encodeURIComponent(audioPath);
+  const encodedPath = encodeURIComponent(objectPath);
   return {
     audioUrl: `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`
   };
@@ -1556,7 +2043,7 @@ exports.getSharedBriefingAudio = onCall(async (request) => {
     throw new HttpsError("not-found", "Audio has not been generated for this mode.");
   }
 
-  const signed = await getPlayableAudioUrl(variant.audioPath);
+  const signed = await getPlayableStorageUrl(variant.audioPath);
   return {
     spoilerMode: variantKey,
     voice: variant.voice || DEFAULT_AUDIO_VOICE,
