@@ -130,7 +130,9 @@ async function handleResearch(req, res) {
         {
           text: [
             "You are a precise literary discussion assistant.",
-            "Create a college-level book discussion with spoilers allowed.",
+            // "Create a college-level book discussion with spoilers allowed.",
+            "Create a college-level spoiler-free book discussion.",
+            "Do not reveal major twists, endings, hidden identities, or late-stage character revelations.",
             "Separate factual claims from interpretation when uncertainty exists.",
             "If the book is obscure, the title is ambiguous, or the details may be wrong, say so clearly in confidence_note.",
             "Return JSON only."
@@ -201,7 +203,8 @@ async function handleResearch(req, res) {
 
 function buildPrompt(book) {
   return [
-    "Create a structured, college-level book briefing with spoilers allowed.",
+    // "Create a structured, college-level book briefing with spoilers allowed.",
+    "Create a structured, college-level spoiler-free book briefing.",
     "Write as though leading a strong classroom or book club discussion.",
     "Use the supplied metadata only as guidance; do not invent certainty.",
     "",
@@ -217,13 +220,14 @@ function buildPrompt(book) {
     "",
     "Return valid JSON with these fields:",
     "quick_take: 2 to 4 sentences.",
-    "plot_summary: a spoiler-friendly summary in one or two paragraphs.",
+    // "plot_summary: a spoiler-friendly summary in one or two paragraphs.",
+    "plot_summary: describe only the premise, setup, and tensions established early in the book in one or two paragraphs — no major reveals, twists, endings, hidden identities, or late-stage character revelations.",
     "major_themes: 3 to 6 concise bullet-style strings.",
     "character_focus: 3 to 6 concise bullet-style strings.",
     "historical_context: one paragraph.",
     "literary_analysis: one or two paragraphs about style, structure, symbols, or technique.",
     "emotional_social_impact: one paragraph on why the work matters and how it lands.",
-    "discussion_questions: 6 strong seminar questions.",
+    "discussion_questions: 6 strong seminar questions safe for someone who has not finished the book — do not reveal major plot twists, endings, or character revelations.",
     "confidence_note: mention ambiguity, factual uncertainty, or edition limits when relevant."
   ].join("\n");
 }

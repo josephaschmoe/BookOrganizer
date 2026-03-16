@@ -101,14 +101,16 @@ async function callGeminiForBook(book, apiKey) {
           "You are a precise book discussion assistant for both fiction and non-fiction.",
           "Create a college-level book briefing.",
           "First decide if the book is fiction or non-fiction, then populate the genre-appropriate fields.",
-          "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          // "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          "For fiction, provide only the spoiler-free briefing fields unless both variants already exist in cached data.",
+          "Do not reveal major twists, endings, hidden identities, or late-stage character revelations in the spoiler-free fiction fields.",
           "Separate factual claims from interpretation when uncertainty exists.",
           "If the book is obscure, the title is ambiguous, or the details may be wrong, say so clearly in confidence_note.",
           "Return JSON only."
         ].join(" ")
       }]
     },
-    contents: [{ role: "user", parts: [{ text: buildPrompt(book) }] }],
+    contents: [{ role: "user", parts: [{ text: buildPromptSafeOnly(book) }] }],
     generationConfig: {
       temperature: 0.4,
       topP: 0.9,
@@ -157,7 +159,9 @@ async function callPerplexityForBook(book, apiKey) {
           "Create a college-level book briefing.",
           "Search the web for accurate, up-to-date information about this book.",
           "First decide if the book is fiction, non-fiction, or reference, then populate the genre-appropriate fields.",
-          "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          // "For fiction, provide both spoiler and spoiler-free versions of certain fields as instructed.",
+          "For fiction, provide only the spoiler-free briefing fields unless both variants already exist in cached data.",
+          "Do not reveal major twists, endings, hidden identities, or late-stage character revelations in the spoiler-free fiction fields.",
           "Reference books are primarily consulted rather than read straight through.",
           "If the book straddles reference and non-fiction, classify by primary use and note the ambiguity in confidence_note.",
           "Verify specific factual claims before asserting them, especially content divisions, volume scope, edition details, recipes, techniques, and reference-book section breakdowns.",
@@ -168,7 +172,7 @@ async function callPerplexityForBook(book, apiKey) {
           "Return valid JSON only — no markdown fences, no backticks, no extra text before or after the JSON object."
         ].join(" ")
       },
-      { role: "user", content: buildPrompt(book) }
+      { role: "user", content: buildPromptSafeOnly(book) }
     ],
     max_tokens: 6144,
     temperature: 0.4,
@@ -704,7 +708,7 @@ function buildPrompt(book) {
     "",
     '--- Always ---',
     'genre: "fiction", "non-fiction", or "reference" — decide based on the book\'s primary purpose.',
-    "- fiction: novels, stories, narrative poetry",
+    "- fiction: novels, stories, narrative poetry, dramatic monologues, epic poetry, and poetry collections",
     "- non-fiction: books that argue, analyze, or narrate (history, biography, memoir, criticism, science)",
     "- reference: books primarily consulted rather than read (cookbooks, field guides, how-to, craft manuals, travel guides, practical references)",
     "quick_take: 2 to 4 spoiler-free sentences summarizing what the book is and why it matters.",
@@ -748,6 +752,73 @@ function buildPrompt(book) {
     "If you cannot verify a specific claim, say so explicitly in the relevant field and in confidence_note.",
     "Within JSON string values, you may include compact inline source references like [Source: https://example.com] or [Sources: https://a, https://b] for verified factual claims.",
     "If a factual claim is only weakly supported, prefer uncertainty language over confident synthesis."
+  ].join("\n");
+}
+
+function buildPromptSafeOnly(book) {
+  return [
+    "Create a structured, college-level book briefing.",
+    "Write as though leading a strong classroom or book club discussion.",
+    "Use the supplied metadata only as guidance; do not invent certainty.",
+    "",
+    "Book metadata:",
+    `Title: ${book.title || "Unknown"}`,
+    `Author: ${book.author || "Unknown"}`,
+    `Year: ${book.year || "Unknown"}`,
+    `Publisher: ${book.publisher || "Unknown"}`,
+    `Edition: ${book.edition || "Unknown"}`,
+    `ISBN: ${book.isbn || "Unknown"}`,
+    `Subjects: ${book.subjects || "Unknown"}`,
+    `Notes: ${book.notes || "None"}`,
+    "",
+    "Return valid JSON. First, set genre, then populate the fields for that genre.",
+    "",
+    '--- Always ---',
+    'genre: "fiction", "non-fiction", or "reference" — decide based on the book\'s primary purpose.',
+    "- fiction: novels, stories, narrative poetry",
+    "- non-fiction: books that argue, analyze, or narrate (history, biography, memoir, criticism, science)",
+    "- reference: books primarily consulted rather than read (cookbooks, field guides, how-to, craft manuals, travel guides, practical references)",
+    "quick_take: 2 to 4 spoiler-free sentences summarizing what the book is and why it matters.",
+    "major_themes: 3 to 6 concise bullet-style strings.",
+    "historical_context: one paragraph.",
+    "impact: one paragraph on why the work matters and how it lands.",
+    "confidence_note: mention ambiguity, factual uncertainty, edition limits, and classification ambiguity when relevant.",
+    "If the book straddles reference and non-fiction, classify by primary use and note the ambiguity in confidence_note.",
+    "",
+    // Preserved for easy restoration:
+    // "--- If fiction: provide BOTH spoiler and spoiler-free versions of these four fields ---",
+    // "summary_spoiler: full plot synopsis with spoilers in one or two paragraphs.",
+    "summary_safe: describe only the premise, setup, and tensions established early in the book — no major reveals, twists, endings, hidden identities, or late-stage character revelations.",
+    // "key_elements_spoiler: 3 to 6 bullet-style strings about characters including arcs and fates.",
+    "key_elements_safe: 3 to 6 bullet-style strings introducing characters without revealing spoilers, fates, or hidden roles.",
+    // "craft_analysis_spoiler: one or two paragraphs about style, structure, symbols, or technique — may reference plot freely.",
+    "craft_analysis_safe: one or two paragraphs about style and technique without revealing plot points, twists, or late-stage character revelations.",
+    // "discussion_questions_spoiler: 6 strong seminar questions that may reference the full plot.",
+    "discussion_questions_safe: 6 strong seminar questions safe for someone who has not finished the book — do not reveal major plot twists, endings, or character revelations.",
+    "Do NOT populate the singular non-fiction or reference fields for fiction.",
+    "",
+    "--- If non-fiction: use these singular fields (no spoiler variants needed) ---",
+    "summary: the core argument, thesis, and structure of the book in one or two paragraphs.",
+    "key_elements: 3 to 6 bullet-style strings about key concepts, figures, or frameworks.",
+    "craft_analysis: one or two paragraphs about methodology, argument quality, evidence, and structure.",
+    "discussion_questions: 6 strong seminar questions.",
+    "key_takeaways: 3 to 6 bullet-style strings of actionable insights or lessons.",
+    "Do NOT populate the fiction or reference fields for non-fiction.",
+    "",
+    "--- If reference (cookbooks, field guides, how-to, craft manuals, catalogs, practical guides): use these singular fields ---",
+    "editorial_approach: one or two paragraphs on the book's organizational logic, target audience, and overall philosophy or point of view.",
+    "contents_overview: 3 to 6 bullet-style strings describing the major sections, categories, recipe types, or structural components.",
+    "production_notes: one paragraph on format, visual design, photography or illustration quality, writing style, and usability as a practical object.",
+    "notable_features: 3 to 6 bullet-style strings on what makes this book distinctive — signature recipes or entries, unusual techniques, cultural specificity, standout design choices.",
+    "ideal_for: 2 to 4 sentences describing the best audience for this book and how they would realistically use it.",
+    "Do NOT populate the fiction or non-fiction fields for reference.",
+    "",
+    "--- Additional Perplexity Verification Rules ---",
+    "Use web search to verify factual claims about publication history, plot content, chapter or canto coverage, character identities, edition-specific details, and the practical scope of reference books.",
+    "Treat metadata fields with values like Unknown, None, or blank as missing hints rather than evidence.",
+    "For claims about specific contents, volume divisions, chapter ranges, canto ranges, subtitles, edition details, recipes, techniques, or section breakdowns, only state them if you found a confirming source.",
+    "If you cannot verify a specific claim, say so explicitly in the relevant field and in confidence_note.",
+    "Return JSON only — no markdown fences, no backticks, no text before or after the JSON object."
   ].join("\n");
 }
 

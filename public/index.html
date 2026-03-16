@@ -5205,14 +5205,27 @@ function renderBriefingPanel() {
   const isFiction = genre === "fiction";
   const isReference = genre === "reference";
   const spoilerToggle = document.getElementById("spoilerToggleLabel");
-  spoilerToggle.style.display = isFiction ? "" : "none";
-  const showSpoilers = isFiction && document.getElementById("spoilerToggle").checked;
+  const canToggleSpoilers = isFiction && hasFictionSpoilerPair(briefing);
+  // spoilerToggle.style.display = isFiction ? "" : "none";
+  spoilerToggle.style.display = canToggleSpoilers ? "" : "none";
+  if (!canToggleSpoilers) {
+    document.getElementById("spoilerToggle").checked = false;
+  }
+  const showSpoilers = canToggleSpoilers && document.getElementById("spoilerToggle").checked;
 
   // Pick the right field variant based on genre and spoiler toggle
-  const summaryText    = isFiction ? (showSpoilers ? briefing.summary_spoiler : briefing.summary_safe) : (isReference ? briefing.editorial_approach : briefing.summary);
-  const keyElems       = isFiction ? (showSpoilers ? briefing.key_elements_spoiler : briefing.key_elements_safe) : (isReference ? briefing.contents_overview : briefing.key_elements);
-  const craftText      = isFiction ? (showSpoilers ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : (isReference ? briefing.production_notes : briefing.craft_analysis);
-  const discussionList = isFiction ? (showSpoilers ? briefing.discussion_questions_spoiler : briefing.discussion_questions_safe) : (isReference ? briefing.notable_features : briefing.discussion_questions);
+  const summaryText = isFiction
+    ? (showSpoilers ? briefing.summary_spoiler : (briefing.summary_safe || briefing.summary))
+    : (isReference ? briefing.editorial_approach : briefing.summary);
+  const keyElems = isFiction
+    ? (showSpoilers ? briefing.key_elements_spoiler : (briefing.key_elements_safe || briefing.key_elements))
+    : (isReference ? briefing.contents_overview : briefing.key_elements);
+  const craftText = isFiction
+    ? (showSpoilers ? briefing.craft_analysis_spoiler : (briefing.craft_analysis_safe || briefing.craft_analysis))
+    : (isReference ? briefing.production_notes : briefing.craft_analysis);
+  const discussionList = isFiction
+    ? (showSpoilers ? briefing.discussion_questions_spoiler : (briefing.discussion_questions_safe || briefing.discussion_questions))
+    : (isReference ? briefing.notable_features : briefing.discussion_questions);
   const spoilerMode    = showSpoilers ? "spoiler" : "safe";
   const audioVariant   = getBriefingAudioVariant(book.id, spoilerMode);
   const audioKey       = currentAudioKey(book.id, spoilerMode);
@@ -6057,7 +6070,27 @@ function isDailyRateLimitFallbackAudio(variant) {
 
 function currentSpoilerModeForBook(book, briefing) {
   const isFiction = briefing && (briefing.genre || "").toLowerCase() === "fiction";
-  return isFiction && document.getElementById("spoilerToggle")?.checked ? "spoiler" : "safe";
+  return isFiction && hasFictionSpoilerPair(briefing) && document.getElementById("spoilerToggle")?.checked ? "spoiler" : "safe";
+}
+
+function hasFictionSpoilerPair(briefing) {
+  if (!briefing || (briefing.genre || "").toLowerCase() !== "fiction") return false;
+  return hasBriefingText(briefing.summary_safe)
+    && hasBriefingText(briefing.summary_spoiler)
+    && hasBriefingList(briefing.key_elements_safe)
+    && hasBriefingList(briefing.key_elements_spoiler)
+    && hasBriefingText(briefing.craft_analysis_safe)
+    && hasBriefingText(briefing.craft_analysis_spoiler)
+    && hasBriefingList(briefing.discussion_questions_safe)
+    && hasBriefingList(briefing.discussion_questions_spoiler);
+}
+
+function hasBriefingText(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasBriefingList(value) {
+  return Array.isArray(value) && value.some((item) => typeof item === "string" && item.trim().length > 0);
 }
 
 function currentAudioKey(bookId, spoilerMode) {
