@@ -12,18 +12,18 @@ const db = admin.firestore();
 
 const geminiApiKey      = defineSecret("GEMINI_API_KEY");
 const perplexityApiKey  = defineSecret("PERPLEXITY_API_KEY");
+const briefingAdminPassword = defineSecret("BRIEFING_ADMIN_PASSWORD");
 
 const MODEL = "gemini-2.5-flash";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const SCRIPT_MODEL = "gemini-2.5-pro";
 const SCRIPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${SCRIPT_MODEL}:generateContent`;
-const TTS_MODEL = "gemini-2.5-pro-preview-tts";
-const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`;
+const PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts";
+const FLASH_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const DEFAULT_AUDIO_VOICE = "Kore";
 const AUDIO_VOICES = new Set(["Kore", "Puck", "Charon"]);
 const AUDIO_GENERATING_STALE_MS = 20 * 60 * 1000;
 const DAILY_BRIEFING_LIMIT = 100;
-const BRIEFING_ADMIN_PASSWORD = "";
 
 const PERPLEXITY_MODEL   = "sonar-pro";
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
@@ -194,10 +194,16 @@ async function callPerplexityForBook(book, apiKey) {
   try { parsedApi = JSON.parse(rawText); }
   catch { throw new Error("Perplexity returned unreadable JSON"); }
 
-  const text = ((parsedApi.choices || [])[0] || {}).message?.content || "";
+  const text = extractPerplexityMessageText(parsedApi);
   if (!text) throw new Error("No content in Perplexity response");
 
-  const research = parseResearchJson(text);
+  let research;
+  try {
+    research = parseResearchJson(text);
+  } catch (error) {
+    console.error("Perplexity non-JSON content preview:", text.slice(0, 1200));
+    throw new Error("Perplexity reply was not valid JSON.");
+  }
   research.generated_at = new Date().toISOString();
   research.model = `perplexity-${PERPLEXITY_MODEL}`;
   return research;
@@ -211,7 +217,7 @@ async function callBriefingForBook(book, geminiKey, pplxKey) {
 
 // ── onCall: manual generate (user-triggered) ─────────────────────────────────
 
-exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] }, async (request) => {
+exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey, briefingAdminPassword] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -219,11 +225,27 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] },
   const uid = request.auth.uid;
   const book = sanitizeBook(request.data && request.data.book);
   const adminPassword = cleanText(request.data && request.data.adminPassword);
+  const sessionOverrideId = cleanText(request.data && request.data.sessionOverrideId);
   if (!book.title) {
     throw new HttpsError("invalid-argument", "Book title is required.");
   }
 
-  const quota = await reserveBriefingQuota(uid, adminPassword);
+  let overrideGranted = false;
+  let overrideSessionId = sessionOverrideId || "";
+  if (await hasBriefingAdminOverride(uid, sessionOverrideId)) {
+    overrideGranted = true;
+  } else if (adminPassword && cleanText(adminPassword) === briefingAdminPassword.value()) {
+    overrideGranted = true;
+    overrideSessionId = crypto.randomUUID();
+    await briefingAdminSessionRef(uid, overrideSessionId).set({
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }
+
+  const quota = overrideGranted
+    ? { allowed: true, overridden: true, limit: DAILY_BRIEFING_LIMIT }
+    : await reserveBriefingQuota(uid, "");
   if (!quota.allowed) {
     throw new HttpsError(
       "resource-exhausted",
@@ -239,7 +261,11 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey] },
     throw new HttpsError("internal", error.message);
   }
 
-  return { research };
+  return {
+    research,
+    adminOverrideGranted: overrideGranted,
+    sessionOverrideId: overrideGranted ? overrideSessionId : ""
+  };
 });
 
 exports.generateBriefingAudio = onCall(async (request) => {
@@ -263,6 +289,9 @@ exports.generateBriefingAudio = onCall(async (request) => {
     const variantKey = normalizeSpoilerMode(spoilerMode, isFiction);
     const normalizedVoice = normalizeVoice(voice);
     const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
+    const ttsStatus = await getProTtsAvailabilityStatus();
+    const preferredTtsModel = ttsStatus.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
+    const ttsFallbackReason = ttsStatus.available ? "" : "daily-rate-limit";
     const audioRef = briefingAudioDocRef(uid, bookId);
     const audioSnap = await audioRef.get();
     const audioDoc = audioSnap.exists ? (audioSnap.data() || {}) : {};
@@ -308,7 +337,9 @@ exports.generateBriefingAudio = onCall(async (request) => {
       status: "generating",
       voice: normalizedVoice,
       generatedAt: now,
-      sourceBriefingGeneratedAt
+      sourceBriefingGeneratedAt,
+      ttsModel: preferredTtsModel,
+      ttsFallbackReason
     };
     await audioRef.set({
       updatedAt: now,
@@ -333,7 +364,8 @@ exports.generateBriefingAudio = onCall(async (request) => {
       queued: true,
       jobId,
       spoilerMode: variantKey,
-      metadata: generatingMetadata
+      metadata: generatingMetadata,
+      proAvailableToday: ttsStatus.available
     };
   } catch (error) {
     if (error instanceof HttpsError) throw error;
@@ -371,9 +403,23 @@ exports.getBriefingAudio = onCall(async (request) => {
   return {
     spoilerMode: variantKey,
     voice: variant.voice || DEFAULT_AUDIO_VOICE,
+    ttsModel: variant.ttsModel || "",
+    ttsFallbackReason: variant.ttsFallbackReason || "",
     durationSec: variant.durationSec || 0,
     generatedAt: variant.generatedAt || "",
     ...signed
+  };
+});
+
+exports.getBriefingAudioTtsStatus = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const status = await getProTtsAvailabilityStatus();
+  return {
+    proAvailableToday: status.available,
+    fallbackDayKey: status.dayKey,
+    activeTtsModel: status.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL
   };
 });
 
@@ -732,8 +778,41 @@ function todayUsageKey() {
   }).format(new Date());
 }
 
+function pacificDayKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+}
+
+async function getProTtsAvailabilityStatus() {
+  const dayKey = pacificDayKey();
+  const snap = await ttsProStatusRef().get();
+  const data = snap.exists ? (snap.data() || {}) : {};
+  const unavailable = data.dayKey === dayKey && data.proUnavailableToday === true;
+  return {
+    available: !unavailable,
+    dayKey
+  };
+}
+
+async function markProTtsUnavailableToday(details = {}) {
+  const now = new Date().toISOString();
+  const dayKey = pacificDayKey();
+  await ttsProStatusRef().set({
+    dayKey,
+    proUnavailableToday: true,
+    reason: details.reason || "daily-rate-limit",
+    model: PRO_TTS_MODEL,
+    updatedAt: now
+  }, { merge: true });
+  return { available: false, dayKey };
+}
+
 async function reserveBriefingQuota(uid, adminPassword = "") {
-  const override = cleanText(adminPassword) === BRIEFING_ADMIN_PASSWORD;
+  const override = cleanText(adminPassword) === briefingAdminPassword.value();
   if (override) {
     return { allowed: true, overridden: true, limit: DAILY_BRIEFING_LIMIT };
   }
@@ -755,6 +834,13 @@ async function reserveBriefingQuota(uid, adminPassword = "") {
   });
 }
 
+async function hasBriefingAdminOverride(uid, sessionOverrideId) {
+  const sessionId = cleanText(sessionOverrideId || "");
+  if (!sessionId) return false;
+  const snap = await briefingAdminSessionRef(uid, sessionId).get();
+  return snap.exists;
+}
+
 function sanitizeBriefingAudioForBackup(audioCache) {
   const out = {};
   Object.entries(audioCache || {}).forEach(([bookId, doc]) => {
@@ -769,6 +855,7 @@ function sanitizeBriefingAudioForBackup(audioCache) {
         sourceBriefingGeneratedAt: entry.sourceBriefingGeneratedAt || "",
         scriptModel: entry.scriptModel || "",
         ttsModel: entry.ttsModel || "",
+        ttsFallbackReason: entry.ttsFallbackReason || "",
         durationSec: entry.durationSec || 0,
         audioPath: entry.audioPath || ""
       };
@@ -938,6 +1025,14 @@ function backupJobRef(uid, backupId) {
   return db.collection("users").doc(uid).collection("backupJobs").doc(backupId);
 }
 
+function briefingAdminSessionRef(uid, sessionId) {
+  return db.collection("users").doc(uid).collection("briefingAdminSessions").doc(sessionId);
+}
+
+function ttsProStatusRef() {
+  return db.collection("_system").doc("ttsProStatus");
+}
+
 function briefingAudioJobRef(uid, jobId) {
   return db.collection("users").doc(uid).collection("briefingAudioJobs").doc(jobId);
 }
@@ -950,13 +1045,60 @@ function extractCandidateText(data) {
 }
 
 function parseResearchJson(text) {
+  const raw = String(text || "").trim();
+  const withoutFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
   try {
-    return JSON.parse(text);
+    return JSON.parse(withoutFence);
   } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) { return JSON.parse(match[0]); }
+    const starts = [withoutFence.indexOf("{"), withoutFence.indexOf("[")].filter((index) => index >= 0);
+    const start = starts.length ? Math.min(...starts) : -1;
+    if (start >= 0) {
+      const open = withoutFence[start];
+      const close = open === "{" ? "}" : "]";
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = start; i < withoutFence.length; i++) {
+        const ch = withoutFence[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === "\"") inString = false;
+          continue;
+        }
+        if (ch === "\"") {
+          inString = true;
+          continue;
+        }
+        if (ch === open) depth += 1;
+        else if (ch === close) {
+          depth -= 1;
+          if (depth === 0) {
+            return JSON.parse(withoutFence.slice(start, i + 1));
+          }
+        }
+      }
+    }
     throw new Error("Could not parse JSON.");
   }
+}
+
+function extractPerplexityMessageText(parsedApi) {
+  const content = ((parsedApi.choices || [])[0] || {}).message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part.text === "string") return part.text;
+      if (part && typeof part.content === "string") return part.content;
+      return "";
+    }).filter(Boolean).join("\n");
+  }
+  if (content && typeof content.text === "string") return content.text;
+  return "";
 }
 
 function briefingAudioDocRef(uid, bookId) {
@@ -978,11 +1120,6 @@ function isGeneratingVariantStale(variant) {
 function normalizeSpoilerMode(mode, isFiction) {
   if (!isFiction) return "safe";
   return String(mode || "").trim().toLowerCase() === "spoiler" ? "spoiler" : "safe";
-}
-
-function estimateDurationSec(text) {
-  const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(60, Math.round((words / 150) * 60));
 }
 
 function audioVariantFromDoc(doc, variantKey) {
@@ -1044,6 +1181,9 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     "Treat each heading as a chapter marker with a natural spoken transition.",
     "Do not mention JSON, metadata, bullet points, or field names.",
     "Aim for roughly 1,000 to 1,400 words and about 8 to 10 minutes of listening time.",
+    "Keep the tone engaged and intelligent, but not gushy, breathless, or promotional.",
+    "If the source material suggests mixed, weak, or negative reception, make that clear in a calm, matter-of-fact way.",
+    "Do not overpraise the book unless the source material strongly supports it.",
     isFiction
       ? "For fiction, focus on atmosphere, character arc, structure, and prose."
       : (isReference
@@ -1095,6 +1235,9 @@ async function generateNarrationScript(book, briefing, spoilerMode, apiKey) {
           "You are an expert literary podcaster creating a solo Audio Overview of a book.",
           "Do not summarize the summary. Expand each supplied section into a full discussion.",
           "Use a conversational, intellectual, accessible tone in the spirit of a public-radio deep dive.",
+          "Sound thoughtful and confident, but never gushy, breathless, or promotional.",
+          "Maintain critical distance: if the material suggests limitations, mixed execution, or poor reception, say so plainly.",
+          "Do not imply acclaim, brilliance, or importance unless the supplied material clearly supports it.",
           "Use clear transitions such as moving into the narrative structure or historical context.",
           "Treat the provided headers as chapter markers.",
           "Return plain text only."
@@ -1162,6 +1305,18 @@ function extractAudioBase64(data) {
     const inlineData = part && part.inlineData;
     if (inlineData && inlineData.data) return inlineData.data;
   }
+  try {
+    console.warn("[extractAudioBase64] No inline audio found. Response summary:", JSON.stringify({
+      candidateCount: Array.isArray(data && data.candidates) ? data.candidates.length : 0,
+      firstCandidateKeys: data && data.candidates && data.candidates[0] ? Object.keys(data.candidates[0]) : [],
+      partSummaries: parts.map((part) => ({
+        keys: part ? Object.keys(part) : [],
+        hasInlineData: Boolean(part && part.inlineData),
+        inlineMimeType: part && part.inlineData ? part.inlineData.mimeType || "" : "",
+        textPreview: part && typeof part.text === "string" ? part.text.slice(0, 160) : ""
+      }))
+    }));
+  } catch (error) {}
   throw new Error("No audio returned by Gemini TTS.");
 }
 
@@ -1188,7 +1343,173 @@ function pcmToWavBuffer(pcmBuffer, sampleRate = 24000, channels = 1, bitsPerSamp
   return Buffer.concat([header, pcmBuffer]);
 }
 
-async function synthesizeNarrationAudio(script, voice, apiKey) {
+function parseWavBuffer(wavBuffer) {
+  if (!Buffer.isBuffer(wavBuffer) || wavBuffer.length < 44) {
+    throw new Error("Invalid WAV audio buffer.");
+  }
+  if (wavBuffer.toString("ascii", 0, 4) !== "RIFF" || wavBuffer.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error("Unsupported WAV container.");
+  }
+
+  let offset = 12;
+  let fmt = null;
+  let dataOffset = -1;
+  let dataSize = -1;
+
+  while (offset + 8 <= wavBuffer.length) {
+    const chunkId = wavBuffer.toString("ascii", offset, offset + 4);
+    const chunkSize = wavBuffer.readUInt32LE(offset + 4);
+    const chunkDataOffset = offset + 8;
+    if (chunkDataOffset + chunkSize > wavBuffer.length) break;
+
+    if (chunkId === "fmt ") {
+      fmt = {
+        audioFormat: wavBuffer.readUInt16LE(chunkDataOffset),
+        channels: wavBuffer.readUInt16LE(chunkDataOffset + 2),
+        sampleRate: wavBuffer.readUInt32LE(chunkDataOffset + 4),
+        byteRate: wavBuffer.readUInt32LE(chunkDataOffset + 8),
+        blockAlign: wavBuffer.readUInt16LE(chunkDataOffset + 12),
+        bitsPerSample: wavBuffer.readUInt16LE(chunkDataOffset + 14)
+      };
+    } else if (chunkId === "data") {
+      dataOffset = chunkDataOffset;
+      dataSize = chunkSize;
+      break;
+    }
+
+    offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+  }
+
+  if (!fmt || dataOffset < 0 || dataSize < 0) {
+    throw new Error("Incomplete WAV audio buffer.");
+  }
+  if (fmt.audioFormat !== 1) {
+    throw new Error("Only PCM WAV audio is supported.");
+  }
+
+  return {
+    channels: fmt.channels,
+    sampleRate: fmt.sampleRate,
+    bitsPerSample: fmt.bitsPerSample,
+    pcm: wavBuffer.subarray(dataOffset, dataOffset + dataSize)
+  };
+}
+
+function concatWavBuffers(wavBuffers) {
+  if (!Array.isArray(wavBuffers) || !wavBuffers.length) {
+    throw new Error("No WAV buffers to concatenate.");
+  }
+  const parts = wavBuffers.map(parseWavBuffer);
+  const first = parts[0];
+
+  for (const part of parts.slice(1)) {
+    if (
+      part.channels !== first.channels ||
+      part.sampleRate !== first.sampleRate ||
+      part.bitsPerSample !== first.bitsPerSample
+    ) {
+      throw new Error("WAV chunk format mismatch.");
+    }
+  }
+
+  const pcm = Buffer.concat(parts.map((part) => part.pcm));
+  return pcmToWavBuffer(pcm, first.sampleRate, first.channels, first.bitsPerSample);
+}
+
+function getWavDurationSec(wavBuffer) {
+  const parsed = parseWavBuffer(wavBuffer);
+  const bytesPerSample = parsed.bitsPerSample / 8;
+  const frameSize = parsed.channels * bytesPerSample;
+  if (!frameSize || !parsed.sampleRate) return 0;
+  return Math.max(1, Math.round(parsed.pcm.length / frameSize / parsed.sampleRate));
+}
+
+function splitNarrationScript(script) {
+  const normalized = String(script || "").trim();
+  if (!normalized) return [];
+
+  const paragraphs = normalized.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+  if (paragraphs.length < 4) return [normalized];
+  const minChunkChars = 180;
+  const targetChunks = 4;
+  const chunks = [];
+  let paragraphIndex = 0;
+
+  for (let chunkIndex = 0; chunkIndex < targetChunks && paragraphIndex < paragraphs.length; chunkIndex++) {
+    const remainingParagraphs = paragraphs.length - paragraphIndex;
+    const remainingChunks = targetChunks - chunkIndex;
+    if (remainingChunks === 1) {
+      chunks.push(paragraphs.slice(paragraphIndex).join("\n\n").trim());
+      break;
+    }
+
+    const remainingTotalLength = paragraphs
+      .slice(paragraphIndex)
+      .reduce((sum, part) => sum + part.length, 0);
+    const targetSize = Math.max(minChunkChars, Math.ceil(remainingTotalLength / remainingChunks));
+
+    let current = paragraphs[paragraphIndex];
+    paragraphIndex += 1;
+
+    while (paragraphIndex < paragraphs.length) {
+      const futureParagraphs = paragraphs.length - paragraphIndex;
+      if (futureParagraphs < (remainingChunks - 1)) break;
+
+      const nextParagraph = paragraphs[paragraphIndex];
+      const candidate = `${current}\n\n${nextParagraph}`;
+
+      if (current.length < minChunkChars) {
+        current = candidate;
+        paragraphIndex += 1;
+        continue;
+      }
+
+      const currentDistance = Math.abs(current.length - targetSize);
+      const candidateDistance = Math.abs(candidate.length - targetSize);
+      if (candidate.length > targetSize && candidateDistance > currentDistance) {
+        break;
+      }
+
+      current = candidate;
+      paragraphIndex += 1;
+    }
+
+    chunks.push(current.trim());
+  }
+
+  return chunks.filter(Boolean);
+}
+
+async function fetchWithRetryAndTimeout(url, options, { maxRetries = 0, baseDelayMs = 1500, timeoutMs = 300000 } = {}) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const fetchOptions = timeoutMs > 0
+        ? { ...options, signal: AbortSignal.timeout(timeoutMs) }
+        : options;
+      const res = await fetch(url, fetchOptions);
+      const isRateLimited = res.status === 429;
+      const isTransient = isRateLimited || res.status >= 500;
+      if (!isTransient || attempt === maxRetries) return res;
+      const wait = isRateLimited
+        ? baseDelayMs * 3 * Math.pow(2, attempt)
+        : baseDelayMs * Math.pow(2, attempt);
+      console.warn(`[fetchWithRetryAndTimeout] HTTP ${res.status} on attempt ${attempt + 1}, retrying in ${wait}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      const wait = baseDelayMs * Math.pow(2, attempt);
+      const reason = error && error.message ? error.message : String(error);
+      console.warn(`[fetchWithRetryAndTimeout] Network error on attempt ${attempt + 1}: ${reason}. Retrying in ${wait}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+}
+
+function ttsApiUrlForModel(modelName) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
+}
+
+async function synthesizeNarrationAudio(script, voice, apiKey, modelName) {
   const payload = {
     contents: [{ parts: [{ text: script }] }],
     generationConfig: {
@@ -1205,13 +1526,14 @@ async function synthesizeNarrationAudio(script, voice, apiKey) {
 
   let response;
   try {
-    response = await fetchWithRetry(TTS_API_URL, {
+    response = await fetchWithRetryAndTimeout(ttsApiUrlForModel(modelName), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(payload)
-    });
+    }, { maxRetries: 0, baseDelayMs: 2000, timeoutMs: 300000 });
   } catch (error) {
-    throw new Error("Unable to reach Gemini TTS API.");
+    const detail = error && error.message ? ` ${error.message}` : "";
+    throw new Error(`Unable to reach Gemini TTS API.${detail}`.trim());
   }
 
   const rawText = await response.text();
@@ -1219,7 +1541,10 @@ async function synthesizeNarrationAudio(script, voice, apiKey) {
     let apiError = {};
     try { apiError = JSON.parse(rawText); } catch { /* ignore */ }
     console.error("Gemini TTS error", response.status, JSON.stringify(apiError));
-    throw new Error(`Narration audio request failed (HTTP ${response.status})`);
+    const error = new Error(`Narration audio request failed (HTTP ${response.status})`);
+    error.httpStatus = response.status;
+    error.apiError = apiError;
+    throw error;
   }
 
   let parsedApi;
@@ -1242,6 +1567,9 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
   const currentVariant = audioVariantFromDoc(audioDoc, variantKey);
   const normalizedVoice = normalizeVoice(voice);
   const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
+  const initialTtsStatus = await getProTtsAvailabilityStatus();
+  let activeTtsModel = initialTtsStatus.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
+  let ttsFallbackReason = initialTtsStatus.available ? "" : "daily-rate-limit";
 
   if (
     !forceRefresh &&
@@ -1266,7 +1594,9 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
         status: "generating",
         voice: normalizedVoice,
         generatedAt: startedAt,
-        sourceBriefingGeneratedAt
+        sourceBriefingGeneratedAt,
+        ttsModel: activeTtsModel,
+        ttsFallbackReason
       }
     }
   }, { merge: true });
@@ -1275,8 +1605,29 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
     console.log(`[buildBriefingAudio] generating script via ${SCRIPT_MODEL} variant=${variantKey}`);
     const script = await generateNarrationScript(book, briefing, variantKey, apiKey);
     console.log(`[buildBriefingAudio] script ready chars=${script.length}`);
-    console.log(`[buildBriefingAudio] synthesizing audio via ${TTS_MODEL} voice=${normalizedVoice}`);
-    const wavBuffer = await synthesizeNarrationAudio(script, normalizedVoice, apiKey);
+    const scriptChunks = splitNarrationScript(script);
+    console.log(`[buildBriefingAudio] synthesizing ${scriptChunks.length} narration chunk(s) via ${activeTtsModel} voice=${normalizedVoice} originalChars=${script.length}`);
+    const wavChunks = [];
+    for (let i = 0; i < scriptChunks.length; i++) {
+      console.log(`[buildBriefingAudio] synthesizing chunk ${i + 1}/${scriptChunks.length} chars=${scriptChunks[i].length}`);
+      try {
+        wavChunks.push(await synthesizeNarrationAudio(scriptChunks[i], normalizedVoice, apiKey, activeTtsModel));
+      } catch (error) {
+        if (activeTtsModel === PRO_TTS_MODEL && error && error.httpStatus === 429) {
+          await markProTtsUnavailableToday({ reason: "daily-rate-limit" });
+          activeTtsModel = FLASH_TTS_MODEL;
+          ttsFallbackReason = "daily-rate-limit";
+          console.warn(`[buildBriefingAudio] Pro TTS rate limited on chunk ${i + 1}; falling back to ${activeTtsModel} for the rest of the day.`);
+          wavChunks.push(await synthesizeNarrationAudio(scriptChunks[i], normalizedVoice, apiKey, activeTtsModel));
+        } else {
+          throw error;
+        }
+      }
+      if (i < scriptChunks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+    const wavBuffer = wavChunks.length === 1 ? wavChunks[0] : concatWavBuffers(wavChunks);
     console.log(`[buildBriefingAudio] audio ready bytes=${wavBuffer.length}`);
     const audioPath = `users/${uid}/briefing-audio/${bookId}-${variantKey}.wav`;
     const file = admin.storage().bucket().file(audioPath);
@@ -1297,8 +1648,9 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
       generatedAt: new Date().toISOString(),
       sourceBriefingGeneratedAt,
       scriptModel: SCRIPT_MODEL,
-      ttsModel: TTS_MODEL,
-      durationSec: estimateDurationSec(script),
+      ttsModel: activeTtsModel,
+      ttsFallbackReason,
+      durationSec: getWavDurationSec(wavBuffer),
       script
     };
 
@@ -1987,6 +2339,8 @@ exports.getSharedShelf = onCall(async (request) => {
           status: value.status,
           voice: value.voice || DEFAULT_AUDIO_VOICE,
           generatedAt: value.generatedAt || "",
+          ttsModel: value.ttsModel || "",
+          ttsFallbackReason: value.ttsFallbackReason || "",
           durationSec: value.durationSec || 0,
           sourceBriefingGeneratedAt: value.sourceBriefingGeneratedAt || ""
         };

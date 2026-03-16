@@ -518,6 +518,29 @@ const firebaseConfig = {
     color: var(--brown);
     font-style: italic;
   }
+  #briefingStatus {
+    display: none;
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+  }
+  #briefingStatus:not(:empty) {
+    display: block;
+    margin-top: 0;
+    padding: 8px 10px;
+    line-height: 1.4;
+    background: rgba(59, 100, 140, 0.08);
+    border: 1px solid rgba(59, 100, 140, 0.22);
+    border-radius: 2px;
+  }
+  #briefingStatus.error {
+    background: rgba(180, 60, 40, 0.08);
+    border-color: rgba(180, 60, 40, 0.25);
+  }
+  #briefingStatus.success {
+    background: rgba(33, 115, 70, 0.08);
+    border-color: rgba(33, 115, 70, 0.24);
+  }
 
   .lookup-status.error,
   .research-status.error { color: var(--red); }
@@ -2064,6 +2087,9 @@ const firebaseConfig = {
     align-items: center;
     justify-content: center;
   }
+  .auth-overlay.is-hidden {
+    display: none !important;
+  }
 
   .auth-box {
     text-align: center;
@@ -3572,6 +3598,8 @@ let books = [];
 let researchCache = {};
 let briefingAudioCache = {};
 let backupJobsCache = {};
+const PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts";
+const FLASH_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 let shelves = [];
 let shareLinks = {};
 let currentShelfId = "default";
@@ -3588,11 +3616,12 @@ let wasMobileLayout = window.innerWidth < 1024;
 let researchEnabled = false;
 let selectedBookId = null;
 let researchRequestInFlight = false;
+let briefingAudioPollState = {};
+let briefingAudioProAvailableToday = false;
 let editingBookId = null;
 let _filteredBookIds = [];
 let pendingCoverBlob = null;
 let _coverUploadBookId = null;
-restoreBriefingAdminOverrideSession();
 let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
@@ -3640,8 +3669,9 @@ let briefingAudioRequestInFlight = false;
 let briefingAudioUrls = {};
 let briefingAudioUrlErrors = {};
 const AUDIO_GENERATING_STALE_MS = 20 * 60 * 1000;
-const BRIEFING_ADMIN_PASSWORD = "";
 let briefingAdminOverrideSession = false;
+let briefingAdminOverrideSessionId = "";
+restoreBriefingAdminOverrideSession();
 
 function safeLoad(key, fallback) {
   try {
@@ -4177,9 +4207,16 @@ window.addEventListener("resize", function() {
 
 async function loadApiConfig() {
   researchEnabled = Boolean(auth.currentUser);
+  briefingAudioProAvailableToday = false;
   if (!researchEnabled) {
     setResearchStatus("Sign in to enable book briefings.", "error");
   } else {
+    try {
+      const result = await functions.httpsCallable("getBriefingAudioTtsStatus")({});
+      briefingAudioProAvailableToday = Boolean(result.data && result.data.proAvailableToday);
+    } catch (error) {
+      console.warn("[loadApiConfig] briefing audio TTS status unavailable:", error);
+    }
     setResearchStatus("", "");
   }
 }
@@ -5026,9 +5063,13 @@ async function generateResearchForSelected(forceRefresh) {
     const generateBriefingFn = functions.httpsCallable("generateBriefing");
     const result = await generateBriefingFn({
       book,
-      adminPassword: briefingAdminOverrideSession ? BRIEFING_ADMIN_PASSWORD : ""
+      adminPassword: "",
+      sessionOverrideId: briefingAdminOverrideSession ? briefingAdminOverrideSessionId : ""
     });
     const research = result.data && result.data.research;
+    if (result.data && result.data.adminOverrideGranted && result.data.sessionOverrideId) {
+      setBriefingAdminOverrideSession(true, result.data.sessionOverrideId);
+    }
     if (!research || typeof research !== "object") {
       throw new Error("The server returned an empty briefing. Please try again.");
     }
@@ -5046,12 +5087,34 @@ async function generateResearchForSelected(forceRefresh) {
     const message = getCallableErrorMessage(error, "Research request failed.");
     if (error && error.code === "resource-exhausted") {
       const entered = prompt(message + "\n\nAdmin Access: enter override password to continue for this login session.");
-      if (entered === BRIEFING_ADMIN_PASSWORD) {
-        setBriefingAdminOverrideSession(true);
-        researchRequestInFlight = false;
-        updateResearchButtons();
-        setResearchStatus("Admin Access enabled for this login session. Retrying briefing generation...", "");
-        return generateResearchForSelected(forceRefresh);
+      if (entered) {
+        try {
+          const generateBriefingFn = functions.httpsCallable("generateBriefing");
+          const retryResult = await generateBriefingFn({
+            book,
+            adminPassword: entered,
+            sessionOverrideId: briefingAdminOverrideSession ? briefingAdminOverrideSessionId : ""
+          });
+          const retryResearch = retryResult.data && retryResult.data.research;
+          if (retryResult.data && retryResult.data.adminOverrideGranted && retryResult.data.sessionOverrideId) {
+            setBriefingAdminOverrideSession(true, retryResult.data.sessionOverrideId);
+          }
+          if (!retryResearch || typeof retryResearch !== "object") {
+            throw new Error("The server returned an empty briefing. Please try again.");
+          }
+          researchCache[book.id] = retryResearch;
+          pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== book.id);
+          await saveBriefing(book.id, retryResearch);
+          researchCache[book.id] = retryResearch;
+          renderCatalog();
+          renderBriefingPanel();
+          setResearchStatus(`Briefing ready for "${book.title}". Admin Access is enabled for this login session.`, "success");
+          return;
+        } catch (overrideError) {
+          setResearchStatus(getCallableErrorMessage(overrideError, "Admin Access failed."), "error");
+          renderBriefingPanel();
+          return;
+        }
       }
       setResearchStatus(message, "error");
     } else {
@@ -5155,6 +5218,7 @@ function renderBriefingPanel() {
   const audioKey       = currentAudioKey(book.id, spoilerMode);
   const audioUrl       = briefingAudioUrls[audioKey] || "";
   const audioUrlError  = briefingAudioUrlErrors[audioKey] || "";
+  const isFlashRateLimitAudio = isDailyRateLimitFallbackAudio(audioVariant);
 
   if (audioVariant && audioVariant.status === "ready" && audioVariant.audioPath && !audioUrl && !audioUrlError) {
     ensureBriefingAudioUrl(book.id, spoilerMode, audioVariant);
@@ -5181,7 +5245,11 @@ function renderBriefingPanel() {
             </div>`
           : `<div class="briefing-section"><h3>Audio Overview</h3><p>Preparing an audio version of this briefing...</p></div>`)
       : audioVariant.status === "error"
-        ? `<div class="briefing-section"><h3>Audio Overview</h3><p>${esc(audioVariant.error || "Audio generation failed.")}</p></div>`
+        ? `<div class="briefing-section">
+            <h3>Audio Overview</h3>
+            <p>${esc(audioVariant.error || "Audio generation failed.")}</p>
+            <button class="btn btn-light btn-sm" type="button" onclick="generateBriefingAudioForSelected(true)">Retry Audio</button>
+          </div>`
         : audioUrlError
           ? `<div class="briefing-section">
               <h3>Audio Overview</h3>
@@ -5190,7 +5258,11 @@ function renderBriefingPanel() {
             </div>`
         : `<div class="briefing-section">
             <h3>Audio Overview</h3>
-            <p>Voice: ${esc(audioVariant.voice || "Kore")} ${audioVariant.durationSec ? `&middot; Approx. ${Math.max(1, Math.round(audioVariant.durationSec / 60))} min` : ""}</p>
+            <p>Voice: ${esc(audioVariant.voice || "Kore")} ${audioVariant.durationSec ? `&middot; ${formatAudioDuration(audioVariant.durationSec)}` : ""}</p>
+            ${isFlashRateLimitAudio ? `<p>Lower Quality Audio Due to Daily Rate Limit.</p>` : ""}
+            ${isFlashRateLimitAudio && briefingAudioProAvailableToday
+              ? `<button class="btn btn-light btn-sm" type="button" onclick="generateBriefingAudioForSelected(true)">Regenerate Higher Quality Audio</button>`
+              : ""}
             ${audioUrl
               ? `<audio controls preload="none" style="width:100%;margin-top:8px;"><source src="${escapeAttribute(audioUrl)}" type="audio/wav"></audio>`
               : `<p>Loading audio player...</p>`}
@@ -5536,6 +5608,10 @@ function updateResearchButtons() {
       audioBtn.textContent = "Preparing...";
       audioBtn.onclick = null;
     }
+  } else if (audioVariant && audioVariant.status === "error") {
+    audioBtn.disabled = false;
+    audioBtn.textContent = "Retry Audio";
+    audioBtn.onclick = () => generateBriefingAudioForSelected(true);
   } else {
     audioBtn.disabled = false;
     audioBtn.textContent = "Listen";
@@ -5581,6 +5657,13 @@ function setStatus(id, message, type) {
   const element = document.getElementById(id);
   element.textContent = message;
   element.className = `${id === "briefingStatus" ? "research-status" : "lookup-status"}${type ? " " + type : ""}`;
+}
+
+function formatAudioDuration(durationSec) {
+  const total = Math.max(0, Math.round(Number(durationSec) || 0));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function setResearchStatus(message, type) {
@@ -5964,6 +6047,14 @@ function getBriefingAudioVariant(bookId, spoilerMode) {
   return variant && typeof variant === "object" ? variant : null;
 }
 
+function isDailyRateLimitFallbackAudio(variant) {
+  return Boolean(
+    variant &&
+    variant.status === "ready" &&
+    variant.ttsModel === FLASH_TTS_MODEL
+  );
+}
+
 function currentSpoilerModeForBook(book, briefing) {
   const isFiction = briefing && (briefing.genre || "").toLowerCase() === "fiction";
   return isFiction && document.getElementById("spoilerToggle")?.checked ? "spoiler" : "safe";
@@ -5998,21 +6089,37 @@ function getCallableErrorMessage(error, fallback) {
   return fallback;
 }
 
+function setAuthOverlayVisible(visible) {
+  const overlay = document.getElementById("authOverlay");
+  if (!overlay) return;
+  overlay.classList.toggle("is-hidden", !visible);
+  overlay.style.display = visible ? "flex" : "none";
+}
+
 function restoreBriefingAdminOverrideSession() {
   try {
     briefingAdminOverrideSession = sessionStorage.getItem("tomeshelf-briefing-admin-override") === "1";
+    briefingAdminOverrideSessionId = briefingAdminOverrideSession
+      ? (sessionStorage.getItem("tomeshelf-briefing-admin-override-id") || "")
+      : "";
   } catch (error) {
     briefingAdminOverrideSession = false;
+    briefingAdminOverrideSessionId = "";
   }
 }
 
-function setBriefingAdminOverrideSession(enabled) {
+function setBriefingAdminOverrideSession(enabled, sessionId = "") {
   briefingAdminOverrideSession = Boolean(enabled);
+  briefingAdminOverrideSessionId = briefingAdminOverrideSession ? String(sessionId || "") : "";
   try {
     if (briefingAdminOverrideSession) {
       sessionStorage.setItem("tomeshelf-briefing-admin-override", "1");
+      if (briefingAdminOverrideSessionId) {
+        sessionStorage.setItem("tomeshelf-briefing-admin-override-id", briefingAdminOverrideSessionId);
+      }
     } else {
       sessionStorage.removeItem("tomeshelf-briefing-admin-override");
+      sessionStorage.removeItem("tomeshelf-briefing-admin-override-id");
     }
   } catch (error) {}
 }
@@ -6051,6 +6158,66 @@ async function waitForBriefingAudioError(bookId, spoilerMode, timeoutMs) {
   return "";
 }
 
+async function refreshBriefingAudioDoc(bookId) {
+  if (!auth.currentUser || !bookId) return null;
+  const snap = await db.collection("users").doc(auth.currentUser.uid).collection("briefingAudio").doc(bookId).get();
+  const previousDoc = briefingAudioCache[bookId];
+  if (!snap.exists) {
+    if (briefingAudioCache[bookId] !== undefined) {
+      delete briefingAudioCache[bookId];
+      delete briefingAudioUrls[bookId + ":safe"];
+      delete briefingAudioUrls[bookId + ":spoiler"];
+      delete briefingAudioUrlErrors[bookId + ":safe"];
+      delete briefingAudioUrlErrors[bookId + ":spoiler"];
+      renderBriefingPanel();
+      updateResearchButtons();
+    }
+    return null;
+  }
+
+  const nextDoc = snap.data() || {};
+  if (JSON.stringify(previousDoc) !== JSON.stringify(nextDoc)) {
+    briefingAudioCache[bookId] = nextDoc;
+    handleSelectedBriefingAudioUpdate(bookId, previousDoc, nextDoc);
+    renderBriefingPanel();
+    updateResearchButtons();
+  }
+  return nextDoc;
+}
+
+async function pollBriefingAudioStatus(bookId, spoilerMode, timeoutMs = 45000) {
+  const pollKey = currentAudioKey(bookId, spoilerMode);
+  const token = Date.now() + Math.random();
+  briefingAudioPollState[pollKey] = token;
+  const started = Date.now();
+
+  while (briefingAudioPollState[pollKey] === token && (Date.now() - started) < timeoutMs) {
+    try {
+      await refreshBriefingAudioDoc(bookId);
+    } catch (error) {
+      console.error("[pollBriefingAudioStatus] refresh failed:", error);
+    }
+
+    const variant = getBriefingAudioVariant(bookId, spoilerMode);
+    if (variant && variant.status === "ready") {
+      delete briefingAudioPollState[pollKey];
+      await ensureBriefingAudioUrl(bookId, spoilerMode, variant);
+      return variant;
+    }
+    if (variant && variant.status === "error") {
+      delete briefingAudioPollState[pollKey];
+      return variant;
+    }
+
+    await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+  }
+
+  if (briefingAudioPollState[pollKey] === token) {
+    delete briefingAudioPollState[pollKey];
+  }
+  return getBriefingAudioVariant(bookId, spoilerMode);
+}
+
 function retryBriefingAudioUrl(bookId, spoilerMode) {
   const variant = getBriefingAudioVariant(bookId, spoilerMode);
   clearBriefingAudioUrlState(bookId, spoilerMode);
@@ -6071,8 +6238,14 @@ function handleSelectedBriefingAudioUpdate(bookId, previousDoc, nextDoc) {
   const prevVariant = prevVariants[spoilerMode] && typeof prevVariants[spoilerMode] === "object" ? prevVariants[spoilerMode] : null;
   const nextVariant = nextVariants[spoilerMode] && typeof nextVariants[spoilerMode] === "object" ? nextVariants[spoilerMode] : null;
   if (!nextVariant) return;
+  if (nextVariant.ttsFallbackReason === "daily-rate-limit") {
+    briefingAudioProAvailableToday = false;
+  }
   if (nextVariant.status === "ready" && (!prevVariant || prevVariant.status !== "ready")) {
-    setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+    const readyMessage = nextVariant.ttsFallbackReason === "daily-rate-limit"
+      ? `Audio overview ready for "${book.title}". Lower quality audio was used due to today's Pro TTS rate limit.`
+      : `Audio overview ready for "${book.title}".`;
+    setResearchStatus(readyMessage, "success");
   } else if (nextVariant.status === "error" && (!prevVariant || prevVariant.status !== "error")) {
     setResearchStatus(nextVariant.error || "Audio generation failed.", "error");
   }
@@ -6119,8 +6292,14 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     const metadata = result.data && result.data.metadata;
     const resolvedMode = result.data && result.data.spoilerMode ? result.data.spoilerMode : spoilerMode;
     const audioUrl = result.data && result.data.audioUrl ? result.data.audioUrl : "";
+    if (result.data && typeof result.data.proAvailableToday === "boolean") {
+      briefingAudioProAvailableToday = result.data.proAvailableToday;
+    }
     if (!metadata || typeof metadata !== "object") {
       throw new Error("The server returned empty audio metadata. Please try again.");
+    }
+    if (metadata.ttsFallbackReason === "daily-rate-limit") {
+      briefingAudioProAvailableToday = false;
     }
     const currentDoc = briefingAudioCache[book.id] && typeof briefingAudioCache[book.id] === "object" ? briefingAudioCache[book.id] : {};
     const variants = currentDoc.variants && typeof currentDoc.variants === "object" ? currentDoc.variants : {};
@@ -6137,9 +6316,18 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     }
     renderBriefingPanel();
     if (result.data && result.data.queued) {
-      setResearchStatus(`Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`, "");
+      const queuedMessage = metadata.ttsFallbackReason === "daily-rate-limit"
+        ? `Preparing audio overview for "${book.title}". Lower quality audio is being used due to today's Pro TTS rate limit.`
+        : `Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`;
+      setResearchStatus(queuedMessage, "");
+      pollBriefingAudioStatus(book.id, resolvedMode).catch(function(error) {
+        console.error("[generateBriefingAudioForSelected] audio status poll failed:", error);
+      });
     } else {
-      setResearchStatus(`Audio overview ready for "${book.title}".`, "success");
+      const readyMessage = metadata.ttsFallbackReason === "daily-rate-limit"
+        ? `Audio overview ready for "${book.title}". Lower quality audio was used due to today's Pro TTS rate limit.`
+        : `Audio overview ready for "${book.title}".`;
+      setResearchStatus(readyMessage, "success");
     }
   } catch (error) {
     const latestVariant = getBriefingAudioVariant(book.id, spoilerMode);
@@ -6896,6 +7084,7 @@ function buildBackupManifest() {
         sourceBriefingGeneratedAt: entry.sourceBriefingGeneratedAt || "",
         scriptModel: entry.scriptModel || "",
         ttsModel: entry.ttsModel || "",
+        ttsFallbackReason: entry.ttsFallbackReason || "",
         durationSec: entry.durationSec || 0,
         audioPath: entry.audioPath || ""
       };
@@ -9122,12 +9311,12 @@ function _doSignOut() {
   loadApiConfig();
 }
 
-// ── Camera-return overlay suppression ────────────────────────────────────────
+// Camera-return overlay suppression
 // On iOS, using capture="environment" can trigger a full page reload when the
 // user returns from the native camera.  The auth overlay is visible by default
 // in CSS; Firebase takes 1-2 s to restore the cached session, so the user would
 // see the login form flash briefly on every camera photo.  Running this check
-// synchronously — before onAuthStateChanged is even registered — hides the
+// synchronously, before onAuthStateChanged is even registered, hides the
 // overlay immediately if the camera was recently opened (localStorage flag set
 // by startPhotoCamera), making the reload invisible to the user.
 (function () {
@@ -9157,15 +9346,60 @@ window.addEventListener("pageshow", function (event) {
   } catch (e) {}
 });
 
+async function applyAuthenticatedUi(user, cameraReturn) {
+  document.getElementById("authOverlay").style.display = "none";
+  const icon = document.getElementById("userEmailIcon");
+  const emailText = document.getElementById("userEmailText");
+  const guestBanner = document.getElementById("guestBanner");
+  const signInMenuItem = document.getElementById("accountMenuSignIn");
+
+  if (user.isAnonymous) {
+    icon.style.display = "none";
+    emailText.textContent = "Guest";
+    emailText.setAttribute("title", "Guest session — click to manage");
+    emailText.style.display = "inline";
+    guestBanner.style.display = "flex";
+    if (signInMenuItem) signInMenuItem.style.display = "";
+  } else if (user.photoURL) {
+    icon.src = user.photoURL;
+    icon.setAttribute("title", `Account (${user.email})`);
+    icon.style.display = "inline-block";
+    emailText.style.display = "none";
+    guestBanner.style.display = "none";
+    if (signInMenuItem) signInMenuItem.style.display = "none";
+  } else {
+    icon.style.display = "none";
+    emailText.textContent = user.email;
+    emailText.setAttribute("title", "Account");
+    emailText.style.display = "inline";
+    guestBanner.style.display = "none";
+    if (signInMenuItem) signInMenuItem.style.display = "none";
+  }
+
+  if (user.uid === _booksOwnedByUid) return;
+
+  catalogLoading = true;
+  _booksOwnedByUid = null; // reset until loadCatalogData sets it
+  books = [];
+  researchCache = {};
+  briefingAudioCache = {};
+  backupJobsCache = {};
+  briefingAudioUrls = {};
+  briefingAudioUrlErrors = {};
+  shelves = [];
+  pendingBriefingIds = [];
+  currentShelfId = "default";
+  await initializeApp(cameraReturn);
+  subscribeToBackgroundUpdates(user.uid);
+}
+
 auth.onAuthStateChanged(async (user) => {
   console.log("[onAuthStateChanged] uid:", user ? user.uid : "null", "email:", user ? user.email : "null",
     "prev booksOwner:", _booksOwnedByUid);
 
   if (user) {
     _explicitSignOut = false;
-    // Cancel any pending sign-out — this was a transient null (e.g. camera return)
     if (_pendingSignOut) { clearTimeout(_pendingSignOut); _pendingSignOut = null; }
-    // Read the camera-return flag BEFORE clearing it so initializeApp() can use it
     let _wasCameraReturn = false;
     try {
       const _cts = parseInt(localStorage.getItem("_cameraActive") || "0", 10);
@@ -9173,51 +9407,8 @@ auth.onAuthStateChanged(async (user) => {
       localStorage.removeItem("_cameraActive");
     } catch(e) {}
 
-    document.getElementById("authOverlay").style.display = "none";
-    const icon = document.getElementById("userEmailIcon");
-    const emailText = document.getElementById("userEmailText");
-    const guestBanner = document.getElementById("guestBanner");
-    const signInMenuItem = document.getElementById("accountMenuSignIn");
-
-    if (user.isAnonymous) {
-      icon.style.display = "none";
-      emailText.textContent = "Guest";
-      emailText.setAttribute("title", "Guest session — click to manage");
-      emailText.style.display = "inline";
-      guestBanner.style.display = "flex";
-      if (signInMenuItem) signInMenuItem.style.display = "";
-    } else if (user.photoURL) {
-      icon.src = user.photoURL;
-      icon.setAttribute("title", `Account (${user.email})`);
-      icon.style.display = "inline-block";
-      emailText.style.display = "none";
-      guestBanner.style.display = "none";
-      if (signInMenuItem) signInMenuItem.style.display = "none";
-    } else {
-      icon.style.display = "none";
-      emailText.textContent = user.email;
-      emailText.setAttribute("title", "Account");
-      emailText.style.display = "inline";
-      guestBanner.style.display = "none";
-      if (signInMenuItem) signInMenuItem.style.display = "none";
-    }
-
-    // If this is the same user already loaded, don't wipe and re-initialize
-    if (user.uid === _booksOwnedByUid) return;
-
-    catalogLoading = true;
-    _booksOwnedByUid = null; // reset until loadCatalogData sets it
-    books = [];
-    researchCache = {};
-    briefingAudioCache = {};
-    backupJobsCache = {};
-    briefingAudioUrls = {};
-    briefingAudioUrlErrors = {};
-    shelves = [];
-    pendingBriefingIds = [];
-    currentShelfId = "default";
-    await initializeApp(_wasCameraReturn);
-    subscribeToBackgroundUpdates(user.uid);
+    await applyAuthenticatedUi(user, _wasCameraReturn);
+    return;
 
   } else {
     if (_explicitSignOut) {
@@ -9226,17 +9417,12 @@ auth.onAuthStateChanged(async (user) => {
       _doSignOut();
       return;
     }
-    // user = null: could be transient (camera / background return) or a real logout.
-    // Check the camera flag FIRST so we can suppress visual changes during a
-    // camera return — the overlay pre-hid itself and we don't want the header
-    // icon to flicker either.
     const _cameraTs = (() => {
       try { return parseInt(localStorage.getItem("_cameraActive") || "0", 10); } catch(e) { return 0; }
     })();
     const _recentCamera = _cameraTs > 0 && (Date.now() - _cameraTs < 120000); // within 2 min
 
     if (!_recentCamera) {
-      // Not a camera return — hide the header identity indicators while auth resolves
       const icon = document.getElementById("userEmailIcon");
       const emailText = document.getElementById("userEmailText");
       icon.style.display = "none";
@@ -9245,8 +9431,6 @@ auth.onAuthStateChanged(async (user) => {
     }
 
     if (_booksOwnedByUid || _recentCamera) {
-      // Either a transient null after having a user (bfcache restore) or a camera-return
-      // full-reload where Firebase will re-authenticate from cached credentials.
       if (!_pendingSignOut) {
         _pendingSignOut = setTimeout(() => { _pendingSignOut = null; _doSignOut(); }, 8000);
       }
@@ -9255,6 +9439,14 @@ auth.onAuthStateChanged(async (user) => {
     }
   }
 });
+
+setTimeout(function () {
+  if (auth.currentUser) {
+    applyAuthenticatedUi(auth.currentUser, false).catch(function (error) {
+      console.error("[applyAuthenticatedUi bootstrap] failed:", error);
+    });
+  }
+}, 500);
 </script>
 </body>
 </html>

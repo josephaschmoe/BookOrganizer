@@ -28,9 +28,12 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
   - Daily generation limit (100 briefings/day) with admin override
 - **Audio Briefings** — Generate a narrated audio version of any briefing on demand:
   - Gemini 2.5 Pro writes a natural-language narration script from the briefing content; Gemini 2.5 Pro TTS synthesises it to speech and stores a WAV file in Firebase Storage
+  - Long scripts are automatically split into chunks for synthesis and concatenated into a single WAV; duration is calculated from the actual WAV header
+  - When Gemini 2.5 Pro TTS hits its daily rate limit, synthesis automatically falls back to Gemini 2.5 Flash TTS for the rest of the day. A notice appears when lower-quality audio was used, with a "Regenerate Higher Quality Audio" button once Pro TTS is available again
+  - After queuing audio, the app polls for completion and updates the panel automatically when ready
   - Three voice options: Kore, Puck, Charon
   - Fiction titles produce separate safe and spoiler-inclusive audio variants; spoiler audio requires confirmation before generating
-  - Audio metadata (voice, duration, status) is stored per book in `users/{uid}/briefingAudio/{bookId}`; the listen button appears automatically once audio is ready
+  - Audio metadata (voice, duration, status, TTS model used) is stored per book in `users/{uid}/briefingAudio/{bookId}`; the listen button appears automatically once audio is ready
   - Share links can optionally expose audio to viewers (per-share toggle; off by default)
 - **Duplicate Detection** — Adding a book with the same title and author as an existing entry shows a warning with an "Add Anyway" option, allowing legitimate multiple editions
 - **Guest Mode** — Try the full app without signing in; books are saved to Firestore under an anonymous account. Sign in with Google at any time to permanently link the library to your account
@@ -63,7 +66,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 | `resolveWikipediaArticles` — Wikipedia lookup fallback (authenticated users) | gemini-2.5-flash |
 | `resolveWikipediaArticlesShared` — Wikipedia lookup fallback (share viewers) | gemini-2.5-flash |
 | `generateBriefingAudio` / `processBriefingAudioJob` — narration script | gemini-2.5-pro |
-| `generateBriefingAudio` / `processBriefingAudioJob` — text-to-speech synthesis | gemini-2.5-pro-preview-tts |
+| `generateBriefingAudio` / `processBriefingAudioJob` — text-to-speech synthesis | gemini-2.5-pro-preview-tts (falls back to gemini-2.5-flash-preview-tts when daily rate-limited) |
 | `requestBackupExport` / `processBackupExportJob` — backup ZIP generation | — |
 
 ## Setup
@@ -114,8 +117,9 @@ Research briefings and photo lookup require API keys and a Firebase **Blaze (pay
 cd functions
 npm install
 cd ..
-firebase functions:secrets:set GEMINI_API_KEY       # Google Gemini — required for photo lookup, Wikipedia fallback, and audio briefings
-firebase functions:secrets:set PERPLEXITY_API_KEY   # Perplexity — required for all book briefings
+firebase functions:secrets:set GEMINI_API_KEY            # Google Gemini — required for photo lookup, Wikipedia fallback, and audio briefings
+firebase functions:secrets:set PERPLEXITY_API_KEY        # Perplexity — required for all book briefings
+firebase functions:secrets:set BRIEFING_ADMIN_PASSWORD   # Optional — password to bypass the daily briefing quota
 ```
 
 Get a Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey). Get a Perplexity API key at [platform.perplexity.ai](https://platform.perplexity.ai). The app works without these keys — briefings and photo lookup won't be available, but all other features continue to work.
