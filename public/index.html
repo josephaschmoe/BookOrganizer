@@ -1376,6 +1376,41 @@ const firebaseConfig = {
     border-radius: 2px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
+  .account-settings-modal {
+    width: 420px;
+    max-width: 95vw;
+    max-height: min(88vh, 760px);
+    overflow-y: auto;
+  }
+  .account-settings-section {
+    border-top: 1px solid var(--tan);
+    padding-top: 16px;
+    margin-top: 16px;
+  }
+  .account-settings-copy {
+    font-size: 0.82rem;
+    color: #666;
+    line-height: 1.5;
+  }
+  .admin-access-status {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--tan);
+    background: #f8f3ea;
+    border-radius: 2px;
+    font-size: 0.82rem;
+    color: var(--ink);
+  }
+  .admin-access-status.warning {
+    border-color: #c8a4a4;
+    background: #fbefef;
+    color: var(--red);
+  }
+  .admin-access-status.success {
+    border-color: #b6d1bf;
+    background: #eef7f1;
+    color: var(--green);
+  }
 
   .modal h3 {
     font-family: 'Playfair Display', serif;
@@ -2780,7 +2815,7 @@ const firebaseConfig = {
 <header>
   <img class="header-logo" src="TomeShelf-Logo.png" alt="TomeShelf" onclick="openAbout()" title="About TomeShelf" style="cursor:pointer;">
   <h1>TomeShelf</h1>
-  <span class="count-badge" id="countBadge">0 tomes</span>
+  <span class="count-badge" id="countBadge">0 books</span>
   <div class="header-user account-menu-wrap">
     <img id="userEmailIcon" src="" alt="Account" referrerpolicy="no-referrer" onclick="toggleAccountMenu()">
     <span id="userEmailText" onclick="toggleAccountMenu()"></span>
@@ -2832,15 +2867,15 @@ const firebaseConfig = {
               <div class="chooser-copy">Use a photo, scan a barcode, or enter an ISBN to pull in metadata quickly.</div>
               <div class="chooser-kicker">Fastest for one book</div>
             </button>
-            <button class="chooser-card" type="button" data-chooser-tab="manual" onclick="chooseAddFlow('manual')">
-              <div class="chooser-title">Type It In</div>
-              <div class="chooser-copy">Search by title and author, then fill anything the databases miss yourself.</div>
-              <div class="chooser-kicker">Best for obscure edits</div>
-            </button>
             <button class="chooser-card" type="button" data-chooser-tab="bulk" onclick="chooseAddFlow('bulk')">
               <div class="chooser-title">Add Many Books</div>
               <div class="chooser-copy">Choose the right multi-book workflow for shelves, batches of photos, or text lists.</div>
               <div class="chooser-kicker">Bookshelf, batch, or text</div>
+            </button>
+            <button class="chooser-card" type="button" data-chooser-tab="manual" onclick="chooseAddFlow('manual')">
+              <div class="chooser-title">Type It In</div>
+              <div class="chooser-copy">Search by title and author, then fill anything the databases miss yourself.</div>
+              <div class="chooser-kicker">Best for obscure edits</div>
             </button>
           </div>
           <div class="tabs" style="display:none;">
@@ -3167,8 +3202,9 @@ const firebaseConfig = {
     </div>
     <div class="catalog-toolbar">
       <input class="search-input" id="searchInput" type="text" placeholder="Search titles, authors, subjects, notes..." oninput="renderCatalog()">
-      <select class="sort-select" id="sortSelect" onchange="renderCatalog()">
+      <select class="sort-select" id="sortSelect" onchange="handleSortChange()">
         <option value="added">Recently added</option>
+        <option value="custom">Custom order</option>
         <option value="title">Title A-Z</option>
         <option value="author">Author A-Z</option>
         <option value="year">Year</option>
@@ -3202,6 +3238,8 @@ const firebaseConfig = {
       <span id="selectionCount" class="selection-count"></span>
       <div class="selection-bar-actions">
         <button class="selection-bar-btn" type="button" onclick="selectAllVisible()">All</button>
+        <button class="selection-bar-btn" id="moveUpBtn" type="button" onclick="moveSelectedBooksUp()" style="display:none;">Up</button>
+        <button class="selection-bar-btn" id="moveDownBtn" type="button" onclick="moveSelectedBooksDown()" style="display:none;">Down</button>
         <div class="move-menu-wrap">
           <button class="selection-bar-btn" id="moveToBtn" type="button" onclick="toggleMoveMenu()">Move to &#9663;</button>
           <div class="move-menu" id="moveMenu" style="display:none;"></div>
@@ -3278,7 +3316,7 @@ const firebaseConfig = {
       <p class="about-tagline">Your personal library, beautifully organized.</p>
     </div>
     <div class="about-body">
-      <p class="about-intro">TomeShelf transforms your book collection into a living, searchable catalog — with AI-powered identification, named shelves, automatically generated research briefings, and shareable read-only links so you can show off your collection without giving anyone access to your account.</p>
+      <p class="about-intro">TomeShelf transforms your book collection into a living, searchable catalog — helping you identify books, organize them into named shelves, generate rich research briefings automatically, and share your collection without giving anyone access to your account.</p>
 
       <div class="about-section-title">Features</div>
       <div class="about-features">
@@ -3300,28 +3338,14 @@ const firebaseConfig = {
           <div class="about-feature-icon">&#128248;</div>
           <div>
             <strong>Bulk Load</strong>
-            <p>Photograph an entire bookshelf, upload up to 20 individual book photos, or capture any text listing books — an article, reading list, or bibliography. Review and correct matches before adding.</p>
+            <p>Photograph an entire bookshelf, upload up to 20 individual book photos, or capture any text listing books. Review and correct matches before adding, so you stay in control.</p>
           </div>
         </div>
         <div class="about-feature">
           <div class="about-feature-icon">&#128214;</div>
           <div>
-            <strong>TomeShelves</strong>
-            <p>Organise your catalog into named shelves — Reading List, Cookbooks, Borrowed Books, or whatever fits your life. Select multiple books at once to move or remove them in bulk.</p>
-          </div>
-        </div>
-        <div class="about-feature">
-          <div class="about-feature-icon">&#128270;</div>
-          <div>
-            <strong>Auto-Generated Briefings</strong>
-            <p>Rich, college-level discussion guides appear automatically as you add books — themes, historical context, literary analysis, and discussion questions. Fiction briefings include a spoiler&#47;safe toggle.</p>
-          </div>
-        </div>
-        <div class="about-feature">
-          <div class="about-feature-icon">&#127758;</div>
-          <div>
-            <strong>Wikipedia Lookup</strong>
-            <p>One tap to view the Wikipedia article for any book or its author in a clean in-app modal. A two-pass strategy — direct REST lookup first, AI-assisted if needed — maximises coverage.</p>
+            <strong>Shelves</strong>
+            <p>Organize your catalog into named shelves — Reading List, Cookbooks, Borrowed Books, or whatever fits your life. Select multiple books at once to move or remove them in bulk.</p>
           </div>
         </div>
         <div class="about-feature">
@@ -3332,10 +3356,52 @@ const firebaseConfig = {
           </div>
         </div>
         <div class="about-feature">
+          <div class="about-feature-icon">&#128270;</div>
+          <div>
+            <strong>Auto-Generated Briefings</strong>
+            <p>Rich, college-level discussion guides appear automatically as you add books — themes, historical context, literary analysis, and discussion questions. Fiction briefings include a spoiler&#47;safe toggle.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#127911;</div>
+          <div>
+            <strong>Audio Briefings</strong>
+            <p>Listen to a narrated version of any briefing on demand, with multiple voice options. Fiction titles can offer both spoiler-safe and spoiler-inclusive audio versions.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#127758;</div>
+          <div>
+            <strong>Wikipedia Lookup</strong>
+            <p>One tap opens the Wikipedia article for any book or its author in a clean in-app modal. TomeShelf first looks for a direct match, then uses AI when needed to find the most relevant page.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128444;</div>
+          <div>
+            <strong>Cover Search</strong>
+            <p>Add or replace cover images by uploading your own photo or searching online. Preview options in a full lightbox before choosing the best match for your copy.</p>
+          </div>
+        </div>
+        <div class="about-feature">
           <div class="about-feature-icon">&#128279;</div>
           <div>
             <strong>Share Your Shelves</strong>
-            <p>Generate a read-only link for any shelf — viewers need no account. Control whether your personal notes and AI Wikipedia lookups are included. Revoke at any time.</p>
+            <p>Generate a read-only link for any shelf — viewers need no account. Control whether personal notes, Wikipedia lookup, and audio briefings are included. Revoke access at any time.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#9729;</div>
+          <div>
+            <strong>Cloud Sync</strong>
+            <p>Your catalog, shelves, and briefings stay in sync across devices, so updates appear automatically wherever you use TomeShelf.</p>
+          </div>
+        </div>
+        <div class="about-feature">
+          <div class="about-feature-icon">&#128682;</div>
+          <div>
+            <strong>Guest Mode</strong>
+            <p>Try TomeShelf without creating an account. Sign in later to permanently keep your library.</p>
           </div>
         </div>
         <div class="about-feature">
@@ -3367,39 +3433,53 @@ const firebaseConfig = {
 
       <div class="about-more-section-title">Adding Books</div>
       <ul class="about-more-list">
-        <li><strong>Barcode scanning</strong> — point your camera at any ISBN barcode; title, author, cover art, and publication details fill in instantly via the native BarcodeDetector API (html5-qrcode fallback for older browsers)</li>
-        <li><strong>AI Photo Identification</strong> — photograph up to 3 images of a cover, spine, title page, or copyright page; Gemini extracts all visible metadata; Open Library and Google Books are searched for a match; multiple candidates shown with thumbnails and a confidence score</li>
-        <li><strong>Bulk Load: Books</strong> — photograph a whole bookshelf or stack; AI reads every visible spine and cover; review a ✓&#47;✗ card list before anything is added; manual correction fallback for unmatched titles</li>
-        <li><strong>Bulk Load: Batch Photos</strong> — select up to 20 separate book photos at once; each image is treated as one book, reviewed before adding, and can keep either the found cover or your uploaded photo</li>
-        <li><strong>Bulk Load: Titles in Text</strong> — photograph an article, reading list, bibliography, or any text mentioning books; AI extracts every title found</li>
-        <li><strong>Cover Search</strong> — search Open Library and Google Books by title; results shown as a thumbnail grid; tap to preview full-size in a lightbox, then apply with one tap</li>
-        <li><strong>&#8220;Try Broader Search&#8221;</strong> — a button that relaxes field-level query operators when initial results don&#8217;t match</li>
+        <li><strong>Barcode scanning</strong> — scan ISBN barcodes with your phone camera; falls back to <code>html5-qrcode</code> on browsers without native <code>BarcodeDetector</code> support</li>
+        <li><strong>Photo Book Lookup</strong> — photograph a book&apos;s cover, spine, title page, or copyright page with up to 3 images; also accepts a photo of any text mentioning the book. Gemini extracts metadata, then searches Open Library and Google Books to confirm and fill in details</li>
+        <li><strong>Alternate candidates</strong> — when multiple candidates are found, all are shown with cover thumbnails; selecting an alternate candidate swaps it to the top while keeping the previous pick accessible</li>
+        <li><strong>Bulk Load: Books</strong> — photograph a bookshelf, stack of covers, or any group of books; AI reads every visible spine and cover; review a ✓&#47;✗ card list before anything is added; includes a second-pass cover photo step and manual correction fallback for unmatched titles</li>
+        <li><strong>Bulk Load: Batch Photos</strong> — select up to 20 individual book photos at once; each image is treated as one book; AI identifies each independently; alternate search candidates are shown per item; long-press the cover thumbnail to choose between the book photo and API cover art; manual correction fallback for unmatched items</li>
+        <li><strong>Bulk Load: Titles in Text</strong> — photograph an article, reading list, or bibliography; AI extracts every book title mentioned in the text</li>
+        <li><strong>Cover Images</strong> — finds covers via Open Library and Google Books across all entry methods, with automatic API key rotation when daily quota is reached</li>
+        <li><strong>Cover Search</strong> — when adding or replacing a cover, choose to upload a photo or search online; results appear as a thumbnail grid, open in a full lightbox preview, and apply with one tap</li>
+        <li><strong>Search Results</strong> — cover thumbnails appear inline in all search result lists; &#8220;Try Broader Search&#8221; relaxes field-level query operators when initial results don&#8217;t match; each candidate shows a plain-language match-quality cue so you can quickly judge it</li>
       </ul>
 
       <div class="about-more-section-title">Managing Your Library</div>
       <ul class="about-more-list">
-        <li><strong>TomeShelves</strong> — create and name as many shelves as you like; rename or delete at any time; last-viewed shelf restored on next open</li>
-        <li><strong>Multi-book selection</strong> — select any or all books on a shelf; move or delete in bulk with confirmation</li>
-        <li><strong>Full catalog fields</strong> — title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading notes, and personal notes</li>
+        <li><strong>Shelves</strong> — organize books into multiple named shelves; create, rename, and delete shelves; last-viewed shelf restored on next open</li>
+        <li><strong>Multi-book selection</strong> — select any or all books on a shelf; move the selection to another shelf or delete in bulk with confirmation; deleted books can be immediately restored via an Undo button in the confirmation toast</li>
+        <li><strong>Full catalog fields</strong> — title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading status, dates, rating, and notes</li>
         <li><strong>Search, sort &amp; filter</strong> — search by any field; filter by reading status, condition, or shelf; sort by title, author, year, rating, or recently added</li>
-        <li><strong>Duplicate detection</strong> — adding a book with an identical title and author shows a warning; &#8220;Add Anyway&#8221; allows legitimate multiple editions</li>
+        <li><strong>Duplicate detection</strong> — adding a book with the same title and author as an existing entry shows a warning with an &#8220;Add Anyway&#8221; option, allowing legitimate multiple editions</li>
       </ul>
 
       <div class="about-more-section-title">AI Research Briefings</div>
       <ul class="about-more-list">
         <li>Generated <strong>automatically in the background</strong> as you add books — no manual action needed; briefings appear in real time</li>
-        <li>Small batches (&#8804; 25 books) generate immediately via a background trigger; larger batches queue for a scheduled function running every 2 hours</li>
-        <li>Book briefings use <strong>Perplexity Sonar Pro</strong> with web-grounded verification and structured output for fiction, non-fiction, and reference books</li>
-        <li>Coverage per book: genre, quick take, major themes, historical context, impact, literary analysis, and discussion questions</li>
-        <li><strong>Fiction</strong> briefings include spoiler and spoiler-free versions of summaries, character notes, and discussion questions — toggle with one tap</li>
-        <li>A <strong>Regenerate</strong> button appears only when a book&#8217;s existing briefing was produced by an older or less appropriate model</li>
+        <li>Small batches (&#8804; 25 books) generate immediately via a Firestore trigger; larger batches are queued for a scheduled function that runs every 2 hours</li>
+        <li>All briefings use <strong>Perplexity Sonar Pro</strong> with web-grounded verification and structured output</li>
+        <li>Supports three genre modes: <strong>fiction</strong> (spoiler-free by default — plot&#47;characters&#47;analysis&#47;discussion questions), <strong>non-fiction</strong> (themes&#47;key concepts&#47;analysis&#47;takeaways), and <strong>reference</strong> (editorial approach&#47;contents overview&#47;production notes&#47;notable features&#47;ideal-for)</li>
+        <li>The <strong>Regenerate</strong> button appears only when a book&#8217;s existing briefing was generated by an older or less appropriate model</li>
+        <li>Daily generation limit: 100 briefings per day, with admin override</li>
+      </ul>
+
+      <div class="about-more-section-title">Audio Briefings</div>
+      <ul class="about-more-list">
+        <li>Generate a narrated audio version of any briefing on demand</li>
+        <li>Gemini 2.5 Pro writes a natural-language narration script from the briefing content; Gemini 2.5 Pro TTS synthesizes it to speech and stores a WAV file in Firebase Storage</li>
+        <li>Long scripts are automatically split into chunks for synthesis and concatenated into a single WAV; duration is calculated from the actual WAV header</li>
+        <li>When Gemini 2.5 Pro TTS hits its daily rate limit, synthesis automatically falls back to Gemini 2.5 Flash TTS for the rest of the day. A notice appears when lower-quality audio was used, with a &#8220;Regenerate Higher Quality Audio&#8221; button once Pro TTS is available again</li>
+        <li>After queuing audio, the app polls for completion and updates the panel automatically when ready</li>
+        <li>Three voice options: Kore, Puck, Charon</li>
+        <li>Fiction titles produce separate safe and spoiler-inclusive audio variants; spoiler audio requires confirmation before generating</li>
+        <li>Audio metadata (voice, duration, status, TTS model used) is stored per book; the listen button appears automatically once audio is ready</li>
       </ul>
 
       <div class="about-more-section-title">Wikipedia Lookup</div>
       <ul class="about-more-list">
         <li>Available on every book&#8217;s detail page — one tap opens an in-app modal showing the article summary, thumbnail, and Wikidata description</li>
         <li><strong>Pass A</strong> — direct Wikipedia REST lookup verified against the book type and author name; fast, no AI cost</li>
-        <li><strong>Pass B</strong> — if Pass A finds nothing, a Gemini Cloud Function identifies the exact Wikipedia article title for the book and for its author</li>
+        <li><strong>Pass B</strong> — if Pass A finds nothing, a Gemini Cloud Function identifies the exact Wikipedia article title for the book and author</li>
         <li>Shows the book&#8217;s article when one exists; falls back to the author&#8217;s article with a notice; offers a &#8220;Search Wikipedia&#8221; link if neither is found</li>
         <li>Pass B is <strong>opt-in when sharing</strong> — shelf owners choose whether viewers can trigger AI Wikipedia lookup</li>
       </ul>
@@ -3408,10 +3488,12 @@ const firebaseConfig = {
       <ul class="about-more-list">
         <li>Generate a <strong>public, read-only share link</strong> for any shelf — viewers need no account or sign-in</li>
         <li>One active link per shelf at a time; any number of people can use the same link simultaneously</li>
-        <li>Per-share controls: include personal notes (off by default); enable AI-powered Wikipedia lookups for viewers</li>
+        <li>Per-share controls: include personal notes (off by default), enable AI-powered Wikipedia lookup for viewers, and enable audio briefings for viewers</li>
         <li>Viewers can browse books, read briefings, view Wikipedia articles, and navigate the shelf — but cannot edit, add, or remove anything</li>
         <li>Revoke links from the shelf&#8217;s Share button or from Account Settings at any time</li>
-        <li>All active share links visible and manageable from Account Settings in one place</li>
+        <li>All active share links are visible and manageable from Account Settings in one place</li>
+        <li>The shared detail panel has an expand toggle for a wider reading view; state persists</li>
+        <li>Cover lightbox automatically attempts a higher-resolution Google Books image before falling back to the original</li>
       </ul>
 
       <div class="about-more-section-title">Reading Tracker</div>
@@ -3423,24 +3505,25 @@ const firebaseConfig = {
 
       <div class="about-more-section-title">Import &amp; Export</div>
       <ul class="about-more-list">
-        <li><strong>Export</strong> — full JSON backup or flat CSV, available from Account Settings</li>
-        <li><strong>Import</strong> — JSON backup, this app&#8217;s own CSV format, or a <strong>Goodreads export CSV</strong></li>
-        <li>Goodreads imports are automatically enriched — cover art and full metadata fetched from Open Library and Google Books</li>
+        <li><strong>Export</strong> — full backup ZIP (catalog + covers), JSON, or CSV</li>
+        <li><strong>Import</strong> — ZIP, JSON, this app&#8217;s CSV, or a <strong>Goodreads export CSV</strong></li>
+        <li>Goodreads and backup imports are automatically enriched from Open Library and Google Books when metadata or covers are available</li>
       </ul>
 
       <div class="about-more-section-title">Cloud &amp; Account</div>
       <ul class="about-more-list">
-        <li>Entire catalog and briefing cache synced to <strong>Cloud Firestore</strong> per account, isolated per user, in real time</li>
-        <li>Background-generated briefings appear instantly without a page reload</li>
-        <li><strong>Guest Mode</strong> — full functionality without signing in; books saved to an anonymous Firestore account; sign in with Google at any time to permanently keep your library</li>
-        <li>Account Settings — export a JSON backup, or permanently delete your account and all associated data</li>
+        <li>Catalog and briefing cache are stored in <strong>Cloud Firestore</strong>, isolated per account, with real-time sync</li>
+        <li>Background-generated briefings appear automatically without a page reload</li>
+        <li><strong>Guest Mode</strong> — full functionality without signing in; books are saved to Firestore under an anonymous account; sign in with Google at any time to permanently link the library to your account</li>
+        <li><strong>Account Settings</strong> — export a full backup ZIP (catalog JSON + all cover images) or permanently delete your account and all associated data; the Backups section shows job history with download links for completed exports</li>
         <li>Active shelf selection and sort preferences remembered across sessions</li>
       </ul>
 
-      <div class="about-more-section-title">Design &amp; Mobile</div>
+      <div class="about-more-section-title">Design &amp; Layout</div>
       <ul class="about-more-list">
-        <li><strong>Vintage parchment aesthetic</strong> — warm creams, golds, and ink tones; Playfair Display headings, EB Garamond body, Courier Prime labels</li>
-        <li><strong>Mobile-first</strong> — bottom navigation bar on phones, full three-column layout on desktop, hardware back-button support, safe-area insets for notched phones</li>
+        <li><strong>Desktop layout</strong> — three-column layout with a collapsible Add panel and an expandable Briefing panel; states persist across sessions; compact UI mode hides helper text for a denser view</li>
+        <li><strong>Mobile-first</strong> — bottom navigation bar on phones, hardware back-button support, and safe-area insets for iPhone home bar and other notched phones</li>
+        <li><strong>Vintage design</strong> — parchment-toned palette with Playfair Display, EB Garamond, and Courier Prime typefaces</li>
         <li>No installation required — runs in any modern browser; no app download, no extensions</li>
       </ul>
 
@@ -3483,7 +3566,7 @@ const firebaseConfig = {
 
 <div class="modal-overlay" id="shelvesModal" onclick="closeShelvesModal(event)">
   <div class="modal shelves-modal" onclick="event.stopPropagation()">
-    <h3>TomeShelves</h3>
+    <h3>Shelves</h3>
     <div id="shelvesList"></div>
     <div class="shelves-new-shelf-row">
       <button class="btn btn-secondary btn-sm" type="button" onclick="createShelf()">+ New Shelf</button>
@@ -3505,7 +3588,7 @@ const firebaseConfig = {
 </div>
 
 <div class="modal-overlay" id="accountSettingsModal" onclick="closeAccountSettings(event)">
-  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
+  <div class="modal account-settings-modal" onclick="event.stopPropagation()">
     <h3 style="margin-bottom:8px;">Account Settings</h3>
     <p id="accountSettingsEmail" style="font-family:'Courier Prime',monospace;font-size:0.82rem;color:var(--brown);margin-bottom:20px;"></p>
     <div style="border-top:1px solid var(--tan);padding-top:16px;margin-bottom:16px;">
@@ -3531,7 +3614,7 @@ const firebaseConfig = {
         </button>
       </div>
       <div style="border-top:1px solid var(--tan);padding-top:14px;">
-        <p style="font-size:0.82rem;color:#666;margin-bottom:12px;line-height:1.5;">Export a backup of your current guest library before signing in.</p>
+        <p class="account-settings-copy" style="margin-bottom:12px;">Export a backup of your current guest library before signing in.</p>
         <button class="btn btn-light btn-sm" type="button" onclick="exportJSON()" style="width:100%;">
           Export Backup ZIP
         </button>
@@ -3539,9 +3622,23 @@ const firebaseConfig = {
     </div>
 
     <!-- Signed-in section — shown for Google users -->
-    <div id="accountSettingsUserSection" style="border-top:1px solid var(--tan);padding-top:16px;">
+    <div id="accountSettingsUserSection" class="account-settings-section">
+      <p style="font-size:0.88rem;color:var(--ink);margin-bottom:12px;"><strong>Administrative Access</strong></p>
+      <p class="account-settings-copy">
+        Administrative Access enables unlimited manual briefing regeneration and access to Gemini 2.5 Pro TTS when it is still available for the day.
+      </p>
+      <div id="adminAccessStatus" class="admin-access-status" style="display:none;"></div>
+      <div class="modal-actions" style="margin-top:12px;justify-content:flex-start;flex-wrap:wrap;">
+        <button class="btn btn-light btn-sm" type="button" id="adminAccessRefreshBtn" onclick="promptForAdminAccess()">Enter Administrative Access</button>
+        <button class="btn btn-light btn-sm" type="button" id="adminAccessToggleBtn" onclick="toggleAdministrativeAccess()" style="display:none;">Disable Administrative Access</button>
+        <button class="btn btn-light btn-sm" type="button" id="adminAccessInfoBtn" onclick="openAdminAccessInfoModal()" style="display:none;">What This Grants</button>
+        <button class="btn btn-danger btn-sm" type="button" id="adminAccessRemoveBtn" onclick="removeAdministrativeAccess()" style="display:none;">Remove Administrative Access</button>
+      </div>
+    </div>
+
+    <div id="accountSettingsDeleteSection" class="account-settings-section">
       <p style="font-size:0.88rem;color:var(--ink);margin-bottom:12px;"><strong>Delete Account &amp; All Data</strong></p>
-      <p style="font-size:0.82rem;color:#666;margin-bottom:16px;line-height:1.5;">
+      <p class="account-settings-copy" style="margin-bottom:16px;">
         This permanently deletes your TomeShelf account, all books, all shelves, all research briefings, and all cover images. This cannot be undone.
       </p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -3556,19 +3653,38 @@ const firebaseConfig = {
     </div>
 
     <!-- Shared Shelves section — shown for signed-in non-guest users -->
-    <div id="accountSettingsBackupsSection" style="display:none;border-top:1px solid var(--tan);padding-top:16px;margin-top:16px;">
+    <div id="accountSettingsBackupsSection" class="account-settings-section" style="display:none;">
       <p style="font-size:0.88rem;color:var(--ink);margin-bottom:10px;"><strong>Backups</strong></p>
       <div id="backupJobsList"></div>
     </div>
 
     <!-- Shared Shelves section — shown for signed-in non-guest users -->
-    <div id="accountSettingsShareSection" style="display:none;border-top:1px solid var(--tan);padding-top:16px;margin-top:16px;">
+    <div id="accountSettingsShareSection" class="account-settings-section" style="display:none;">
       <p style="font-size:0.88rem;color:var(--ink);margin-bottom:10px;"><strong>Shared Shelves</strong></p>
       <div id="sharedShelvesList"></div>
     </div>
 
     <div class="modal-actions" style="margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-light" type="button" onclick="closeAccountSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="adminAccessInfoModal" onclick="closeAdminAccessInfoModal(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
+    <h3 style="margin-bottom:10px;">Administrative Access</h3>
+    <p class="account-settings-copy" style="margin-bottom:12px;">
+      Administrative Access currently unlocks two things for your account:
+    </p>
+    <ul class="about-more-list" style="margin-bottom:12px;">
+      <li>Manual briefing regeneration even after the normal daily briefing limit is reached</li>
+      <li>Gemini 2.5 Pro TTS for briefing audio while Pro TTS is still available for the day</li>
+    </ul>
+    <p class="account-settings-copy">
+      If the backend admin password is rotated, this access becomes stale and needs to be entered again.
+    </p>
+    <div class="modal-actions" style="margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-light" type="button" onclick="closeAdminAccessInfoModal()">Close</button>
     </div>
   </div>
 </div>
@@ -3588,10 +3704,12 @@ const firebaseConfig = {
     <div id="html5qrScanRegion" style="display:none;"></div>
     <div class="helper-text" id="scanStatus">Point the camera at an ISBN barcode on the spine or back cover.</div>
     <div class="modal-actions">
+      <button class="btn btn-secondary" type="button" onclick="startBarcodePhotoFallback()">Photo Instead</button>
       <button class="btn btn-light" type="button" onclick="closeCamera()">Cancel</button>
     </div>
   </div>
 </div>
+<input type="file" id="barcodePhotoInput" accept="image/*" capture="environment" style="display:none" onchange="handleBarcodePhotoSelection(this)">
 
 <script>
 let books = [];
@@ -3618,6 +3736,12 @@ let selectedBookId = null;
 let researchRequestInFlight = false;
 let briefingAudioPollState = {};
 let briefingAudioProAvailableToday = false;
+let adminAccessState = {
+  hasStoredAdminAccess: false,
+  adminAccessValid: false,
+  adminAccessDisabled: false,
+  adminAccessStale: false
+};
 let editingBookId = null;
 let _filteredBookIds = [];
 let pendingCoverBlob = null;
@@ -3669,9 +3793,6 @@ let briefingAudioRequestInFlight = false;
 let briefingAudioUrls = {};
 let briefingAudioUrlErrors = {};
 const AUDIO_GENERATING_STALE_MS = 20 * 60 * 1000;
-let briefingAdminOverrideSession = false;
-let briefingAdminOverrideSessionId = "";
-restoreBriefingAdminOverrideSession();
 
 function safeLoad(key, fallback) {
   try {
@@ -3934,6 +4055,7 @@ function cancelEdit() {
 function normalizeBook(book) {
   const source = book && typeof book === "object" ? book : {};
   const ratingValue = Number(source.rating);
+  const customOrderValue = Number(source.customOrder);
 
   return {
     ...source,
@@ -3943,8 +4065,90 @@ function normalizeBook(book) {
     startDate: normalizeDateInput(source.startDate),
     finishDate: normalizeDateInput(source.finishDate),
     rating: ratingValue >= 1 && ratingValue <= 5 ? ratingValue : 0,
-    listShelfId: source.listShelfId || "default"
+    listShelfId: source.listShelfId || "default",
+    customOrder: Number.isFinite(customOrderValue) ? customOrderValue : null
   };
+}
+
+function hasCustomOrder(book) {
+  return Number.isFinite(Number(book && book.customOrder));
+}
+
+function compareBooksByCustomOrder(a, b) {
+  const aHas = hasCustomOrder(a);
+  const bHas = hasCustomOrder(b);
+  if (aHas && bHas) {
+    const diff = Number(a.customOrder) - Number(b.customOrder);
+    if (diff !== 0) return diff;
+  } else if (aHas !== bHas) {
+    return aHas ? -1 : 1;
+  }
+  const addedDiff = Number(b.addedAt || 0) - Number(a.addedAt || 0);
+  if (addedDiff !== 0) return addedDiff;
+  return (a.title || "").localeCompare(b.title || "");
+}
+
+function compareBooksBySort(a, b, sort) {
+  if (sort === "title") {
+    return (a.title || "").localeCompare(b.title || "");
+  }
+  if (sort === "author") {
+    return (a.author || "").localeCompare(b.author || "");
+  }
+  if (sort === "year") {
+    return Number(b.year || 0) - Number(a.year || 0);
+  }
+  if (sort === "rating") {
+    return Number(b.rating || 0) - Number(a.rating || 0);
+  }
+  if (sort === "custom") {
+    return compareBooksByCustomOrder(a, b);
+  }
+  return Number(b.addedAt || 0) - Number(a.addedAt || 0);
+}
+
+function getShelfBooks(shelfId) {
+  return books.filter(function(book) {
+    return (book.listShelfId || "default") === shelfId;
+  });
+}
+
+function getShelfBooksSorted(shelfId, sort) {
+  return getShelfBooks(shelfId).slice().sort(function(a, b) {
+    return compareBooksBySort(a, b, sort);
+  });
+}
+
+function getNextCustomOrderForShelf(shelfId) {
+  return getShelfBooks(shelfId).reduce(function(max, book) {
+    return hasCustomOrder(book) ? Math.max(max, Number(book.customOrder)) : max;
+  }, -1) + 1;
+}
+
+function reindexShelfCustomOrder(shelfId, orderedBooks) {
+  const list = Array.isArray(orderedBooks) ? orderedBooks : getShelfBooksSorted(shelfId, "custom");
+  list.forEach(function(book, index) {
+    book.customOrder = index;
+  });
+}
+
+function ensureShelfCustomOrderInitialized(shelfId) {
+  const ordered = getShelfBooksSorted(shelfId, "custom");
+  reindexShelfCustomOrder(shelfId, ordered);
+  return ordered;
+}
+
+function getSelectedBooksInDisplayOrder() {
+  const orderedIds = _filteredBookIds.filter(function(id) { return selectedBookIds.has(id); });
+  if (orderedIds.length) {
+    return orderedIds.map(function(id) { return findBook(id); }).filter(Boolean);
+  }
+  return [...selectedBookIds].map(function(id) { return findBook(id); }).filter(Boolean);
+}
+
+function handleSortChange() {
+  renderCatalog();
+  updateSelectionBar();
 }
 
 function normalizeReadingStatus(value) {
@@ -4208,17 +4412,37 @@ window.addEventListener("resize", function() {
 async function loadApiConfig() {
   researchEnabled = Boolean(auth.currentUser);
   briefingAudioProAvailableToday = false;
+  adminAccessState = {
+    hasStoredAdminAccess: false,
+    adminAccessValid: false,
+    adminAccessDisabled: false,
+    adminAccessStale: false
+  };
   if (!researchEnabled) {
     setResearchStatus("Sign in to enable book briefings.", "error");
   } else {
     try {
       const result = await functions.httpsCallable("getBriefingAudioTtsStatus")({});
       briefingAudioProAvailableToday = Boolean(result.data && result.data.proAvailableToday);
+      adminAccessState = {
+        hasStoredAdminAccess: Boolean(result.data && result.data.hasStoredAdminAccess),
+        adminAccessValid: Boolean(result.data && result.data.adminAccessValid),
+        adminAccessDisabled: Boolean(result.data && result.data.adminAccessDisabled),
+        adminAccessStale: Boolean(result.data && result.data.adminAccessStale)
+      };
     } catch (error) {
       console.warn("[loadApiConfig] briefing audio TTS status unavailable:", error);
     }
     setResearchStatus("", "");
   }
+}
+
+function isAdminAccessTemporarilyDisabled(state) {
+  const next = state || adminAccessState || {};
+  return Boolean(
+    next.adminAccessDisabled ||
+    (next.hasStoredAdminAccess && !next.adminAccessValid && !next.adminAccessStale)
+  );
 }
 
 async function lookupISBN(isbn) {
@@ -4585,9 +4809,16 @@ async function addBook() {
   book.finishDate = normalizeDateInput(finishDate);
   book.personalNotes = personalNotes;
   book.rating = rating >= 1 && rating <= 5 ? rating : 0;
-  book.listShelfId = document.getElementById("bookListShelfId").value || currentShelfId;
+  const nextShelfId = document.getElementById("bookListShelfId").value || currentShelfId;
+  const previousShelfId = editingBook ? (editingBook.listShelfId || "default") : null;
+  book.listShelfId = nextShelfId;
   book.addedAt = editingBook ? editingBook.addedAt : Date.now();
   book.id = editingBook ? editingBook.id : Math.random().toString(36).slice(2);
+  if (!editingBook) {
+    book.customOrder = getNextCustomOrderForShelf(nextShelfId);
+  } else if (previousShelfId !== nextShelfId) {
+    book.customOrder = getNextCustomOrderForShelf(nextShelfId);
+  }
   book = normalizeBook(book);
 
   if (editingBookId) {
@@ -4706,7 +4937,7 @@ function renderCatalog() {
   const query = document.getElementById("searchInput").value.toLowerCase().trim();
   const sort = document.getElementById("sortSelect").value;
 
-  const shelfBooks = books.filter(b => (b.listShelfId || "default") === currentShelfId);
+  const shelfBooks = getShelfBooks(currentShelfId);
 
   let list = shelfBooks.filter((book) => {
     if (filterStatus && book.readingStatus !== filterStatus) {
@@ -4720,21 +4951,7 @@ function renderCatalog() {
       .some((value) => String(value).toLowerCase().includes(query));
   });
 
-  list = [...list].sort((a, b) => {
-    if (sort === "title") {
-      return (a.title || "").localeCompare(b.title || "");
-    }
-    if (sort === "author") {
-      return (a.author || "").localeCompare(b.author || "");
-    }
-    if (sort === "year") {
-      return Number(b.year || 0) - Number(a.year || 0);
-    }
-    if (sort === "rating") {
-      return Number(b.rating || 0) - Number(a.rating || 0);
-    }
-    return Number(b.addedAt || 0) - Number(a.addedAt || 0);
-  });
+  list = [...list].sort((a, b) => compareBooksBySort(a, b, sort));
 
   renderStats();
 
@@ -4847,6 +5064,9 @@ function updateSelectionBar() {
   // Show/hide Move to button: only useful when there are other shelves
   const otherShelves = shelves.filter(s => s.id !== currentShelfId);
   document.getElementById("moveToBtn").style.display = otherShelves.length ? "" : "none";
+  const customSortActive = document.getElementById("sortSelect").value === "custom";
+  document.getElementById("moveUpBtn").style.display = customSortActive ? "" : "none";
+  document.getElementById("moveDownBtn").style.display = customSortActive ? "" : "none";
 }
 
 function selectAllVisible() {
@@ -4874,17 +5094,59 @@ function closeMoveMenu() {
 }
 
 async function moveSelectedBooks(targetShelfId) {
-  const ids = [...selectedBookIds];
-  if (!ids.length) return;
+  const orderedSelection = getSelectedBooksInDisplayOrder();
+  if (!orderedSelection.length) return;
   const targetShelf = shelves.find(s => s.id === targetShelfId);
-  ids.forEach(id => {
-    const book = findBook(id);
-    if (book) book.listShelfId = targetShelfId;
+  let nextCustomOrder = getNextCustomOrderForShelf(targetShelfId);
+  orderedSelection.forEach(function(book) {
+    book.listShelfId = targetShelfId;
+    book.customOrder = nextCustomOrder++;
   });
   await persistCatalog();
   const name = targetShelf ? targetShelf.name : "shelf";
   exitSelectionMode();
-  showToast(`${ids.length} book${ids.length === 1 ? "" : "s"} moved to ${name}`);
+  showToast(`${orderedSelection.length} book${orderedSelection.length === 1 ? "" : "s"} moved to ${name}`);
+}
+
+async function moveSelectedBooksUp() {
+  await moveSelectedBooksByDirection(-1);
+}
+
+async function moveSelectedBooksDown() {
+  await moveSelectedBooksByDirection(1);
+}
+
+async function moveSelectedBooksByDirection(direction) {
+  if (!selectedBookIds.size || document.getElementById("sortSelect").value !== "custom") return;
+  const ordered = ensureShelfCustomOrderInitialized(currentShelfId);
+  const selected = new Set(selectedBookIds);
+  let changed = false;
+
+  if (direction < 0) {
+    for (let index = 1; index < ordered.length; index++) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index - 1].id)) {
+        const temp = ordered[index - 1];
+        ordered[index - 1] = ordered[index];
+        ordered[index] = temp;
+        changed = true;
+      }
+    }
+  } else {
+    for (let index = ordered.length - 2; index >= 0; index--) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index + 1].id)) {
+        const temp = ordered[index + 1];
+        ordered[index + 1] = ordered[index];
+        ordered[index] = temp;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) return;
+  reindexShelfCustomOrder(currentShelfId, ordered);
+  await persistCatalog();
+  renderCatalog();
+  updateSelectionBar();
 }
 
 async function deleteSelectedBooks() {
@@ -5063,12 +5325,17 @@ async function generateResearchForSelected(forceRefresh) {
     const generateBriefingFn = functions.httpsCallable("generateBriefing");
     const result = await generateBriefingFn({
       book,
-      adminPassword: "",
-      sessionOverrideId: briefingAdminOverrideSession ? briefingAdminOverrideSessionId : ""
+      adminPassword: ""
     });
     const research = result.data && result.data.research;
-    if (result.data && result.data.adminOverrideGranted && result.data.sessionOverrideId) {
-      setBriefingAdminOverrideSession(true, result.data.sessionOverrideId);
+    if (result.data && typeof result.data.adminAccessValid === "boolean") {
+      adminAccessState.adminAccessValid = Boolean(result.data.adminAccessValid);
+      adminAccessState.adminAccessDisabled = Boolean(result.data.adminAccessDisabled);
+      adminAccessState.adminAccessStale = Boolean(result.data.adminAccessStale);
+      adminAccessState.hasStoredAdminAccess = Boolean(result.data.hasStoredAdminAccess)
+        || adminAccessState.adminAccessValid
+        || adminAccessState.adminAccessDisabled
+        || adminAccessState.adminAccessStale;
     }
     if (!research || typeof research !== "object") {
       throw new Error("The server returned an empty briefing. Please try again.");
@@ -5086,18 +5353,23 @@ async function generateResearchForSelected(forceRefresh) {
   } catch (error) {
     const message = getCallableErrorMessage(error, "Research request failed.");
     if (error && error.code === "resource-exhausted") {
-      const entered = prompt(message + "\n\nAdmin Access: enter override password to continue for this login session.");
+      const entered = prompt(message + "\n\nAdmin Access: enter the password to enable administrative access for this account.");
       if (entered) {
         try {
           const generateBriefingFn = functions.httpsCallable("generateBriefing");
           const retryResult = await generateBriefingFn({
             book,
-            adminPassword: entered,
-            sessionOverrideId: briefingAdminOverrideSession ? briefingAdminOverrideSessionId : ""
+            adminPassword: entered
           });
           const retryResearch = retryResult.data && retryResult.data.research;
-          if (retryResult.data && retryResult.data.adminOverrideGranted && retryResult.data.sessionOverrideId) {
-            setBriefingAdminOverrideSession(true, retryResult.data.sessionOverrideId);
+          if (retryResult.data && typeof retryResult.data.adminAccessValid === "boolean") {
+            adminAccessState.adminAccessValid = Boolean(retryResult.data.adminAccessValid);
+            adminAccessState.adminAccessDisabled = Boolean(retryResult.data.adminAccessDisabled);
+            adminAccessState.adminAccessStale = Boolean(retryResult.data.adminAccessStale);
+            adminAccessState.hasStoredAdminAccess = Boolean(retryResult.data.hasStoredAdminAccess)
+              || adminAccessState.adminAccessValid
+              || adminAccessState.adminAccessDisabled
+              || adminAccessState.adminAccessStale;
           }
           if (!retryResearch || typeof retryResearch !== "object") {
             throw new Error("The server returned an empty briefing. Please try again.");
@@ -5108,7 +5380,7 @@ async function generateResearchForSelected(forceRefresh) {
           researchCache[book.id] = retryResearch;
           renderCatalog();
           renderBriefingPanel();
-          setResearchStatus(`Briefing ready for "${book.title}". Admin Access is enabled for this login session.`, "success");
+          setResearchStatus(`Briefing ready for "${book.title}". Administrative access is active for this account.`, "success");
           return;
         } catch (overrideError) {
           setResearchStatus(getCallableErrorMessage(overrideError, "Admin Access failed."), "error");
@@ -5232,6 +5504,7 @@ function renderBriefingPanel() {
   const audioUrl       = briefingAudioUrls[audioKey] || "";
   const audioUrlError  = briefingAudioUrlErrors[audioKey] || "";
   const isFlashRateLimitAudio = isDailyRateLimitFallbackAudio(audioVariant);
+  const isAdminRequiredAudio = audioVariant && audioVariant.ttsFallbackReason === "admin-required";
 
   if (audioVariant && audioVariant.status === "ready" && audioVariant.audioPath && !audioUrl && !audioUrlError) {
     ensureBriefingAudioUrl(book.id, spoilerMode, audioVariant);
@@ -5273,7 +5546,8 @@ function renderBriefingPanel() {
             <h3>Audio Overview</h3>
             <p>Voice: ${esc(audioVariant.voice || "Kore")} ${audioVariant.durationSec ? `&middot; ${formatAudioDuration(audioVariant.durationSec)}` : ""}</p>
             ${isFlashRateLimitAudio ? `<p>Lower Quality Audio Due to Daily Rate Limit.</p>` : ""}
-            ${isFlashRateLimitAudio && briefingAudioProAvailableToday
+            ${isAdminRequiredAudio ? `<p>Flash TTS was used because Administrative Access is required for Pro audio.</p>` : ""}
+            ${isFlashRateLimitAudio && briefingAudioProAvailableToday && adminAccessState.adminAccessValid
               ? `<button class="btn btn-light btn-sm" type="button" onclick="generateBriefingAudioForSelected(true)">Regenerate Higher Quality Audio</button>`
               : ""}
             ${audioUrl
@@ -5698,7 +5972,7 @@ function escapeAttribute(value) {
 
 async function openCamera() {
   document.getElementById("cameraModal").classList.add("open");
-  document.getElementById("scanStatus").textContent = "Opening camera\u2026";
+  document.getElementById("scanStatus").textContent = "Opening camera\u2026 If a barcode will not lock in, use Photo Instead.";
 
   if ("BarcodeDetector" in window) {
     // Native BarcodeDetector (Chrome, Edge)
@@ -5716,7 +5990,7 @@ async function openCamera() {
       const video = document.getElementById("cameraFeed");
       video.srcObject = cameraStream;
       const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8"] });
-      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026";
+      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026 If it will not read, use Photo Instead.";
       scanInterval = setInterval(async () => {
         try {
           const barcodes = await detector.detect(video);
@@ -5749,7 +6023,7 @@ async function openCamera() {
 
     try {
       html5QrScanner = new Html5Qrcode("html5qrScanRegion");
-      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026";
+      document.getElementById("scanStatus").textContent = "Scanning for barcode\u2026 If it will not read, use Photo Instead.";
       let scanHandled = false;
       await html5QrScanner.start(
         { facingMode: "environment" },
@@ -5772,11 +6046,72 @@ async function openCamera() {
         () => {} // per-frame scan miss — ignore
       );
     } catch {
-      document.getElementById("scanStatus").textContent = "Camera access failed. Try Photo Lookup instead.";
+      document.getElementById("scanStatus").textContent = "Camera access failed. Try Photo Instead.";
     }
 
   } else {
-    document.getElementById("scanStatus").textContent = "Barcode scanning not available in this browser. Use Photo Lookup instead.";
+    document.getElementById("scanStatus").textContent = "Barcode scanning not available in this browser. Use Photo Instead.";
+  }
+}
+
+function cleanPossibleIsbn(value) {
+  return String(value || "").replace(/[^0-9X]/gi, "").toUpperCase();
+}
+
+function extractIsbnFromPhotoLookupResult(data) {
+  const extracted = data && data.extracted ? data.extracted : {};
+  const bestMatch = data && data.bestMatch ? data.bestMatch : {};
+  const candidates = [
+    extracted.isbn_13,
+    extracted.isbn_10,
+    bestMatch.isbn_13,
+    bestMatch.isbn_10
+  ];
+  for (const candidate of candidates) {
+    const cleaned = cleanPossibleIsbn(candidate);
+    if (cleaned.length === 10 || cleaned.length === 13) return cleaned;
+  }
+  return "";
+}
+
+function startBarcodePhotoFallback() {
+  try { localStorage.setItem("_cameraActive", Date.now().toString()); } catch (e) {}
+  closeCamera();
+  const input = document.getElementById("barcodePhotoInput");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+
+async function handleBarcodePhotoSelection(input) {
+  const file = input && input.files && input.files[0] ? input.files[0] : null;
+  if (!file) {
+    try { localStorage.removeItem("_cameraActive"); } catch (e) {}
+    return;
+  }
+  try { localStorage.removeItem("_cameraActive"); } catch (e) {}
+  input.value = "";
+
+  switchTab("isbn");
+  setStatus("lookupStatus", "Reading ISBN from barcode photo\u2026", "");
+
+  try {
+    const image = await resizeImage(file, 1600);
+    if (!image) throw new Error("Could not read that photo.");
+
+    const analyzePhotoFn = functions.httpsCallable("analyzeBookPhoto");
+    const result = await analyzePhotoFn({ images: [image] });
+    const data = result.data || {};
+    const isbn = extractIsbnFromPhotoLookupResult(data);
+    if (!isbn) {
+      throw new Error("Could not read a valid ISBN from that photo. Try a clearer photo of the barcode and the digits beneath it.");
+    }
+
+    document.getElementById("isbnInput").value = isbn;
+    setStatus("lookupStatus", `ISBN found from photo: ${isbn}`, "success");
+    await lookupISBN(isbn);
+  } catch (error) {
+    setStatus("lookupStatus", getCallableErrorMessage(error, "Could not read a valid ISBN from that photo."), "error");
   }
 }
 
@@ -6129,34 +6464,6 @@ function setAuthOverlayVisible(visible) {
   overlay.style.display = visible ? "flex" : "none";
 }
 
-function restoreBriefingAdminOverrideSession() {
-  try {
-    briefingAdminOverrideSession = sessionStorage.getItem("tomeshelf-briefing-admin-override") === "1";
-    briefingAdminOverrideSessionId = briefingAdminOverrideSession
-      ? (sessionStorage.getItem("tomeshelf-briefing-admin-override-id") || "")
-      : "";
-  } catch (error) {
-    briefingAdminOverrideSession = false;
-    briefingAdminOverrideSessionId = "";
-  }
-}
-
-function setBriefingAdminOverrideSession(enabled, sessionId = "") {
-  briefingAdminOverrideSession = Boolean(enabled);
-  briefingAdminOverrideSessionId = briefingAdminOverrideSession ? String(sessionId || "") : "";
-  try {
-    if (briefingAdminOverrideSession) {
-      sessionStorage.setItem("tomeshelf-briefing-admin-override", "1");
-      if (briefingAdminOverrideSessionId) {
-        sessionStorage.setItem("tomeshelf-briefing-admin-override-id", briefingAdminOverrideSessionId);
-      }
-    } else {
-      sessionStorage.removeItem("tomeshelf-briefing-admin-override");
-      sessionStorage.removeItem("tomeshelf-briefing-admin-override-id");
-    }
-  } catch (error) {}
-}
-
 async function ensureBriefingAudioUrl(bookId, spoilerMode, variant) {
   if (!variant || variant.status !== "ready" || !variant.audioPath) return "";
   const key = currentAudioKey(bookId, spoilerMode);
@@ -6277,6 +6584,8 @@ function handleSelectedBriefingAudioUpdate(bookId, previousDoc, nextDoc) {
   if (nextVariant.status === "ready" && (!prevVariant || prevVariant.status !== "ready")) {
     const readyMessage = nextVariant.ttsFallbackReason === "daily-rate-limit"
       ? `Audio overview ready for "${book.title}". Lower quality audio was used due to today's Pro TTS rate limit.`
+      : nextVariant.ttsFallbackReason === "admin-required"
+        ? `Audio overview ready for "${book.title}" using Flash TTS. Administrative access is required for Pro audio.`
       : `Audio overview ready for "${book.title}".`;
     setResearchStatus(readyMessage, "success");
   } else if (nextVariant.status === "error" && (!prevVariant || prevVariant.status !== "error")) {
@@ -6328,6 +6637,15 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     if (result.data && typeof result.data.proAvailableToday === "boolean") {
       briefingAudioProAvailableToday = result.data.proAvailableToday;
     }
+    if (result.data && typeof result.data.adminAccessValid === "boolean") {
+      adminAccessState.adminAccessValid = Boolean(result.data.adminAccessValid);
+      adminAccessState.adminAccessDisabled = Boolean(result.data.adminAccessDisabled);
+      adminAccessState.adminAccessStale = Boolean(result.data.adminAccessStale);
+      adminAccessState.hasStoredAdminAccess = Boolean(result.data.hasStoredAdminAccess)
+        || adminAccessState.adminAccessValid
+        || adminAccessState.adminAccessDisabled
+        || adminAccessState.adminAccessStale;
+    }
     if (!metadata || typeof metadata !== "object") {
       throw new Error("The server returned empty audio metadata. Please try again.");
     }
@@ -6351,7 +6669,9 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     if (result.data && result.data.queued) {
       const queuedMessage = metadata.ttsFallbackReason === "daily-rate-limit"
         ? `Preparing audio overview for "${book.title}". Lower quality audio is being used due to today's Pro TTS rate limit.`
-        : `Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`;
+        : metadata.ttsFallbackReason === "admin-required"
+          ? `Preparing audio overview for "${book.title}" with Flash TTS. Administrative access is required for Pro audio.`
+          : `Preparing audio overview for "${book.title}". You can keep using TomeShelf and come back to this book when it is ready.`;
       setResearchStatus(queuedMessage, "");
       pollBriefingAudioStatus(book.id, resolvedMode).catch(function(error) {
         console.error("[generateBriefingAudioForSelected] audio status poll failed:", error);
@@ -6359,7 +6679,9 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     } else {
       const readyMessage = metadata.ttsFallbackReason === "daily-rate-limit"
         ? `Audio overview ready for "${book.title}". Lower quality audio was used due to today's Pro TTS rate limit.`
-        : `Audio overview ready for "${book.title}".`;
+        : metadata.ttsFallbackReason === "admin-required"
+          ? `Audio overview ready for "${book.title}" using Flash TTS. Administrative access is required for Pro audio.`
+          : `Audio overview ready for "${book.title}".`;
       setResearchStatus(readyMessage, "success");
     }
   } catch (error) {
@@ -6989,15 +7311,26 @@ function _renderBackupJobsSection() {
       report.push(`audio ${stats.audioAdded || 0} added, ${stats.audioSkipped || 0} skipped`);
     }
     if (job.schemaVersion) report.push(`schema v${job.schemaVersion}`);
+    const canDelete = status !== "queued" && status !== "running" && (job.backupPath || status === "expired" || status === "error" || status === "deleted");
     let actionHtml = '';
     if (status === "ready" && job.downloadUrl) {
-      actionHtml = '<a class="btn btn-secondary btn-sm" href="' + escapeAttribute(job.downloadUrl) + '" target="_blank" rel="noopener">Download</a>';
+      actionHtml = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<a class="btn btn-secondary btn-sm" href="' + escapeAttribute(job.downloadUrl) + '" target="_blank" rel="noopener">Download</a>' +
+        '<button class="btn btn-danger btn-sm" type="button" onclick="deleteBackupExport(\'' + escapeAttribute(id) + '\')">Delete ZIP</button>' +
+      '</div>';
     } else if (status === "running" || status === "queued") {
       actionHtml = '<span style="font-size:0.78rem;color:var(--brown);">Preparing…</span>';
     } else if (status === "expired") {
-      actionHtml = '<span style="font-size:0.78rem;color:#888;">Expired</span>';
+      actionHtml = canDelete
+        ? '<button class="btn btn-danger btn-sm" type="button" onclick="deleteBackupExport(\'' + escapeAttribute(id) + '\')">Delete History</button>'
+        : '<span style="font-size:0.78rem;color:#888;">Expired</span>';
+    } else if (status === "deleted") {
+      actionHtml = '<span style="font-size:0.78rem;color:#888;">ZIP deleted</span>';
     } else if (status === "error") {
-      actionHtml = '<span style="font-size:0.78rem;color:#b33;">' + esc(job.error || "Failed") + '</span>';
+      actionHtml = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<span style="font-size:0.78rem;color:#b33;">' + esc(job.error || "Failed") + '</span>' +
+        (canDelete ? '<button class="btn btn-danger btn-sm" type="button" onclick="deleteBackupExport(\'' + escapeAttribute(id) + '\')">Delete History</button>' : '') +
+      '</div>';
     }
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--tan);flex-wrap:wrap;">' +
       '<div style="flex:1;min-width:0;">' +
@@ -7174,6 +7507,19 @@ async function exportJSON() {
   }
 }
 
+async function deleteBackupExport(backupId) {
+  if (!backupId) return;
+  if (!confirm("Delete this backup ZIP from Firebase Storage? The history row will remain, but the file will no longer be downloadable.")) {
+    return;
+  }
+  try {
+    await functions.httpsCallable("deleteBackupExport")({ backupId });
+    showToast("Backup ZIP deleted");
+  } catch (error) {
+    alert(getCallableErrorMessage(error, "Could not delete that backup ZIP."));
+  }
+}
+
 function normalizeBackupManifest(raw) {
   const manifest = raw && typeof raw === "object" ? raw : {};
   return {
@@ -7204,6 +7550,9 @@ function upsertBackupBooks(imported) {
     const book = normalizeBook(rawBook);
     const existingIdx = matchImportedBookIndex(book);
     if (existingIdx === -1) {
+      if (!hasCustomOrder(book)) {
+        book.customOrder = getNextCustomOrderForShelf(book.listShelfId || "default");
+      }
       books.push(book);
       added++;
       idMap[rawBook.id] = book.id;
@@ -7674,6 +8023,9 @@ function mergeImportedBooks(imported, options = {}) {
       || (duplicateMode === "import_other_shelves" && !existsOnTargetShelf);
 
     if (shouldImport) {
+      if (!hasCustomOrder(book)) {
+        book.customOrder = getNextCustomOrderForShelf(book.listShelfId || "default");
+      }
       books.push(book);
       added++;
     } else {
@@ -7696,10 +8048,14 @@ function upsertImportedBooks(imported) {
     });
 
     if (existingIdx === -1) {
+      if (!hasCustomOrder(book)) {
+        book.customOrder = getNextCustomOrderForShelf(book.listShelfId || "default");
+      }
       books.push(book);
       added++;
     } else if (books[existingIdx].listShelfId !== book.listShelfId) {
       books[existingIdx].listShelfId = book.listShelfId;
+      books[existingIdx].customOrder = getNextCustomOrderForShelf(book.listShelfId || "default");
       updated++;
     }
   }
@@ -8061,7 +8417,7 @@ function renderShelvesModal() {
         <button class="shelf-item-name" type="button" onclick="switchShelf('${escapeAttribute(shelf.id)}')">
           ${esc(shelf.name)}
         </button>
-        <span class="shelf-item-count">${count} tome${count === 1 ? "" : "s"}</span>
+        <span class="shelf-item-count">${count} book${count === 1 ? "" : "s"}</span>
         <div class="shelf-item-actions">
           <button class="btn btn-light btn-sm${shareActive ? " share-btn-active" : ""}" type="button"
             title="${shareActive ? "Manage share link" : "Share this shelf"}"
@@ -8094,7 +8450,7 @@ function updateHeaderBadge(bookCount = null) {
   const count = bookCount === null
     ? books.filter((b) => (b.listShelfId || "default") === currentShelfId).length
     : bookCount;
-  badge.textContent = `${count} tome${count === 1 ? "" : "s"}`;
+  badge.textContent = `${count} book${count === 1 ? "" : "s"}`;
 }
 
 function updateShelfSelector() {
@@ -8203,7 +8559,11 @@ async function deleteShelf(id) {
     books = books.filter(function(b) { return (b.listShelfId || "default") !== id; });
     pendingBriefingIds = pendingBriefingIds.filter(pid => !deletedIds.includes(pid));
   } else {
-    books.forEach(function(b) { if ((b.listShelfId || "default") === id) b.listShelfId = other.id; });
+    let nextCustomOrder = getNextCustomOrderForShelf(other.id);
+    getShelfBooksSorted(id, "custom").forEach(function(book) {
+      book.listShelfId = other.id;
+      book.customOrder = nextCustomOrder++;
+    });
   }
   shelves = shelves.filter(function(s) { return s.id !== id; });
   if (currentShelfId === id) {
@@ -8296,6 +8656,152 @@ async function signInFromGuest() {
 }
 
 // ── Account menu ──────────────────────────────────────────────
+function renderAdminAccessSection() {
+  const statusEl = document.getElementById("adminAccessStatus");
+  const refreshBtn = document.getElementById("adminAccessRefreshBtn");
+  const toggleBtn = document.getElementById("adminAccessToggleBtn");
+  const infoBtn = document.getElementById("adminAccessInfoBtn");
+  const removeBtn = document.getElementById("adminAccessRemoveBtn");
+  if (!statusEl || !refreshBtn || !toggleBtn || !infoBtn || !removeBtn) return;
+
+  const hasStored = Boolean(adminAccessState && adminAccessState.hasStoredAdminAccess);
+  const isValid = Boolean(adminAccessState && adminAccessState.adminAccessValid);
+  const isDisabled = isAdminAccessTemporarilyDisabled(adminAccessState);
+  const isStale = Boolean(adminAccessState && adminAccessState.adminAccessStale);
+
+  statusEl.style.display = "";
+  statusEl.className = "admin-access-status";
+
+  if (isValid) {
+    statusEl.classList.add("success");
+    statusEl.textContent = "Administrative access active.";
+    refreshBtn.style.display = "none";
+    toggleBtn.textContent = "Turn Off for Now";
+    toggleBtn.style.display = "";
+    infoBtn.style.display = "";
+    removeBtn.style.display = "";
+    return;
+  }
+
+  toggleBtn.style.display = "none";
+  infoBtn.style.display = "none";
+  refreshBtn.style.display = "";
+  removeBtn.style.display = hasStored ? "" : "none";
+  refreshBtn.textContent = hasStored ? "Re-enter Administrative Access" : "Enter Administrative Access";
+
+  if (isStale) {
+    statusEl.classList.add("warning");
+    statusEl.textContent = "Administrative access needs to be refreshed. The backend password has changed.";
+  } else if (isDisabled) {
+    statusEl.textContent = "Administrative access is stored for this account but currently turned off.";
+    toggleBtn.textContent = "Turn Back On";
+    toggleBtn.style.display = "";
+    infoBtn.style.display = "";
+    refreshBtn.style.display = "none";
+  } else {
+    statusEl.textContent = "No administrative access stored for this account.";
+    removeBtn.style.display = "none";
+  }
+}
+
+async function refreshAdminAccessStatus() {
+  if (!auth.currentUser || auth.currentUser.isAnonymous) {
+    adminAccessState = {
+      hasStoredAdminAccess: false,
+      adminAccessValid: false,
+      adminAccessDisabled: false,
+      adminAccessStale: false
+    };
+    renderAdminAccessSection();
+    return adminAccessState;
+  }
+  try {
+    const result = await functions.httpsCallable("getAdminAccessStatus")({});
+    adminAccessState = {
+      hasStoredAdminAccess: Boolean(result.data && result.data.hasStoredAdminAccess),
+      adminAccessValid: Boolean(result.data && result.data.adminAccessValid),
+      adminAccessDisabled: Boolean(result.data && result.data.adminAccessDisabled),
+      adminAccessStale: Boolean(result.data && result.data.adminAccessStale)
+    };
+  } catch (error) {
+    console.warn("[refreshAdminAccessStatus] failed:", error);
+  }
+  renderAdminAccessSection();
+  return adminAccessState;
+}
+
+async function promptForAdminAccess() {
+  if (!auth.currentUser || auth.currentUser.isAnonymous) return;
+  const entered = prompt("Administrative Access password:");
+  if (!entered) return;
+  try {
+    const result = await functions.httpsCallable("setAdminAccess")({ adminPassword: entered });
+    adminAccessState = {
+      hasStoredAdminAccess: Boolean(result.data && result.data.hasStoredAdminAccess),
+      adminAccessValid: Boolean(result.data && result.data.adminAccessValid),
+      adminAccessDisabled: Boolean(result.data && result.data.adminAccessDisabled),
+      adminAccessStale: Boolean(result.data && result.data.adminAccessStale)
+    };
+    renderAdminAccessSection();
+    renderBriefingPanel();
+    setResearchStatus("Administrative access enabled for this account.", "success");
+  } catch (error) {
+    renderAdminAccessSection();
+    alert(getCallableErrorMessage(error, "Administrative access password was not accepted."));
+  }
+}
+
+async function toggleAdministrativeAccess() {
+  if (!auth.currentUser || auth.currentUser.isAnonymous) return;
+  const enable = isAdminAccessTemporarilyDisabled(adminAccessState);
+  try {
+    const result = await functions.httpsCallable("setAdminAccessEnabled")({ enabled: enable });
+    adminAccessState = {
+      hasStoredAdminAccess: Boolean(result.data && result.data.hasStoredAdminAccess),
+      adminAccessValid: Boolean(result.data && result.data.adminAccessValid),
+      adminAccessDisabled: Boolean(result.data && result.data.adminAccessDisabled),
+      adminAccessStale: Boolean(result.data && result.data.adminAccessStale)
+    };
+    renderAdminAccessSection();
+    renderBriefingPanel();
+    setResearchStatus(
+      enable
+        ? "Administrative access turned back on for this account."
+        : "Administrative access turned off. Admin-only rules are now disabled until you turn it back on.",
+      "success"
+    );
+  } catch (error) {
+    alert(getCallableErrorMessage(error, "Could not update Administrative Access."));
+  }
+}
+
+async function removeAdministrativeAccess() {
+  if (!auth.currentUser || auth.currentUser.isAnonymous) return;
+  if (!confirm("Remove Administrative Access from this account?")) return;
+  try {
+    await functions.httpsCallable("removeAdminAccess")({});
+    adminAccessState = {
+      hasStoredAdminAccess: false,
+      adminAccessValid: false,
+      adminAccessDisabled: false,
+      adminAccessStale: false
+    };
+    renderAdminAccessSection();
+    renderBriefingPanel();
+  } catch (error) {
+    alert(getCallableErrorMessage(error, "Could not remove Administrative Access."));
+  }
+}
+
+function openAdminAccessInfoModal() {
+  document.getElementById("adminAccessInfoModal").classList.add("open");
+}
+
+function closeAdminAccessInfoModal(event) {
+  if (event && event.target !== document.getElementById("adminAccessInfoModal")) return;
+  document.getElementById("adminAccessInfoModal").classList.remove("open");
+}
+
 function toggleAccountMenu() {
   const menu = document.getElementById("accountMenu");
   menu.classList.toggle("open");
@@ -8322,7 +8828,7 @@ async function signOutUser() {
   await auth.signOut();
 }
 
-function openAccountSettings() {
+async function openAccountSettings() {
   closeAccountMenu();
   const user = auth.currentUser;
   const isGuest = user && user.isAnonymous;
@@ -8332,6 +8838,7 @@ function openAccountSettings() {
   if (modeSelect) modeSelect.value = uiDetailMode;
   document.getElementById("accountSettingsGuestSection").style.display = isGuest ? "" : "none";
   document.getElementById("accountSettingsUserSection").style.display  = isGuest ? "none" : "";
+  document.getElementById("accountSettingsDeleteSection").style.display = isGuest ? "none" : "";
   const backupsSection = document.getElementById("accountSettingsBackupsSection");
   if (backupsSection) {
     backupsSection.style.display = (!isGuest && user) ? "" : "none";
@@ -8342,6 +8849,7 @@ function openAccountSettings() {
     shareSection.style.display = (!isGuest && user) ? "" : "none";
     if (!isGuest && user) _renderSharedShelvesSection();
   }
+  await refreshAdminAccessStatus();
   document.getElementById("accountSettingsModal").classList.add("open");
 }
 
@@ -9015,6 +9523,7 @@ async function addCorrectBulkBooks() {
       coverUrl: usePhotoCover ? "" : (r.coverUrl || ""),
       addedAt: Date.now(), id: bookId
     });
+    newBook.customOrder = getNextCustomOrderForShelf(currentShelfId);
     books.unshift(newBook);
     if (usePhotoCover) {
       try {
@@ -9276,12 +9785,14 @@ async function addBulkCorrectionBook() {
   if (already) {
     setStatus("bulkCorrAddStatus", "Already in catalog — skipping.", "error");
   } else {
-    books.unshift(normalizeBook({
+    const newBook = normalizeBook({
       ...r, condition: "", shelf: "", notes: "",
       readingStatus: "", startDate: "", finishDate: "",
       personalNotes: "", rating: 0, listShelfId: currentShelfId,
       addedAt: Date.now(), id: Math.random().toString(36).slice(2)
-    }));
+    });
+    newBook.customOrder = getNextCustomOrderForShelf(currentShelfId);
+    books.unshift(newBook);
     await saveBooks();
     renderCatalog();
     setStatus("bulkCorrAddStatus", `Added "${r.title}".`, "success");
@@ -9322,7 +9833,12 @@ function _doSignOut() {
   icon.src = "";
   emailText.style.display = "none";
   _booksOwnedByUid = null;
-  setBriefingAdminOverrideSession(false);
+  adminAccessState = {
+    hasStoredAdminAccess: false,
+    adminAccessValid: false,
+    adminAccessDisabled: false,
+    adminAccessStale: false
+  };
   books = [];
   researchCache = {};
   briefingAudioCache = {};

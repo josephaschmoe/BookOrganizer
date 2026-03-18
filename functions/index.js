@@ -76,6 +76,10 @@ const researchSchema = {
   ]
 };
 
+const RESEARCH_FIELD_KEYS = Object.keys(researchSchema.properties);
+const RESEARCH_ARRAY_FIELDS = new Set(RESEARCH_FIELD_KEYS.filter((key) => researchSchema.properties[key].type === "array"));
+const RESEARCH_REQUIRED_FIELDS = new Set(researchSchema.required || []);
+
 // ── Retry helper for transient API errors ────────────────────────────────────
 // Retries on 429 (rate-limit) and 5xx (transient server errors).
 // Returns the final Response object; caller decides whether it's ok.
@@ -206,7 +210,16 @@ async function callPerplexityForBook(book, apiKey) {
     research = parseResearchJson(text);
   } catch (error) {
     console.error("Perplexity non-JSON content preview:", text.slice(0, 1200));
-    throw new Error("Perplexity reply was not valid JSON.");
+    try {
+      research = salvageResearchJson(text);
+      research.confidence_note = [
+        String(research.confidence_note || "").trim(),
+        "Recovered from a malformed Perplexity JSON reply; some fields may be incomplete."
+      ].filter(Boolean).join(" ");
+      research.recovered_from_malformed_json = true;
+    } catch {
+      research = buildPerplexityFallbackResearch(text, error);
+    }
   }
   research.generated_at = new Date().toISOString();
   research.model = `perplexity-${PERPLEXITY_MODEL}`;
@@ -229,27 +242,19 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey, br
   const uid = request.auth.uid;
   const book = sanitizeBook(request.data && request.data.book);
   const adminPassword = cleanText(request.data && request.data.adminPassword);
-  const sessionOverrideId = cleanText(request.data && request.data.sessionOverrideId);
   if (!book.title) {
     throw new HttpsError("invalid-argument", "Book title is required.");
   }
 
-  let overrideGranted = false;
-  let overrideSessionId = sessionOverrideId || "";
-  if (await hasBriefingAdminOverride(uid, sessionOverrideId)) {
-    overrideGranted = true;
-  } else if (adminPassword && cleanText(adminPassword) === briefingAdminPassword.value()) {
-    overrideGranted = true;
-    overrideSessionId = crypto.randomUUID();
-    await briefingAdminSessionRef(uid, overrideSessionId).set({
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+  let adminState = await getAdminAccessState(uid);
+  let overrideGranted = adminState.isValid;
+  if (!overrideGranted && adminPassword && adminPassword === briefingAdminPassword.value()) {
+    await grantAdminAccess(uid);
+    adminState = await getAdminAccessState(uid);
+    overrideGranted = adminState.isValid;
   }
 
-  const quota = overrideGranted
-    ? { allowed: true, overridden: true, limit: DAILY_BRIEFING_LIMIT }
-    : await reserveBriefingQuota(uid, "");
+  const quota = await reserveBriefingQuota(uid, { allowOverride: overrideGranted });
   if (!quota.allowed) {
     throw new HttpsError(
       "resource-exhausted",
@@ -268,11 +273,13 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey, br
   return {
     research,
     adminOverrideGranted: overrideGranted,
-    sessionOverrideId: overrideGranted ? overrideSessionId : ""
+    adminAccessValid: adminState.isValid,
+    adminAccessDisabled: adminState.isDisabled,
+    adminAccessStale: adminState.isStale
   };
 });
 
-exports.generateBriefingAudio = onCall(async (request) => {
+exports.generateBriefingAudio = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -293,9 +300,12 @@ exports.generateBriefingAudio = onCall(async (request) => {
     const variantKey = normalizeSpoilerMode(spoilerMode, isFiction);
     const normalizedVoice = normalizeVoice(voice);
     const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
+    const adminState = await getAdminAccessState(uid);
     const ttsStatus = await getProTtsAvailabilityStatus();
-    const preferredTtsModel = ttsStatus.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
-    const ttsFallbackReason = ttsStatus.available ? "" : "daily-rate-limit";
+    const preferredTtsModel = adminState.isValid && ttsStatus.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
+    const ttsFallbackReason = adminState.isValid
+      ? (ttsStatus.available ? "" : "daily-rate-limit")
+      : "admin-required";
     const audioRef = briefingAudioDocRef(uid, bookId);
     const audioSnap = await audioRef.get();
     const audioDoc = audioSnap.exists ? (audioSnap.data() || {}) : {};
@@ -316,7 +326,11 @@ exports.generateBriefingAudio = onCall(async (request) => {
         cached: true,
         spoilerMode: variantKey,
         metadata: currentVariant,
-        audioUrl: signed.audioUrl
+        audioUrl: signed.audioUrl,
+        proAvailableToday: ttsStatus.available,
+        adminAccessValid: adminState.isValid,
+        adminAccessDisabled: adminState.isDisabled,
+        adminAccessStale: adminState.isStale
       };
     }
 
@@ -332,7 +346,11 @@ exports.generateBriefingAudio = onCall(async (request) => {
         ok: true,
         queued: true,
         spoilerMode: variantKey,
-        metadata: currentVariant
+        metadata: currentVariant,
+        proAvailableToday: ttsStatus.available,
+        adminAccessValid: adminState.isValid,
+        adminAccessDisabled: adminState.isDisabled,
+        adminAccessStale: adminState.isStale
       };
     }
 
@@ -359,6 +377,8 @@ exports.generateBriefingAudio = onCall(async (request) => {
       spoilerMode: variantKey,
       voice: normalizedVoice,
       forceRefresh,
+      requestedTtsModel: preferredTtsModel,
+      requestedTtsFallbackReason: ttsFallbackReason,
       createdAt: now,
       updatedAt: now
     });
@@ -369,7 +389,10 @@ exports.generateBriefingAudio = onCall(async (request) => {
       jobId,
       spoilerMode: variantKey,
       metadata: generatingMetadata,
-      proAvailableToday: ttsStatus.available
+      proAvailableToday: ttsStatus.available,
+      adminAccessValid: adminState.isValid,
+      adminAccessDisabled: adminState.isDisabled,
+      adminAccessStale: adminState.isStale
     };
   } catch (error) {
     if (error instanceof HttpsError) throw error;
@@ -415,15 +438,81 @@ exports.getBriefingAudio = onCall(async (request) => {
   };
 });
 
-exports.getBriefingAudioTtsStatus = onCall(async (request) => {
+exports.getBriefingAudioTtsStatus = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
+  const adminState = await getAdminAccessState(request.auth.uid);
   const status = await getProTtsAvailabilityStatus();
   return {
     proAvailableToday: status.available,
     fallbackDayKey: status.dayKey,
-    activeTtsModel: status.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL
+    activeTtsModel: adminState.isValid && status.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL,
+    adminAccessValid: adminState.isValid,
+    adminAccessDisabled: adminState.isDisabled,
+    adminAccessStale: adminState.isStale,
+    hasStoredAdminAccess: adminState.hasStoredAccess
+  };
+});
+
+exports.getAdminAccessStatus = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const adminState = await getAdminAccessState(request.auth.uid);
+  return {
+    adminAccessValid: adminState.isValid,
+    adminAccessDisabled: adminState.isDisabled,
+    adminAccessStale: adminState.isStale,
+    hasStoredAdminAccess: adminState.hasStoredAccess
+  };
+});
+
+exports.setAdminAccess = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const adminPassword = cleanText(request.data && request.data.adminPassword);
+  if (!adminPassword || adminPassword !== briefingAdminPassword.value()) {
+    throw new HttpsError("permission-denied", "Administrative access password was not accepted.");
+  }
+  await grantAdminAccess(request.auth.uid);
+  return {
+    ok: true,
+    adminAccessValid: true,
+    adminAccessDisabled: false,
+    adminAccessStale: false,
+    hasStoredAdminAccess: true
+  };
+});
+
+exports.setAdminAccessEnabled = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const enabled = Boolean(request.data && request.data.enabled);
+  await setAdminAccessEnabled(request.auth.uid, enabled);
+  const adminState = await getAdminAccessState(request.auth.uid);
+  return {
+    ok: true,
+    adminAccessValid: adminState.isValid,
+    adminAccessDisabled: adminState.isDisabled,
+    adminAccessStale: adminState.isStale,
+    hasStoredAdminAccess: adminState.hasStoredAccess
+  };
+});
+
+exports.removeAdminAccess = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  await removeAdminAccessGrant(request.auth.uid);
+  return {
+    ok: true,
+    adminAccessValid: false,
+    adminAccessDisabled: false,
+    adminAccessStale: false,
+    hasStoredAdminAccess: false
   };
 });
 
@@ -441,6 +530,49 @@ exports.requestBackupExport = onCall(async (request) => {
     updatedAt: now
   });
   return { ok: true, backupId };
+});
+
+exports.deleteBackupExport = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const backupId = cleanText((request.data || {}).backupId || "");
+  if (!backupId) {
+    throw new HttpsError("invalid-argument", "backupId is required.");
+  }
+
+  const jobRef = backupJobRef(uid, backupId);
+  const jobSnap = await jobRef.get();
+  if (!jobSnap.exists) {
+    throw new HttpsError("not-found", "Backup not found.");
+  }
+
+  const job = jobSnap.data() || {};
+  const status = cleanText(job.status || "");
+  if (status === "queued" || status === "running") {
+    throw new HttpsError("failed-precondition", "This backup is still being prepared.");
+  }
+
+  const backupPath = cleanText(job.backupPath || "");
+  if (backupPath) {
+    try {
+      await admin.storage().bucket().file(backupPath).delete({ ignoreNotFound: true });
+    } catch (error) {
+      console.warn("[deleteBackupExport] storage delete failed:", backupPath, error && error.message ? error.message : error);
+    }
+  }
+
+  await jobRef.set({
+    status: "deleted",
+    deletedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    downloadUrl: "",
+    backupPath: ""
+  }, { merge: true });
+
+  return { ok: true };
 });
 
 // ── Firestore trigger: auto-generate or queue on new books ───────────────────
@@ -625,6 +757,8 @@ exports.processBriefingAudioJob = onDocumentCreated(
     const spoilerMode = cleanText(job.spoilerMode || "safe");
     const voice = cleanText(job.voice || DEFAULT_AUDIO_VOICE);
     const forceRefresh = Boolean(job.forceRefresh);
+    const requestedTtsModel = cleanText(job.requestedTtsModel || FLASH_TTS_MODEL);
+    const requestedTtsFallbackReason = cleanText(job.requestedTtsFallbackReason || "");
 
     await jobRef.set({
       status: "running",
@@ -635,7 +769,16 @@ exports.processBriefingAudioJob = onDocumentCreated(
     try {
       if (!bookId) throw new Error("bookId is required.");
       console.log(`[processBriefingAudioJob] start uid=${uid} jobId=${jobId} bookId=${bookId} spoilerMode=${spoilerMode}`);
-      const result = await buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, geminiApiKey.value());
+      const result = await buildBriefingAudio(
+        uid,
+        bookId,
+        spoilerMode,
+        voice,
+        forceRefresh,
+        geminiApiKey.value(),
+        requestedTtsModel,
+        requestedTtsFallbackReason
+      );
       await jobRef.set({
         status: "ready",
         finishedAt: new Date().toISOString(),
@@ -882,9 +1025,55 @@ async function markProTtsUnavailableToday(details = {}) {
   return { available: false, dayKey };
 }
 
-async function reserveBriefingQuota(uid, adminPassword = "") {
-  const override = cleanText(adminPassword) === briefingAdminPassword.value();
-  if (override) {
+function currentAdminAccessVersion() {
+  return crypto.createHash("sha256").update(String(briefingAdminPassword.value() || "")).digest("hex").slice(0, 24);
+}
+
+async function getAdminAccessState(uid) {
+  const snap = await adminAccessRef(uid).get();
+  const data = snap.exists ? (snap.data() || {}) : {};
+  const storedVersion = cleanText(data.accessVersion || "");
+  const currentVersion = currentAdminAccessVersion();
+  const hasStoredAccess = snap.exists;
+  const isDisabled = hasStoredAccess && data.disabled === true;
+  const versionMatches = hasStoredAccess && storedVersion === currentVersion;
+  return {
+    hasStoredAccess,
+    isValid: versionMatches && !isDisabled,
+    isDisabled,
+    isStale: hasStoredAccess && Boolean(storedVersion) && storedVersion !== currentVersion,
+    data
+  };
+}
+
+async function grantAdminAccess(uid) {
+  const now = new Date().toISOString();
+  await adminAccessRef(uid).set({
+    accessVersion: currentAdminAccessVersion(),
+    disabled: false,
+    grantedAt: now,
+    updatedAt: now
+  }, { merge: true });
+}
+
+async function setAdminAccessEnabled(uid, enabled) {
+  const ref = adminAccessRef(uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "Administrative access has not been granted for this account.");
+  }
+  await ref.set({
+    disabled: !enabled,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+}
+
+async function removeAdminAccessGrant(uid) {
+  await adminAccessRef(uid).delete().catch(() => {});
+}
+
+async function reserveBriefingQuota(uid, options = {}) {
+  if (options && options.allowOverride) {
     return { allowed: true, overridden: true, limit: DAILY_BRIEFING_LIMIT };
   }
 
@@ -903,13 +1092,6 @@ async function reserveBriefingQuota(uid, adminPassword = "") {
     }, { merge: true });
     return { allowed: true, overridden: false, limit: DAILY_BRIEFING_LIMIT, count: count + 1, dayKey };
   });
-}
-
-async function hasBriefingAdminOverride(uid, sessionOverrideId) {
-  const sessionId = cleanText(sessionOverrideId || "");
-  if (!sessionId) return false;
-  const snap = await briefingAdminSessionRef(uid, sessionId).get();
-  return snap.exists;
 }
 
 function sanitizeBriefingAudioForBackup(audioCache) {
@@ -1096,8 +1278,8 @@ function backupJobRef(uid, backupId) {
   return db.collection("users").doc(uid).collection("backupJobs").doc(backupId);
 }
 
-function briefingAdminSessionRef(uid, sessionId) {
-  return db.collection("users").doc(uid).collection("briefingAdminSessions").doc(sessionId);
+function adminAccessRef(uid) {
+  return db.collection("users").doc(uid).collection("settings").doc("adminAccess");
 }
 
 function ttsProStatusRef() {
@@ -1155,6 +1337,117 @@ function parseResearchJson(text) {
     }
     throw new Error("Could not parse JSON.");
   }
+}
+
+function salvageResearchJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw) throw new Error("No text to salvage.");
+
+  const keyMatches = [];
+  for (const key of RESEARCH_FIELD_KEYS) {
+    const pattern = new RegExp(`"${key}"\\s*:`, "g");
+    let match;
+    while ((match = pattern.exec(raw)) !== null) {
+      keyMatches.push({ key, index: match.index, end: pattern.lastIndex });
+    }
+  }
+  if (!keyMatches.length) throw new Error("No known briefing fields found in malformed JSON.");
+
+  keyMatches.sort((a, b) => a.index - b.index);
+  const out = {};
+
+  for (let i = 0; i < keyMatches.length; i++) {
+    const current = keyMatches[i];
+    if (Object.prototype.hasOwnProperty.call(out, current.key)) continue;
+
+    const nextIndex = i + 1 < keyMatches.length ? keyMatches[i + 1].index : raw.lastIndexOf("}");
+    const sliceEnd = nextIndex > current.end ? nextIndex : raw.length;
+    let valueText = raw.slice(current.end, sliceEnd).trim();
+    valueText = valueText.replace(/,\s*$/, "").trim();
+    if (!valueText) continue;
+
+    if (RESEARCH_ARRAY_FIELDS.has(current.key)) {
+      if (!valueText.startsWith("[")) continue;
+      let candidate = valueText;
+      if (!candidate.endsWith("]")) candidate += "]";
+      candidate = candidate.replace(/,\s*\]$/, "]");
+      try {
+        const parsed = JSON.parse(candidate);
+        if (Array.isArray(parsed)) out[current.key] = parsed;
+      } catch {
+        continue;
+      }
+      continue;
+    }
+
+    if (!valueText.startsWith("\"")) continue;
+    let candidate = valueText;
+    if (!candidate.endsWith("\"")) candidate += "\"";
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed === "string") out[current.key] = parsed;
+    } catch {
+      continue;
+    }
+  }
+
+  const hasRequired = Array.from(RESEARCH_REQUIRED_FIELDS).every((key) => {
+    const value = out[key];
+    if (RESEARCH_ARRAY_FIELDS.has(key)) return Array.isArray(value) && value.length > 0;
+    return typeof value === "string" && value.trim().length > 0;
+  });
+
+  if (!hasRequired) {
+    throw new Error("Malformed JSON did not contain enough recoverable briefing fields.");
+  }
+
+  return out;
+}
+
+function extractListItemsFromLooseText(text, { maxItems = 6, questionsOnly = false } = {}) {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const line of lines) {
+    const match = line.match(/^(?:[-*•]\s+|\d+[.)]\s+)(.+)$/);
+    const value = (match ? match[1] : (questionsOnly ? "" : line)).trim();
+    if (!value) continue;
+    if (questionsOnly && !/[?]$/.test(value)) continue;
+    if (value.length < 3) continue;
+    out.push(value);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function buildPerplexityFallbackResearch(text, error) {
+  const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+  const preview = raw || "Perplexity returned an empty text response after the API call succeeded.";
+  const bulletItems = extractListItemsFromLooseText(preview, { maxItems: 6 });
+  const questionItems = extractListItemsFromLooseText(preview, { maxItems: 6, questionsOnly: true });
+  const parseMessage = cleanText(error && error.message);
+
+  return {
+    genre: "non-fiction",
+    quick_take: "Warning: Perplexity returned text instead of valid JSON. Displaying the raw reply below as best as possible; formatting may be imperfect.",
+    major_themes: bulletItems.length ? bulletItems : ["Raw Perplexity output was preserved because structured JSON parsing failed."],
+    historical_context: "This briefing was reconstructed from an unstructured Perplexity reply after schema parsing failed.",
+    impact: "The underlying response may still be useful, but section placement is approximate because the model did not follow the required JSON format.",
+    confidence_note: parseMessage
+      ? `Perplexity did not return valid JSON (${parseMessage}). The app preserved the raw reply instead of discarding it, so some sections may be incomplete or misfiled.`
+      : "Perplexity did not return valid JSON. The app preserved the raw reply instead of discarding it, so some sections may be incomplete or misfiled.",
+    summary: preview,
+    key_elements: bulletItems,
+    craft_analysis: "Unstructured Perplexity response shown in the Overview section above.",
+    discussion_questions: questionItems,
+    key_takeaways: bulletItems,
+    raw_response_text: preview,
+    fallback_reason: "perplexity-invalid-json"
+  };
 }
 
 function extractPerplexityMessageText(parsedApi) {
@@ -1251,7 +1544,7 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     "Use the structured briefing below as source material. Expand every section into a polished solo audio overview.",
     "Treat each heading as a chapter marker with a natural spoken transition.",
     "Do not mention JSON, metadata, bullet points, or field names.",
-    "Aim for roughly 1,000 to 1,400 words and about 8 to 10 minutes of listening time.",
+    "Aim for roughly 600 to 850 words and about 4 to 6 minutes of listening time.",
     "Keep the tone engaged and intelligent, but not gushy, breathless, or promotional.",
     "If the source material suggests mixed, weak, or negative reception, make that clear in a calm, matter-of-fact way.",
     "Do not overpraise the book unless the source material strongly supports it.",
@@ -1263,7 +1556,6 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     safeMode === "spoiler"
       ? "Spoilers are allowed. Discuss the full work plainly."
       : "Do not reveal endings, twists, or late-stage character fates beyond the spoiler-safe briefing.",
-    "For discussion questions, pose each question naturally to the listener and offer a brief exploratory answer.",
     "Return only the finished narration script in plain text.",
     "",
     "Quick Take",
@@ -1290,8 +1582,8 @@ function buildNarrationPrompt(book, briefing, spoilerMode) {
     "Impact",
     String(briefing.impact || ""),
     "",
-    isReference ? "Notable Features" : "Discussion Questions",
-    listToNarrationLines(discussionList),
+    isReference ? "Notable Features" : "",
+    isReference ? listToNarrationLines(discussionList) : "",
     "",
     "Confidence Note",
     String(briefing.confidence_note || "")
@@ -1626,7 +1918,7 @@ async function synthesizeNarrationAudio(script, voice, apiKey, modelName) {
   return pcmToWavBuffer(pcm);
 }
 
-async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, apiKey) {
+async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh, apiKey, requestedTtsModel = FLASH_TTS_MODEL, requestedTtsFallbackReason = "") {
   console.log(`[buildBriefingAudio] start bookId=${bookId} spoilerMode=${spoilerMode || "safe"} forceRefresh=${forceRefresh ? "1" : "0"}`);
   const { book, briefing } = await loadBookAndBriefing(uid, bookId);
   console.log(`[buildBriefingAudio] loaded book="${book.title}" briefingModel=${briefing.model || "unknown"}`);
@@ -1638,9 +1930,8 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
   const currentVariant = audioVariantFromDoc(audioDoc, variantKey);
   const normalizedVoice = normalizeVoice(voice);
   const sourceBriefingGeneratedAt = String(briefing.generated_at || "");
-  const initialTtsStatus = await getProTtsAvailabilityStatus();
-  let activeTtsModel = initialTtsStatus.available ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
-  let ttsFallbackReason = initialTtsStatus.available ? "" : "daily-rate-limit";
+  let activeTtsModel = requestedTtsModel === PRO_TTS_MODEL ? PRO_TTS_MODEL : FLASH_TTS_MODEL;
+  let ttsFallbackReason = cleanText(requestedTtsFallbackReason || "");
 
   if (
     !forceRefresh &&
@@ -1742,6 +2033,8 @@ async function buildBriefingAudio(uid, bookId, spoilerMode, voice, forceRefresh,
           voice: normalizedVoice,
           generatedAt: startedAt,
           sourceBriefingGeneratedAt,
+          ttsModel: activeTtsModel,
+          ttsFallbackReason,
           error: error && error.message ? error.message : "Unknown audio generation error."
         }
       }

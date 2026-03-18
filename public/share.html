@@ -810,7 +810,7 @@
         <div class="about-feature">
           <div class="about-feature-icon">&#128214;</div>
           <div>
-            <strong>TomeShelves</strong>
+            <strong>Shelves</strong>
             <p>Organise your catalog into named shelves — Reading List, Cookbooks, Borrowed Books, or whatever fits your life. Select multiple books at once to move or remove them in bulk.</p>
           </div>
         </div>
@@ -882,7 +882,7 @@
 
       <div class="about-more-section-title">Managing Your Library</div>
       <ul class="about-more-list">
-        <li><strong>TomeShelves</strong> — create and name as many shelves as you like; rename or delete at any time; last-viewed shelf restored on next open</li>
+        <li><strong>Shelves</strong> — create and name as many shelves as you like; rename or delete at any time; last-viewed shelf restored on next open</li>
         <li><strong>Multi-book selection</strong> — select any or all books on a shelf; move or delete in bulk with confirmation</li>
         <li><strong>Full catalog fields</strong> — title, author, year, publisher, edition, ISBN, subjects, cover art, condition, shelf location, reading notes, and personal notes</li>
         <li><strong>Search, sort &amp; filter</strong> — search by any field; filter by reading status, condition, or shelf; sort by title, author, year, rating, or recently added</li>
@@ -1006,6 +1006,9 @@ async function loadSharedShelf() {
     sharedShelfName   = data.shelfName || "Shared Shelf";
     sharedAllowWikiAI = Boolean(data.allowWikiAI);
     sharedAllowBriefingAudio = Boolean(data.allowBriefingAudio);
+    currentSort = sharedBooks.some(function(book) { return Number.isFinite(Number(book && book.customOrder)); })
+      ? "custom"
+      : "added";
     document.getElementById("headerShelfName").textContent = sharedShelfName;
     document.title = "TomeShelf \u2014 " + sharedShelfName;
     renderLayout();
@@ -1072,6 +1075,7 @@ function renderLayout() {
           '<input type="search" id="filterInput" placeholder="Search\u2026" oninput="applyFilter(this.value)">' +
           '<select id="sortSelect" onchange="applySort(this.value)">' +
             '<option value="added">Recently added</option>' +
+            '<option value="custom">Custom order</option>' +
             '<option value="title">Title A\u2013Z</option>' +
             '<option value="author">Author A\u2013Z</option>' +
             '<option value="year">Year</option>' +
@@ -1098,6 +1102,8 @@ function renderLayout() {
     '</div>';
 
   applyShareDetailExpanded();
+  const sortSelect = document.getElementById("sortSelect");
+  if (sortSelect) sortSelect.value = currentSort;
   renderBookList();
   _attachDetailSwipe();
 }
@@ -1115,21 +1121,32 @@ function filteredSortedBooks() {
     });
   }
 
-  list.sort(function(a, b) {
-    if (currentSort === "author") return (a.author || "").localeCompare(b.author || "");
-    if (currentSort === "year")   return (parseInt(b.year) || 0) - (parseInt(a.year) || 0);
-    if (currentSort === "rating") return (Number(b.rating) || 0) - (Number(a.rating) || 0);
-    if (currentSort === "title")  return (a.title || "").localeCompare(b.title || "");
-    return Number(b.addedAt || 0) - Number(a.addedAt || 0); // "added" — newest first
-  });
-
+  list.sort(compareSharedBooksBySort);
   return list;
+}
+
+function compareSharedBooksBySort(a, b) {
+  if (currentSort === "author") return (a.author || "").localeCompare(b.author || "");
+  if (currentSort === "year")   return (parseInt(b.year) || 0) - (parseInt(a.year) || 0);
+  if (currentSort === "rating") return (Number(b.rating) || 0) - (Number(a.rating) || 0);
+  if (currentSort === "title")  return (a.title || "").localeCompare(b.title || "");
+  if (currentSort === "custom") {
+    const aHas = Number.isFinite(Number(a && a.customOrder));
+    const bHas = Number.isFinite(Number(b && b.customOrder));
+    if (aHas && bHas) {
+      const diff = Number(a.customOrder) - Number(b.customOrder);
+      if (diff !== 0) return diff;
+    } else if (aHas !== bHas) {
+      return aHas ? -1 : 1;
+    }
+  }
+  return Number(b.addedAt || 0) - Number(a.addedAt || 0);
 }
 
 function renderBookList() {
   const list = filteredSortedBooks();
   const countEl = document.getElementById("countLabel");
-  if (countEl) countEl.textContent = list.length + " tome" + (list.length === 1 ? "" : "s");
+  if (countEl) countEl.textContent = list.length + " book" + (list.length === 1 ? "" : "s");
 
   const container = document.getElementById("bookList");
   if (!container) return;
