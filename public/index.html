@@ -1024,6 +1024,47 @@ const firebaseConfig = {
     transition: border-left-color 0.15s;
   }
   .book-card:hover { border-left-color: var(--gold); }
+  .book-card.reorderable {
+    position: relative;
+    cursor: default;
+  }
+  .book-card.dragging {
+    opacity: 0.45;
+  }
+  .book-card.drag-target-before {
+    box-shadow: inset 0 4px 0 var(--gold), 1px 2px 6px var(--shadow);
+  }
+  .book-card.drag-target-after {
+    box-shadow: inset 0 -4px 0 var(--gold), 1px 2px 6px var(--shadow);
+  }
+  .drag-handle {
+    width: 22px;
+    min-width: 22px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    color: var(--tan);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+  }
+  .drag-handle::before {
+    content: "::";
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    line-height: 1;
+  }
+  .book-card.reorderable .drag-handle {
+    display: inline-flex;
+  }
+  .book-card.reorderable .drag-handle:hover {
+    color: var(--brown);
+  }
+  .book-card.reorderable .drag-handle:active {
+    cursor: grabbing;
+  }
 
   .book-cover-thumb {
     width: 80px;
@@ -2948,7 +2989,7 @@ const firebaseConfig = {
             </div>
             <div class="form-group">
               <label for="manAuthor">Author</label>
-              <input type="text" id="manAuthor" placeholder="Last, First" onkeydown="if (event.key === 'Enter') searchManualBook()">
+              <input type="text" id="manAuthor" placeholder="Last, First" oninput="syncAuthorSortFromManualAuthor()" onkeydown="if (event.key === 'Enter') searchManualBook()">
             </div>
             <div class="button-row">
               <button class="btn btn-secondary" type="button" onclick="searchManualBook()">Search</button>
@@ -3116,6 +3157,11 @@ const firebaseConfig = {
 
         <!-- ── Personal / reading fields — in edit order ── -->
         <div class="form-group">
+          <label for="bookAuthorSort">Author Sort</label>
+          <input type="text" id="bookAuthorSort" placeholder="Auto-generated from author name" oninput="markAuthorSortManual()">
+          <div class="helper-text">Used only for A-Z sorting. You can override it for names like "de Balzac" or "van Loon".</div>
+        </div>
+        <div class="form-group">
           <label>Your Rating</label>
           <div class="star-rating-widget" id="starRatingWidget">
             <button type="button" class="star-btn" data-value="1" onclick="setFormRating(1)" title="1 star">&#9733;</button>
@@ -3233,7 +3279,7 @@ const firebaseConfig = {
         </div>
       </div>
     </div>
-<div class="book-grid" id="bookGrid"></div>
+<div class="book-grid" id="bookGrid" ondragover="handleBookGridDragOver(event)" ondrop="handleBookGridDrop(event)"></div>
     <div id="selectionActionBar" class="selection-action-bar" style="display:none;">
       <span id="selectionCount" class="selection-count"></span>
       <div class="selection-bar-actions">
@@ -3557,6 +3603,9 @@ const firebaseConfig = {
     <div id="coverSourceStep2" style="display:none;">
       <div id="coverSearchStatus" class="lookup-status" style="margin-bottom:8px;"></div>
       <div id="coverSearchGrid" class="cover-search-grid"></div>
+      <div id="coverSearchActions" style="display:none;padding-top:10px;text-align:right;">
+        <button class="btn btn-light btn-sm" type="button" onclick="openGoogleImagesForCover()" style="font-size:0.75rem;">None of these? Open Google Images →</button>
+      </div>
       <div style="text-align:center;margin-top:14px;">
         <button class="btn btn-light" onclick="closeCoverSourceModal()">Dismiss</button>
       </div>
@@ -3746,6 +3795,9 @@ let editingBookId = null;
 let _filteredBookIds = [];
 let pendingCoverBlob = null;
 let _coverUploadBookId = null;
+let _coverSearchResults = [];
+let _coverSearchMode = "library";
+let _authorSortTouched = false;
 let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
@@ -3779,6 +3831,11 @@ let bulkObjectUrls         = [];     // object URLs for batch-photo correction/l
 let bulkProgress = { total: 0, processed: 0, stage: "", manual: 0, duplicates: 0 };
 let selectionMode    = false;
 let selectedBookIds  = new Set();
+let dragReorderState = {
+  bookId: null,
+  targetBookId: null,
+  position: null
+};
 let pendingBriefingIds = [];
 // Briefings now use Perplexity Sonar for all books.
 function expectedBriefingModel(book) {
@@ -4056,11 +4113,13 @@ function normalizeBook(book) {
   const source = book && typeof book === "object" ? book : {};
   const ratingValue = Number(source.rating);
   const customOrderValue = Number(source.customOrder);
+  const authorSort = String(source.authorSort || "").trim() || buildAuthorSortKey(source.author || "");
 
   return {
     ...source,
     notes: String(source.notes || "").trim(),
     personalNotes: String(source.personalNotes || "").trim(),
+    authorSort,
     readingStatus: normalizeReadingStatus(source.readingStatus),
     startDate: normalizeDateInput(source.startDate),
     finishDate: normalizeDateInput(source.finishDate),
@@ -4068,6 +4127,95 @@ function normalizeBook(book) {
     listShelfId: source.listShelfId || "default",
     customOrder: Number.isFinite(customOrderValue) ? customOrderValue : null
   };
+}
+
+function buildAuthorSortKey(author) {
+  const raw = String(author || "").trim();
+  if (!raw) return "";
+  const primary = extractPrimaryAuthorName(raw);
+  if (!primary) return "";
+  if (looksLikeInvertedSingleAuthor(primary)) return primary;
+
+  const parts = primary.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return primary;
+
+  const suffixes = new Set(["jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"]);
+  const particles = new Set([
+    "da", "de", "del", "della", "der", "di", "du", "la", "le", "st.", "st",
+    "van", "von", "den", "ten", "ter", "vel", "bin", "ibn", "al", "ap"
+  ]);
+
+  let end = parts.length - 1;
+  while (end > 0 && suffixes.has(parts[end].toLowerCase())) end -= 1;
+
+  let start = end;
+  while (start > 0 && particles.has(parts[start - 1].toLowerCase())) start -= 1;
+
+  const surname = parts.slice(start, end + 1).join(" ");
+  const given = parts.slice(0, start).concat(parts.slice(end + 1)).join(" ").trim();
+  return given ? `${surname}, ${given}` : surname;
+}
+
+function extractPrimaryAuthorName(author) {
+  const raw = String(author || "").trim();
+  if (!raw) return "";
+  const explicitSplit = raw.split(/\s+(?:and|&)\s+|;/i).map((part) => part.trim()).filter(Boolean);
+  if (explicitSplit.length > 1) return explicitSplit[0];
+  if (!raw.includes(",")) return raw;
+
+  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length <= 1) return raw;
+  if (looksLikeInvertedSingleAuthor(raw)) return raw;
+
+  // If comma chunks look like separate full names or authority-list fragments,
+  // treat the string as a contributor list and sort by the first named person.
+  return commaParts[0];
+}
+
+function looksLikeInvertedSingleAuthor(value) {
+  const raw = String(value || "").trim();
+  if (!raw.includes(",")) return false;
+  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length !== 2) return false;
+
+  const left = commaParts[0];
+  const right = commaParts[1];
+  if (!left || !right) return false;
+
+  const leftWords = left.split(/\s+/).filter(Boolean);
+  const rightWords = right.split(/\s+/).filter(Boolean);
+  if (!leftWords.length || !rightWords.length) return false;
+
+  const honorifics = new Set(["mr", "mr.", "mrs", "mrs.", "ms", "ms.", "dr", "dr.", "sir", "lady", "rev", "rev.", "prof", "prof."]);
+  if (leftWords.length > 4 || rightWords.length > 4) return false;
+  if (honorifics.has(leftWords[0].toLowerCase())) return false;
+
+  // "Surname, Given" is usually a short left side that does not itself look like a full name.
+  return leftWords.length <= 2;
+}
+
+function updateAuthorSortField(author, force = false) {
+  const input = document.getElementById("bookAuthorSort");
+  if (!input) return;
+  const suggested = buildAuthorSortKey(author);
+  if (force || !_authorSortTouched || !input.value.trim()) {
+    input.value = suggested;
+    input.dataset.auto = "1";
+    if (force) _authorSortTouched = false;
+  }
+}
+
+function markAuthorSortManual() {
+  const input = document.getElementById("bookAuthorSort");
+  if (!input) return;
+  _authorSortTouched = true;
+  input.dataset.auto = "0";
+}
+
+function syncAuthorSortFromManualAuthor() {
+  const authorInput = document.getElementById("manAuthor");
+  if (!authorInput) return;
+  updateAuthorSortField(authorInput.value, false);
 }
 
 function hasCustomOrder(book) {
@@ -4093,7 +4241,9 @@ function compareBooksBySort(a, b, sort) {
     return (a.title || "").localeCompare(b.title || "");
   }
   if (sort === "author") {
-    return (a.author || "").localeCompare(b.author || "");
+    const authorDiff = (a.authorSort || buildAuthorSortKey(a.author || "")).localeCompare(b.authorSort || buildAuthorSortKey(b.author || ""));
+    if (authorDiff !== 0) return authorDiff;
+    return (a.title || "").localeCompare(b.title || "");
   }
   if (sort === "year") {
     return Number(b.year || 0) - Number(a.year || 0);
@@ -4147,8 +4297,149 @@ function getSelectedBooksInDisplayOrder() {
 }
 
 function handleSortChange() {
+  clearBookDragState();
   renderCatalog();
   updateSelectionBar();
+}
+
+function canUseDragReorder() {
+  const sortSelect = document.getElementById("sortSelect");
+  const searchInput = document.getElementById("searchInput");
+  const isDesktop = window.innerWidth >= 1024;
+  const customSortActive = sortSelect && sortSelect.value === "custom";
+  const hasSearch = searchInput && searchInput.value.trim() !== "";
+  return Boolean(isDesktop && customSortActive && !selectionMode && !filterStatus && !hasSearch);
+}
+
+function clearBookDragIndicators() {
+  document.querySelectorAll(".book-card.dragging, .book-card.drag-target-before, .book-card.drag-target-after").forEach(function(card) {
+    card.classList.remove("dragging", "drag-target-before", "drag-target-after");
+  });
+}
+
+function clearBookDragState() {
+  dragReorderState.bookId = null;
+  dragReorderState.targetBookId = null;
+  dragReorderState.position = null;
+  clearBookDragIndicators();
+}
+
+function setBookDragTarget(targetBookId, position) {
+  dragReorderState.targetBookId = targetBookId || null;
+  dragReorderState.position = position || null;
+  document.querySelectorAll(".book-card.drag-target-before, .book-card.drag-target-after").forEach(function(card) {
+    card.classList.remove("drag-target-before", "drag-target-after");
+  });
+  if (!targetBookId || !position) return;
+  const card = document.querySelector(`.book-card[data-book-id="${CSS.escape(targetBookId)}"]`);
+  if (!card) return;
+  card.classList.add(position === "before" ? "drag-target-before" : "drag-target-after");
+}
+
+function autoScrollWhileDragging(clientY) {
+  if (!dragReorderState.bookId) return;
+  const edge = 90;
+  const fromTop = clientY;
+  const fromBottom = window.innerHeight - clientY;
+  let delta = 0;
+  if (fromTop < edge) {
+    delta = -Math.ceil(((edge - fromTop) / edge) * 18);
+  } else if (fromBottom < edge) {
+    delta = Math.ceil(((edge - fromBottom) / edge) * 18);
+  }
+  if (delta !== 0) {
+    window.scrollBy(0, delta);
+  }
+}
+
+function updateBookDragTargetFromPoint(clientX, clientY) {
+  if (!dragReorderState.bookId) return;
+  const cards = [...document.querySelectorAll("#bookGrid .book-card[data-book-id]")].filter(function(card) {
+    return card.dataset.bookId !== dragReorderState.bookId;
+  });
+  if (!cards.length) {
+    setBookDragTarget(null, null);
+    return;
+  }
+
+  const directTarget = document.elementFromPoint(clientX, clientY);
+  const targetCard = directTarget && directTarget.closest ? directTarget.closest(".book-card[data-book-id]") : null;
+  if (targetCard && targetCard.dataset.bookId !== dragReorderState.bookId) {
+    const rect = targetCard.getBoundingClientRect();
+    setBookDragTarget(targetCard.dataset.bookId, clientY < rect.top + rect.height / 2 ? "before" : "after");
+    return;
+  }
+
+  const firstRect = cards[0].getBoundingClientRect();
+  if (clientY < firstRect.top + firstRect.height / 2) {
+    setBookDragTarget(cards[0].dataset.bookId, "before");
+    return;
+  }
+  const lastCard = cards[cards.length - 1];
+  setBookDragTarget(lastCard.dataset.bookId, "after");
+}
+
+function startBookDrag(event, bookId) {
+  if (!canUseDragReorder()) {
+    event.preventDefault();
+    return;
+  }
+  dragReorderState.bookId = bookId;
+  dragReorderState.targetBookId = null;
+  dragReorderState.position = null;
+  const card = event.target.closest(".book-card");
+  if (card) card.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", bookId);
+  }
+}
+
+function endBookDrag() {
+  clearBookDragState();
+}
+
+function handleBookGridDragOver(event) {
+  if (!dragReorderState.bookId || !canUseDragReorder()) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  autoScrollWhileDragging(event.clientY);
+  updateBookDragTargetFromPoint(event.clientX, event.clientY);
+}
+
+async function handleBookGridDrop(event) {
+  if (!dragReorderState.bookId || !canUseDragReorder()) return;
+  event.preventDefault();
+  const draggedBookId = dragReorderState.bookId;
+  const targetBookId = dragReorderState.targetBookId;
+  const position = dragReorderState.position;
+  clearBookDragIndicators();
+
+  if (!targetBookId || !position || draggedBookId === targetBookId) {
+    clearBookDragState();
+    return;
+  }
+
+  const ordered = ensureShelfCustomOrderInitialized(currentShelfId);
+  const draggedIndex = ordered.findIndex(function(book) { return book.id === draggedBookId; });
+  if (draggedIndex === -1) {
+    clearBookDragState();
+    return;
+  }
+
+  const draggedBook = ordered.splice(draggedIndex, 1)[0];
+  let insertAt = ordered.findIndex(function(book) { return book.id === targetBookId; });
+  if (insertAt === -1) {
+    ordered.push(draggedBook);
+  } else {
+    if (position === "after") insertAt += 1;
+    ordered.splice(insertAt, 0, draggedBook);
+  }
+
+  reindexShelfCustomOrder(currentShelfId, ordered);
+  await persistCatalog();
+  clearBookDragState();
+  renderCatalog();
 }
 
 function normalizeReadingStatus(value) {
@@ -4517,6 +4808,7 @@ async function lookupISBN(isbn) {
 
 function showLookupResult() {
   document.getElementById("bookMetaSection").style.display = "";
+  updateAuthorSortField(pendingBook.author || "", true);
   if (pendingBook.coverUrl) {
     document.getElementById("coverPreview").innerHTML = `<img src="${escapeAttribute(pendingBook.coverUrl)}" alt="Book cover" onclick="showCoverLightbox('${escapeAttribute(pendingBook.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">`;
   }
@@ -4596,6 +4888,7 @@ const _gbKeys = [
   "AIzaSyCJ5d8DPCrDZnJuQr9tWvyK0KHEo3ibuYg",  // key 1
   "AIzaSyAO92owqis5fAAJhrrJmpgKEHndAyDTBmE"   // key 2 (separate project)
 ];
+const _programmableSearchCx = "e7336eb50664d4bba";
 let _gbActiveKey = 0;
 
 // Fetch Google Books JSON with automatic key rotation on 403 / 429.
@@ -4618,6 +4911,27 @@ async function fetchGbJson(urlWithoutKey) {
     return res.json().catch(() => null);
   }
   return null;  // all keys exhausted
+}
+
+async function fetchProgrammableSearchJson(urlWithoutKey) {
+  if (!_programmableSearchCx) return null;
+  const startKey = _gbActiveKey;
+  for (let attempt = 0; attempt < _gbKeys.length; attempt++) {
+    const keyIdx = (startKey + attempt) % _gbKeys.length;
+    if (!_gbKeys[keyIdx]) continue;
+    const joiner = urlWithoutKey.includes("?") ? "&" : "?";
+    const res = await fetch(`${urlWithoutKey}${joiner}cx=${encodeURIComponent(_programmableSearchCx)}&key=${_gbKeys[keyIdx]}`).catch(() => null);
+    if (!res) continue;
+    if (res.status === 403 || res.status === 429) {
+      const errBody = await res.clone().text().catch(() => "");
+      console.error(`[CSE key${keyIdx + 1}] HTTP ${res.status} -`, errBody);
+      _gbActiveKey = (keyIdx + 1) % _gbKeys.length;
+      continue;
+    }
+    if (!res.ok) return null;
+    return res.json().catch(() => null);
+  }
+  return null;
 }
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -4685,6 +4999,30 @@ function dedupeManualResults(results) {
   return out;
 }
 
+async function searchProgrammableCoverImages(title, author) {
+  if (!_programmableSearchCx) return [];
+  const query = [title, author, "book cover"].filter(Boolean).join(" ");
+  if (!query) return [];
+  const data = await fetchProgrammableSearchJson(
+    `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&searchType=image&safe=active&num=10`
+  );
+  const items = Array.isArray(data && data.items) ? data.items : [];
+  return items.map((item, index) => ({
+    key: `cse-${index}-${item.link || Math.random().toString(36).slice(2)}`,
+    title: title || item.title || "",
+    author: author || "",
+    publisher: "",
+    year: "",
+    edition: "",
+    subjects: "",
+    isbn: "",
+    coverUrl: item.link || "",
+    source: "Google Image Search",
+    sourcePageUrl: (item.image && item.image.contextLink) || "",
+    shouldIngest: true
+  })).filter((item) => item.coverUrl);
+}
+
 function renderManualSearchResults(results, broad = false) {
   const container = document.getElementById("manualSearchResults");
   manualSearchResults = results;
@@ -4729,6 +5067,7 @@ function selectManualSearchResult(index) {
   document.getElementById("manYear").value = result.year || "";
   document.getElementById("manEdition").value = result.edition || "";
   document.getElementById("manSubjects").value = result.subjects || "";
+  updateAuthorSortField(result.author || "", true);
   document.getElementById("coverPreview").innerHTML = result.coverUrl ? `<img src="${escapeAttribute(result.coverUrl)}" alt="Book cover" onclick="showCoverLightbox('${escapeAttribute(result.coverUrl)}')" style="cursor:zoom-in;" title="Click to enlarge">` : "";
   setStatus("manualSearchStatus", `Filled details from ${result.source}. You can still edit anything before saving.`, "success");
 }
@@ -4760,11 +5099,13 @@ async function addBook() {
     // Edit mode: bibliographic fields are locked — preserve everything from the saved book
     book = { ...editingBook };
     book.subjects = document.getElementById("bookSubjectTags").value.trim();
+    book.authorSort = document.getElementById("bookAuthorSort").value.trim();
   } else if (currentTab === "isbn") {
     if (!pendingBook) {
       return setStatus("addStatus", "Look up an ISBN first.", "error");
     }
     book = { ...pendingBook };
+    book.authorSort = document.getElementById("bookAuthorSort").value.trim();
   } else {
     const title = document.getElementById("manTitle").value.trim();
     if (!title) {
@@ -4773,6 +5114,7 @@ async function addBook() {
     book = {
       title,
       author: document.getElementById("manAuthor").value.trim(),
+      authorSort: document.getElementById("bookAuthorSort").value.trim(),
       publisher: document.getElementById("manPublisher").value.trim(),
       year: document.getElementById("manYear").value.trim(),
       edition: document.getElementById("manEdition").value.trim(),
@@ -4863,11 +5205,13 @@ function allowDuplicateAdd() {
 
 function clearForm() {
   _allowDuplicateOverride = false;
+  _authorSortTouched = false;
   stopEditing();
-  ["isbnInput", "manTitle", "manAuthor", "manPublisher", "manYear", "manEdition", "manSubjects", "bookSubjectTags", "bookShelf", "bookNotes", "bookPersonalNotes", "bookStartDate", "bookFinishDate"].forEach((id) => {
+  ["isbnInput", "manTitle", "manAuthor", "manPublisher", "manYear", "manEdition", "manSubjects", "bookAuthorSort", "bookSubjectTags", "bookShelf", "bookNotes", "bookPersonalNotes", "bookStartDate", "bookFinishDate"].forEach((id) => {
     const element = document.getElementById(id);
     if (element) {
       element.value = "";
+      if (id === "bookAuthorSort") element.dataset.auto = "1";
     }
   });
   document.getElementById("bookCondition").value = "";
@@ -4917,6 +5261,7 @@ function startEditBook(id) {
   document.getElementById("bookStartDate").value = book.startDate || "";
   document.getElementById("bookFinishDate").value = book.finishDate || "";
   document.getElementById("bookSubjectTags").value = book.subjects || "";
+  updateAuthorSortField(book.authorSort || book.author || "", true);
   document.getElementById("bookPersonalNotes").value = book.personalNotes || "";
   document.getElementById("bookCondition").value = book.condition || "";
   document.getElementById("bookShelf").value = book.shelf || "";
@@ -4991,9 +5336,14 @@ function renderBookCard(book) {
   const isSelChecked = selectionMode && selectedBookIds.has(book.id);
   const selClass = selectionMode ? (isSelChecked ? " in-selection-mode selection-checked" : " in-selection-mode") : (isSelected ? " selected" : "");
   const clickFn = `handleBookCardClick('${escapeAttribute(book.id)}')`;
+  const dragEnabled = canUseDragReorder();
+  const dragHandle = dragEnabled
+    ? `<button class="drag-handle" type="button" draggable="true" title="Drag to reorder" aria-label="Drag to reorder" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="startBookDrag(event,'${escapeAttribute(book.id)}')" ondragend="endBookDrag()"></button>`
+    : "";
 
   return `
-    <div class="book-card${selClass}" data-book-id="${escapeAttribute(book.id)}" onclick="${clickFn}">
+    <div class="book-card${selClass}${dragEnabled ? " reorderable" : ""}" data-book-id="${escapeAttribute(book.id)}" onclick="${clickFn}">
+      ${dragHandle}
       ${selectionMode ? `<div class="select-indicator">${isSelChecked ? "&#10003;" : ""}</div>` : ""}
       <div class="book-cover-thumb">${thumb}</div>
       <div class="book-info">
@@ -5018,6 +5368,7 @@ function handleBookCardClick(id) {
 }
 
 function toggleSelectionMode() {
+  clearBookDragState();
   selectionMode = !selectionMode;
   selectedBookIds = new Set();
   document.getElementById("selectModeBtn").classList.toggle("select-mode-active", selectionMode);
@@ -5027,6 +5378,7 @@ function toggleSelectionMode() {
 }
 
 function exitSelectionMode() {
+  clearBookDragState();
   selectionMode = false;
   selectedBookIds = new Set();
   document.getElementById("selectModeBtn").classList.remove("select-mode-active");
@@ -7125,6 +7477,21 @@ function pickCoverFromFile() {
 function closeCoverSourceModal() {
   document.getElementById("coverSourceModal").classList.remove("open");
   _coverUploadBookId = null;
+  _coverSearchResults = [];
+  _coverSearchMode = "library";
+}
+
+function openGoogleImagesForCover() {
+  const book = findBook(_coverUploadBookId);
+  if (!book) return;
+  const query = [book.title || "", book.author || "", "book cover"].filter(Boolean).join(" ");
+  const url = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+  const statusEl = document.getElementById("coverSearchStatus");
+  if (statusEl) {
+    statusEl.textContent = "Google Images opened in a new tab. If you find a cover you want, take a screenshot and use Upload Photo.";
+    statusEl.className = "lookup-status";
+  }
 }
 
 async function searchCoverImages() {
@@ -7134,48 +7501,85 @@ async function searchCoverImages() {
   document.getElementById("coverSourceStep2").style.display = "";
   const statusEl = document.getElementById("coverSearchStatus");
   const grid = document.getElementById("coverSearchGrid");
-  statusEl.textContent = "Searching…";
+  const actionsEl = document.getElementById("coverSearchActions");
+  _coverSearchMode = "library";
+  statusEl.textContent = "Searching...";
   grid.innerHTML = "";
+  if (actionsEl) actionsEl.style.display = "none";
   try {
     const [olResults, gbResults] = await Promise.all([
       searchOpenLibrary(book.title, book.author || "", false),
       searchGoogleBooks(book.title, book.author || "", false)
     ]);
     const merged = dedupeManualResults([...olResults, ...gbResults]);
-    const withCovers = merged.filter(r => r.coverUrl);
+    const withCovers = merged.filter((r) => r.coverUrl);
+    _coverSearchResults = withCovers;
     statusEl.textContent = "";
     if (!withCovers.length) {
-      statusEl.textContent = "No covers found. Try uploading your own photo.";
+      statusEl.textContent = "No covers found. Try Upload Photo or open Google Images.";
+      if (actionsEl) actionsEl.style.display = "";
       return;
     }
-    grid.innerHTML = withCovers.map(r =>
-      `<div class="cover-search-item" onclick="showCoverSearchLightbox('${escapeAttribute(r.coverUrl)}')" title="${esc(r.title || "")}">` +
-      `<img src="${escapeAttribute(r.coverUrl)}" alt="" onerror="this.closest('.cover-search-item').style.display='none'"></div>`
-    ).join("");
+    if (actionsEl) actionsEl.style.display = "";
+    grid.innerHTML = withCovers.map((r, index) => {
+      const sourceLabel = esc(r.source || "Cover");
+      const sourceTitle = escapeAttribute([r.title || "", r.sourcePageUrl || ""].filter(Boolean).join("\n"));
+      return (
+        `<div class="cover-search-item" onclick="showCoverSearchLightbox(${index})" title="${sourceTitle}">` +
+        `<img src="${escapeAttribute(r.coverUrl)}" alt="${sourceLabel}" onerror="this.closest('.cover-search-item').style.display='none'">` +
+        `<div class="search-result-meta" style="padding-top:6px;text-align:center;">${sourceLabel}</div>` +
+        `</div>`
+      );
+    }).join("");
   } catch (err) {
     statusEl.textContent = "Search failed. Please try again.";
     statusEl.className = "lookup-status error";
   }
 }
 
-function showCoverSearchLightbox(url) {
+function showCoverSearchLightbox(index) {
+  const result = _coverSearchResults[index];
+  if (!result || !result.coverUrl) return;
   const btn = document.getElementById("coverLightboxSelectBtn");
   btn.style.display = "";
-  btn.dataset.url = url;
-  showCoverLightbox(url);
+  btn.dataset.index = String(index);
+  showCoverLightbox(result.coverUrl);
+}
+
+async function ingestRemoteCoverToStorage(bookId, sourceUrl) {
+  const res = await fetch(sourceUrl, { credentials: "omit" });
+  if (!res.ok) {
+    throw new Error(`Image download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  if (!blob || !String(blob.type || "").startsWith("image/")) {
+    throw new Error("Selected result did not return an image file");
+  }
+  const coverBlob = await compressImageForCover(blob);
+  return uploadCoverToStorage(bookId, coverBlob);
 }
 
 async function selectCoverFromLightbox() {
-  const url = document.getElementById("coverLightboxSelectBtn").dataset.url;
+  const index = Number(document.getElementById("coverLightboxSelectBtn").dataset.index);
   const bookId = _coverUploadBookId;
+  const result = Number.isFinite(index) ? _coverSearchResults[index] : null;
   closeCoverLightbox();
   closeCoverSourceModal();
   const book = findBook(bookId);
-  if (!book || !url) return;
-  book.coverUrl = url;
-  await saveBooks();
-  renderCatalog();
-  renderBriefingPanel();
+  if (!book || !result || !result.coverUrl) return;
+  setResearchStatus("Applying cover…", "");
+  try {
+    const finalUrl = result.shouldIngest
+      ? await ingestRemoteCoverToStorage(bookId, result.coverUrl)
+      : result.coverUrl;
+    book.coverUrl = finalUrl;
+    await saveBooks();
+    renderCatalog();
+    renderBriefingPanel();
+    setResearchStatus("", "");
+  } catch (e) {
+    setResearchStatus("Could not download that web image. Try another result or upload a photo.", "error");
+  }
 }
 
 async function handleCoverUpload(input) {
@@ -7251,6 +7655,7 @@ function renderStats() {
 }
 
 function setFilter(status) {
+  clearBookDragState();
   filterStatus = status;
   document.querySelectorAll(".filter-pill").forEach((pill) => {
     pill.classList.toggle("active", pill.dataset.status === status);
@@ -8476,6 +8881,7 @@ function switchShelf(id) {
     closeShelvesModal();
     return;
   }
+  clearBookDragState();
   currentShelfId = id;
   saveCurrentShelfId();
   // Deselect book if it's not in the new shelf
@@ -9999,3 +10405,5 @@ setTimeout(function () {
 </script>
 </body>
 </html>
+
+
