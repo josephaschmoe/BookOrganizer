@@ -359,15 +359,101 @@
       line-height: 1.5;
     }
 
-    .book-detail-action-row {
-      display: flex;
-      gap: 8px;
+  .book-detail-action-row {
+    display: flex;
+    gap: 8px;
       align-items: center;
       flex-wrap: wrap;
       padding: 8px 0;
       border-bottom: 1px solid var(--tan);
-      margin-bottom: 10px;
-    }
+    margin-bottom: 10px;
+  }
+  .book-photo-section {
+    border-bottom: 1px solid var(--tan);
+    margin-bottom: 10px;
+    padding: 0 0 12px;
+  }
+  .book-photo-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .book-photo-section-header-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .book-photo-section-title {
+    font-family: 'Playfair Display', serif;
+    color: var(--dark);
+    font-size: 1rem;
+  }
+  .book-photo-toggle {
+    min-width: 78px;
+  }
+  .book-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+  }
+  .book-photo-card {
+    border: 1px solid rgba(140, 112, 78, 0.26);
+    background: #f7f1e5;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .book-photo-card img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    display: block;
+    background: var(--tan);
+  }
+  .book-photo-card-meta {
+    padding: 6px 2px 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .book-photo-card-type {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.66rem;
+    color: #3a6a90;
+    text-transform: uppercase;
+  }
+  .book-photo-card-caption {
+    font-size: 0.74rem;
+    color: var(--brown);
+    line-height: 1.25;
+  }
+  .book-photo-empty {
+    font-size: 0.82rem;
+    color: var(--brown);
+    font-style: italic;
+  }
+  .cover-lightbox-nav {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,0.65);
+    background: rgba(26, 51, 85, 0.88);
+    color: #fff;
+    font-size: 1.15rem;
+    line-height: 1;
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .cover-lightbox-nav:hover:not(:disabled) {
+    background: rgba(44, 78, 116, 0.96);
+    border-color: rgba(255,255,255,0.9);
+  }
+  .cover-lightbox-nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
 
     /* ── Spoiler Toggle ── */
     .spoiler-toggle {
@@ -769,8 +855,12 @@
 
 <!-- Cover Lightbox -->
 <div class="modal-overlay" id="coverLightbox" onclick="closeCoverLightbox()">
-  <img id="coverLightboxImg" src="" alt="Book cover"
-    style="max-width:90vw;max-height:80vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);">
+  <div style="display:flex;align-items:center;gap:10px;" onclick="event.stopPropagation()">
+    <button id="coverLightboxPrevBtn" class="btn cover-lightbox-nav" type="button" onclick="navigateCoverLightbox(-1)" style="display:none;" aria-label="Previous photo">&#8592;</button>
+    <img id="coverLightboxImg" src="" alt="Book cover"
+      style="max-width:90vw;max-height:80vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);">
+    <button id="coverLightboxNextBtn" class="btn cover-lightbox-nav" type="button" onclick="navigateCoverLightbox(1)" style="display:none;" aria-label="Next photo">&#8594;</button>
+  </div>
 </div>
 
 <!-- About Modal -->
@@ -983,6 +1073,12 @@ let shareDetailExpanded = false;
 let sharedAudioUrls   = {};
 let sharedAudioLoading = {};
 let sharedAudioUrlErrors = {};
+let _coverLightboxItems = [];
+let _coverLightboxIndex = -1;
+let _coverLightboxTouchX = 0;
+let _coverLightboxTouchY = 0;
+let sharedBookPhotoSectionCollapsed = {};
+let sharedHasPhotosModeSectionCollapsed = false;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 const token = (window.location.pathname.split("/share/")[1] || "").split("?")[0].trim();
@@ -1078,6 +1174,7 @@ function renderLayout() {
             '<option value="custom">Custom order</option>' +
             '<option value="title">Title A\u2013Z</option>' +
             '<option value="author">Author A\u2013Z</option>' +
+            '<option value="has-photos">Contains Addtl Photos</option>' +
             '<option value="year">Year</option>' +
             '<option value="rating">Rating</option>' +
           '</select>' +
@@ -1121,12 +1218,85 @@ function filteredSortedBooks() {
     });
   }
 
+  if (currentSort === "has-photos") {
+    list = list.filter(function(book) {
+      return Array.isArray(book && book.additionalPhotos) && book.additionalPhotos.length > 0;
+    });
+  }
+
   list.sort(compareSharedBooksBySort);
   return list;
 }
 
+function buildSharedAuthorSortKey(author) {
+  const raw = String(author || "").trim();
+  if (!raw) return "";
+  const primary = extractSharedPrimaryAuthorName(raw);
+  if (!primary) return "";
+  if (looksLikeSharedInvertedSingleAuthor(primary)) return primary;
+
+  const parts = primary.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return primary;
+
+  const suffixes = new Set(["jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"]);
+  const particles = new Set([
+    "da", "de", "del", "della", "der", "di", "du", "la", "le", "st.", "st",
+    "van", "von", "den", "ten", "ter", "vel", "bin", "ibn", "al", "ap"
+  ]);
+
+  let end = parts.length - 1;
+  while (end > 0 && suffixes.has(parts[end].toLowerCase())) end -= 1;
+
+  let start = end;
+  while (start > 0 && particles.has(parts[start - 1].toLowerCase())) start -= 1;
+
+  const surname = parts.slice(start, end + 1).join(" ");
+  const given = parts.slice(0, start).concat(parts.slice(end + 1)).join(" ").trim();
+  return given ? `${surname}, ${given}` : surname;
+}
+
+function extractSharedPrimaryAuthorName(author) {
+  const raw = String(author || "").trim();
+  if (!raw) return "";
+  const explicitSplit = raw.split(/\s+(?:and|&)\s+|;/i).map((part) => part.trim()).filter(Boolean);
+  if (explicitSplit.length > 1) return explicitSplit[0];
+  if (!raw.includes(",")) return raw;
+
+  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length <= 1) return raw;
+  if (looksLikeSharedInvertedSingleAuthor(raw)) return raw;
+  return commaParts[0];
+}
+
+function looksLikeSharedInvertedSingleAuthor(value) {
+  const raw = String(value || "").trim();
+  if (!raw.includes(",")) return false;
+  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length !== 2) return false;
+
+  const left = commaParts[0];
+  const right = commaParts[1];
+  if (!left || !right) return false;
+
+  const leftWords = left.split(/\s+/).filter(Boolean);
+  const rightWords = right.split(/\s+/).filter(Boolean);
+  if (!leftWords.length || !rightWords.length) return false;
+
+  const honorifics = new Set(["mr", "mr.", "mrs", "mrs.", "ms", "ms.", "dr", "dr.", "sir", "lady", "rev", "rev.", "prof", "prof."]);
+  if (leftWords.length > 4 || rightWords.length > 4) return false;
+  if (honorifics.has(leftWords[0].toLowerCase())) return false;
+  return leftWords.length <= 2;
+}
+
 function compareSharedBooksBySort(a, b) {
-  if (currentSort === "author") return (a.author || "").localeCompare(b.author || "");
+  if (currentSort === "has-photos") return (a.title || "").localeCompare(b.title || "");
+  if (currentSort === "author") {
+    const aKey = String(a.authorSort || "").trim() || buildSharedAuthorSortKey(a.author || "");
+    const bKey = String(b.authorSort || "").trim() || buildSharedAuthorSortKey(b.author || "");
+    const authorDiff = aKey.localeCompare(bKey);
+    if (authorDiff !== 0) return authorDiff;
+    return (a.title || "").localeCompare(b.title || "");
+  }
   if (currentSort === "year")   return (parseInt(b.year) || 0) - (parseInt(a.year) || 0);
   if (currentSort === "rating") return (Number(b.rating) || 0) - (Number(a.rating) || 0);
   if (currentSort === "title")  return (a.title || "").localeCompare(b.title || "");
@@ -1141,6 +1311,71 @@ function compareSharedBooksBySort(a, b) {
     }
   }
   return Number(b.addedAt || 0) - Number(a.addedAt || 0);
+}
+
+function prepareLightboxItems(urls) {
+  return (Array.isArray(urls) ? urls : [])
+    .map(function(url) { return String(url || "").trim(); })
+    .filter(Boolean);
+}
+
+function loadSharedBookPhotoSectionState(bookId) {
+  if (Object.prototype.hasOwnProperty.call(sharedBookPhotoSectionCollapsed, bookId)) {
+    return Boolean(sharedBookPhotoSectionCollapsed[bookId]);
+  }
+  var collapsed = true;
+  try {
+    var raw = localStorage.getItem("tomeshelf-shared-book-photo-collapsed");
+    var parsed = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, bookId)) {
+      collapsed = Boolean(parsed[bookId]);
+      sharedBookPhotoSectionCollapsed[bookId] = collapsed;
+    }
+  } catch (e) {}
+  return collapsed;
+}
+
+function saveSharedBookPhotoSectionState() {
+  try {
+    localStorage.setItem("tomeshelf-shared-book-photo-collapsed", JSON.stringify(sharedBookPhotoSectionCollapsed));
+  } catch (e) {}
+}
+
+function loadSharedHasPhotosModeSectionState() {
+  try {
+    sharedHasPhotosModeSectionCollapsed = localStorage.getItem("tomeshelf-shared-has-photos-collapsed") === "1";
+  } catch (e) {
+    sharedHasPhotosModeSectionCollapsed = false;
+  }
+  return sharedHasPhotosModeSectionCollapsed;
+}
+
+function saveSharedHasPhotosModeSectionState() {
+  try {
+    localStorage.setItem("tomeshelf-shared-has-photos-collapsed", sharedHasPhotosModeSectionCollapsed ? "1" : "0");
+  } catch (e) {}
+}
+
+function toggleSharedBookPhotoSection(bookId) {
+  if (currentSort === "has-photos") {
+    sharedHasPhotosModeSectionCollapsed = !loadSharedHasPhotosModeSectionState();
+    saveSharedHasPhotosModeSectionState();
+    renderBookDetail();
+    return;
+  }
+  sharedBookPhotoSectionCollapsed[bookId] = !loadSharedBookPhotoSectionState(bookId);
+  saveSharedBookPhotoSectionState();
+  renderBookDetail();
+}
+
+function openSharedBookPhotoLightbox(index) {
+  var book = sharedBooks.find(function(entry) { return entry.id === selectedBookId; });
+  if (!book) return;
+  var photos = Array.isArray(book.additionalPhotos) ? book.additionalPhotos : [];
+  var galleryUrls = photos.map(function(photo) { return photo && photo.url ? photo.url : ""; }).filter(Boolean);
+  var active = photos[index] && photos[index].url ? photos[index].url : (galleryUrls[0] || "");
+  if (!active) return;
+  showCoverLightbox(active, galleryUrls, index);
 }
 
 function renderBookList() {
@@ -1195,6 +1430,7 @@ function applyFilter(q) {
 function applySort(val) {
   currentSort = val;
   renderBookList();
+  renderBookDetail();
 }
 
 // ── Book selection ────────────────────────────────────────────────────────────
@@ -1304,6 +1540,7 @@ function renderBookDetail() {
         'onclick="showCoverLightbox(\'' + escapeAttribute(book.coverUrl) + '\')" ' +
         'style="cursor:zoom-in;" title="Click to enlarge">'
     : bookIconSVG();
+  const photoSectionHtml = renderSharedBookPhotoSection(Array.isArray(book.additionalPhotos) ? book.additionalPhotos : []);
 
   // ── Book detail header ──
   let headerHtml =
@@ -1328,7 +1565,8 @@ function renderBookDetail() {
         (book.notes        ? '<div class="book-detail-notes">' + esc(book.notes) + '</div>' : '') +
         (book.personalNotes ? '<div class="book-detail-personal-notes"><strong>Your notes:</strong> ' + esc(book.personalNotes) + '</div>' : '') +
       '</div>' +
-    '</div>';
+    '</div>' +
+    photoSectionHtml;
 
   // ── Action buttons ──
   const briefing  = sharedCache[book.id];
@@ -1356,6 +1594,7 @@ function renderBookDetail() {
   const actionsHtml =
     '<div class="book-detail-action-row">' +
       '<button class="btn btn-light btn-sm" type="button" onclick="lookupWikipedia()">Wikipedia</button>' +
+      '<button class="btn btn-light btn-sm" type="button" onclick="searchReviewsShared()">Search Reviews</button>' +
       (audioVariant
         ? '<button class="btn btn-light btn-sm" type="button" onclick="ensureSharedAudioUrl(\'' + escapeAttribute(book.id) + '\', \'' + spoilerMode + '\')">' +
             (audioUrl ? 'Play Audio' : 'Listen') +
@@ -1423,6 +1662,41 @@ function toggleSpoilers(checked) {
   renderBookDetail();
 }
 
+function formatSharedBookPhotoTypeLabel(value) {
+  var type = String(value || "").trim();
+  if (!type || type === "other") return "Other";
+  return type.replace(/[-_]+/g, " ").replace(/\b\w/g, function(ch) { return ch.toUpperCase(); });
+}
+
+function renderSharedBookPhotoSection(photos) {
+  if (!Array.isArray(photos) || !photos.length) {
+    return '<div class="book-photo-section">' +
+      '<div class="book-photo-section-header"><div class="book-photo-section-header-main"><div class="book-photo-section-title">Additional Photos</div></div></div>' +
+      '<div class="book-photo-empty">No additional photos shared for this book.</div>' +
+    '</div>';
+  }
+  var collapsed = currentSort === "has-photos"
+    ? loadSharedHasPhotosModeSectionState()
+    : loadSharedBookPhotoSectionState(selectedBookId || "");
+  return '<div class="book-photo-section">' +
+    '<div class="book-photo-section-header"><div class="book-photo-section-header-main"><div class="book-photo-section-title">Additional Photos</div><button class="btn btn-light btn-sm book-photo-toggle" type="button" onclick="toggleSharedBookPhotoSection(\'' + escapeAttribute(selectedBookId || "") + '\')">' + (collapsed ? 'Show' : 'Hide') + '</button></div></div>' +
+    (collapsed ? '' : '<div class="book-photo-grid">' +
+      photos.map(function(photo, index) {
+        const type = esc(formatSharedBookPhotoTypeLabel((photo && photo.type) || "other"));
+        const caption = photo && photo.caption ? '<div class="book-photo-card-caption">' + esc(photo.caption) + '</div>' : '';
+        const altText = photo && photo.caption ? esc(photo.caption) : type;
+        return '<div class="book-photo-card" onclick="openSharedBookPhotoLightbox(' + index + ')" title="Click to enlarge">' +
+          '<img src="' + escapeAttribute((photo && photo.url) || "") + '" alt="' + altText + '" onerror="this.closest(\'.book-photo-card\').style.display=\'none\'">' +
+          '<div class="book-photo-card-meta">' +
+            '<div class="book-photo-card-type">' + type + '</div>' +
+            caption +
+          '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>') +
+  '</div>';
+}
+
 // ── Book navigation ───────────────────────────────────────────────────────────
 function navigateBook(delta) {
   if (!selectedBookId) return;
@@ -1468,6 +1742,12 @@ function _attachDetailSwipe() {
 
 window.addEventListener("keydown", function(e) {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement && document.activeElement.tagName)) return;
+  if (document.getElementById("coverLightbox").classList.contains("open")) {
+    if (e.key === "ArrowRight" && _coverLightboxItems.length > 1) { navigateCoverLightbox(1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft" && _coverLightboxItems.length > 1) { navigateCoverLightbox(-1); e.preventDefault(); }
+    else if (e.key === "Escape") { closeCoverLightbox(); e.preventDefault(); }
+    return;
+  }
   if (!selectedBookId) return;
   if (e.key === "ArrowRight") { navigateBook(1);  e.preventDefault(); }
   else if (e.key === "ArrowLeft")  { navigateBook(-1); e.preventDefault(); }
@@ -1478,7 +1758,19 @@ window.addEventListener("resize", function() {
 });
 
 // ── Cover lightbox ─────────────────────────────────────────────────────────────
-function showCoverLightbox(url) {
+function showCoverLightbox(url, galleryUrls, galleryIndex) {
+  _coverLightboxItems = prepareLightboxItems(galleryUrls);
+  _coverLightboxIndex = _coverLightboxItems.length
+    ? Math.max(0, Math.min(Number(galleryIndex) || 0, _coverLightboxItems.length - 1))
+    : -1;
+  var activeUrl = _coverLightboxIndex >= 0 ? _coverLightboxItems[_coverLightboxIndex] : url;
+  var prevBtn = document.getElementById("coverLightboxPrevBtn");
+  var nextBtn = document.getElementById("coverLightboxNextBtn");
+  if (prevBtn) prevBtn.style.display = _coverLightboxItems.length > 1 ? "" : "none";
+  if (nextBtn) nextBtn.style.display = _coverLightboxItems.length > 1 ? "" : "none";
+  if (prevBtn) prevBtn.disabled = _coverLightboxIndex <= 0;
+  if (nextBtn) nextBtn.disabled = _coverLightboxIndex === -1 || _coverLightboxIndex >= _coverLightboxItems.length - 1;
+  url = activeUrl || url;
   let largeUrl = url;
   if (/books\.google(?:usercontent)?\.com|googleusercontent\.com|books\.google\.com/.test(url) || /zoom=\d+/.test(url)) {
     largeUrl = url.replace(/zoom=\d+/, "zoom=0").replace(/[&?]edge=curl/, "");
@@ -1502,12 +1794,44 @@ function showCoverLightbox(url) {
   document.getElementById("coverLightbox").classList.add("open");
 }
 
+function navigateCoverLightbox(delta) {
+  if (_coverLightboxItems.length <= 1) return;
+  var nextIndex = _coverLightboxIndex + delta;
+  if (nextIndex < 0 || nextIndex >= _coverLightboxItems.length) return;
+  showCoverLightbox(_coverLightboxItems[nextIndex], _coverLightboxItems, nextIndex);
+}
+
 function closeCoverLightbox() {
   document.getElementById("coverLightbox").classList.remove("open");
+  var prevBtn = document.getElementById("coverLightboxPrevBtn");
+  var nextBtn = document.getElementById("coverLightboxNextBtn");
+  if (prevBtn) prevBtn.style.display = "none";
+  if (nextBtn) nextBtn.style.display = "none";
+  _coverLightboxItems = [];
+  _coverLightboxIndex = -1;
   const img = document.getElementById("coverLightboxImg");
   img.style.minWidth = "";
   img.src = "";
 }
+
+(function attachCoverLightboxSwipe() {
+  var lightbox = document.getElementById("coverLightbox");
+  if (!lightbox) return;
+  lightbox.addEventListener("touchstart", function(e) {
+    if (!e.touches || !e.touches.length) return;
+    _coverLightboxTouchX = e.touches[0].clientX;
+    _coverLightboxTouchY = e.touches[0].clientY;
+  }, { passive: true });
+  lightbox.addEventListener("touchend", function(e) {
+    if (_coverLightboxItems.length <= 1 || !e.changedTouches || !e.changedTouches.length) return;
+    var dx = e.changedTouches[0].clientX - _coverLightboxTouchX;
+    var dy = e.changedTouches[0].clientY - _coverLightboxTouchY;
+    if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 50) {
+      if (dx < 0) navigateCoverLightbox(1);
+      else navigateCoverLightbox(-1);
+    }
+  }, { passive: true });
+})();
 
 // ── Wikipedia (Pass A: direct REST; Pass B: search URL fallback) ──────────────
 const _WIKI_BOOK_RE = /\b(novel|novella|nonfiction|non-fiction|memoir|autobiography|short stor|collection|anthology|graphic novel|play|screenplay|book|poem|poetry|essay|narrative|fiction)\b/i;
@@ -1625,6 +1949,14 @@ async function lookupWikipedia() {
         '<button class="btn btn-light btn-sm" onclick="closeWikiModal()">Close</button>' +
       '</div>';
   }
+}
+
+function searchReviewsShared() {
+  const book = sharedBooks.find(function(b) { return b.id === selectedBookId; });
+  if (!book) return;
+  const query = [book.title || "", book.author || "", "review"].filter(Boolean).join(" ");
+  const url = "https://www.google.com/search?q=" + encodeURIComponent(query);
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function renderWikiSummary(data, notice) {

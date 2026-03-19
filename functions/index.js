@@ -1143,11 +1143,13 @@ async function buildBackupZipForUser(uid) {
   const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
   const briefingsCol = db.collection("users").doc(uid).collection("briefings");
   const briefingAudioCol = db.collection("users").doc(uid).collection("briefingAudio");
+  const bookPhotosCol = db.collection("users").doc(uid).collection("bookPhotos");
 
-  const [catalogSnap, briefingsSnap, briefingAudioSnap] = await Promise.all([
+  const [catalogSnap, briefingsSnap, briefingAudioSnap, bookPhotosSnap] = await Promise.all([
     catalogRef.get(),
     briefingsCol.get(),
-    briefingAudioCol.get()
+    briefingAudioCol.get(),
+    bookPhotosCol.get()
   ]);
 
   if (!catalogSnap.exists) {
@@ -1161,11 +1163,16 @@ async function buildBackupZipForUser(uid) {
   briefingsSnap.forEach((doc) => { briefings[doc.id] = doc.data(); });
   const briefingAudio = {};
   briefingAudioSnap.forEach((doc) => { briefingAudio[doc.id] = doc.data(); });
+  const bookPhotos = {};
+  bookPhotosSnap.forEach((doc) => {
+    const data = doc.data() || {};
+    bookPhotos[doc.id] = Array.isArray(data.photos) ? data.photos : [];
+  });
   const sanitizedBriefingAudio = sanitizeBriefingAudioForBackup(briefingAudio);
-  console.log(`[buildBackupZipForUser] loaded books=${books.length} briefings=${Object.keys(briefings).length} briefingAudio=${Object.keys(sanitizedBriefingAudio).length}`);
+  console.log(`[buildBackupZipForUser] loaded books=${books.length} briefings=${Object.keys(briefings).length} briefingAudio=${Object.keys(sanitizedBriefingAudio).length} bookPhotos=${Object.keys(bookPhotos).length}`);
 
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     app: "TomeShelf",
     sections: {
@@ -1173,9 +1180,11 @@ async function buildBackupZipForUser(uid) {
       shelves: true,
       briefings: true,
       briefingAudio: true,
+      bookPhotos: true,
       assets: true
     },
     books,
+    bookPhotos,
     shelves,
     briefings,
     briefingAudio: sanitizedBriefingAudio,
@@ -1184,6 +1193,8 @@ async function buildBackupZipForUser(uid) {
   const exportStats = {
     coversAdded: 0,
     coversSkipped: 0,
+    bookPhotosAdded: 0,
+    bookPhotosSkipped: 0,
     audioAdded: 0,
     audioSkipped: 0
   };
@@ -1216,6 +1227,34 @@ async function buildBackupZipForUser(uid) {
       }
     }
 
+    const photoList = Array.isArray(bookPhotos[bookId]) ? bookPhotos[bookId] : [];
+    for (const photo of photoList) {
+      const photoId = String(photo && photo.id || "");
+      if (!photoId) continue;
+      const storagePath = String(photo && photo.storagePath || "");
+      const ext = extensionFromPath(storagePath || String(photo && photo.url || ""), ".jpg") || ".jpg";
+      const pathInZip = `files/book-photos/${bookId}/${photoId}${ext}`;
+      try {
+        if (storagePath && await addStorageFileToZip(zip, storagePath, pathInZip)) {
+          manifest.assets.push({
+            assetId: `book-photo-${bookId}-${photoId}`,
+            bookId,
+            photoId,
+            kind: "book-photo",
+            contentType: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
+            pathInZip,
+            sourcePath: storagePath
+          });
+          exportStats.bookPhotosAdded++;
+        } else {
+          exportStats.bookPhotosSkipped++;
+        }
+      } catch (error) {
+        exportStats.bookPhotosSkipped++;
+        console.warn(`[buildBackupZipForUser] additional photo export skipped for ${bookId}/${photoId}:`, error && error.message ? error.message : error);
+      }
+    }
+
     const audioDoc = sanitizedBriefingAudio[bookId];
     const variants = audioDoc && typeof audioDoc.variants === "object" ? audioDoc.variants : {};
     for (const [variant, entry] of Object.entries(variants)) {
@@ -1245,7 +1284,7 @@ async function buildBackupZipForUser(uid) {
     }
   }
 
-  console.log(`[buildBackupZipForUser] assets prepared coversAdded=${exportStats.coversAdded} coversSkipped=${exportStats.coversSkipped} audioAdded=${exportStats.audioAdded} audioSkipped=${exportStats.audioSkipped}`);
+  console.log(`[buildBackupZipForUser] assets prepared coversAdded=${exportStats.coversAdded} coversSkipped=${exportStats.coversSkipped} bookPhotosAdded=${exportStats.bookPhotosAdded} bookPhotosSkipped=${exportStats.bookPhotosSkipped} audioAdded=${exportStats.audioAdded} audioSkipped=${exportStats.audioSkipped}`);
   zip.file("manifest.json", JSON.stringify(manifest, null, 2));
   console.log("[buildBackupZipForUser] generating zip buffer");
   const archiveBuffer = await zip.generateAsync({
@@ -2652,6 +2691,7 @@ exports.getSharedShelf = onCall(async (request) => {
   const catalogRef   = db.collection("users").doc(ownerUid).collection("catalog");
   const briefingsCol = db.collection("users").doc(ownerUid).collection("briefings");
   const briefingAudioCol = db.collection("users").doc(ownerUid).collection("briefingAudio");
+  const bookPhotosCol = db.collection("users").doc(ownerUid).collection("bookPhotos");
 
   const catalogSnap = await catalogRef.doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
@@ -2670,6 +2710,19 @@ exports.getSharedShelf = onCall(async (request) => {
 
   // Fetch briefings only for books on this shelf (avoids reading the whole subcollection).
   const shelfBookIds = new Set(shelfBooks.map((b) => b.id));
+  const bookPhotoSnaps = await Promise.all(
+    [...shelfBookIds].map(id => bookPhotosCol.doc(id).get())
+  );
+  const photoMap = {};
+  bookPhotoSnaps.forEach((snap) => {
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    photoMap[snap.id] = Array.isArray(data.photos) ? data.photos : [];
+  });
+  shelfBooks.forEach((book) => {
+    book.additionalPhotos = Array.isArray(photoMap[book.id]) ? photoMap[book.id] : [];
+  });
+
   const briefingSnaps = await Promise.all(
     [...shelfBookIds].map(id => briefingsCol.doc(id).get())
   );

@@ -1298,6 +1298,171 @@ const firebaseConfig = {
     border-bottom: 1px solid var(--tan);
     margin-bottom: 10px;
   }
+  .book-photo-section {
+    border-bottom: 1px solid var(--tan);
+    margin-bottom: 10px;
+    padding: 0 0 12px;
+  }
+  .book-photo-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .book-photo-section-header-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .book-photo-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .book-photo-section-title {
+    font-family: 'Playfair Display', serif;
+    color: var(--dark);
+    font-size: 1rem;
+  }
+  .book-photo-add-label-compact { display: none; }
+  body.ui-compact .book-photo-add-label-full { display: none; }
+  body.ui-compact .book-photo-add-label-compact { display: inline; }
+  .book-photo-helper {
+    font-size: 0.74rem;
+    color: var(--brown);
+  }
+  .book-photo-toggle {
+    min-width: 78px;
+  }
+  body.ui-compact .book-photo-helper {
+    display: none;
+  }
+  .book-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+  }
+  .book-photo-card {
+    position: relative;
+    border: 1px solid rgba(140, 112, 78, 0.26);
+    background: #f7f1e5;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .book-photo-card img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    display: block;
+    background: var(--tan);
+  }
+  .book-photo-card-meta {
+    padding: 6px 2px 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .book-photo-card-type {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.66rem;
+    color: #3a6a90;
+    text-transform: uppercase;
+  }
+  .book-photo-card-caption {
+    font-size: 0.74rem;
+    color: var(--brown);
+    line-height: 1.25;
+  }
+  .book-photo-delete-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(255,255,255,0.7);
+    background: rgba(56, 32, 19, 0.82);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .book-photo-edit-btn {
+    position: absolute;
+    top: 6px;
+    right: 34px;
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(255,255,255,0.7);
+    background: rgba(56, 32, 19, 0.82);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    line-height: 1;
+  }
+  .book-photo-empty {
+    font-size: 0.82rem;
+    color: var(--brown);
+    font-style: italic;
+  }
+  .book-photo-type-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .book-photo-type-option {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 0.84rem;
+    color: var(--ink);
+    line-height: 1.35;
+    text-transform: none;
+    letter-spacing: normal;
+    margin-bottom: 0;
+  }
+  .book-photo-type-option input[type="radio"] {
+    margin: 0;
+    margin-top: 0.12em;
+    flex: 0 0 auto;
+  }
+  .book-photo-meta-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .cover-lightbox-nav {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,0.65);
+    background: rgba(26, 51, 85, 0.88);
+    color: #fff;
+    font-size: 1.15rem;
+    line-height: 1;
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .cover-lightbox-nav:hover:not(:disabled) {
+    background: rgba(44, 78, 116, 0.96);
+    border-color: rgba(255,255,255,0.9);
+  }
+  .cover-lightbox-nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
 
   .condition-badge {
     display: inline-block;
@@ -3253,6 +3418,7 @@ const firebaseConfig = {
         <option value="custom">Custom order</option>
         <option value="title">Title A-Z</option>
         <option value="author">Author A-Z</option>
+        <option value="has-photos">Contains Addtl Photos</option>
         <option value="year">Year</option>
         <option value="rating">Rating</option>
       </select>
@@ -3320,6 +3486,7 @@ const firebaseConfig = {
         <button class="btn btn-light btn-sm" type="button" id="editBookDetailBtn">Edit</button>
         <button class="btn btn-danger btn-sm" type="button" id="removeBookDetailBtn">Remove</button>
         <button class="btn btn-light btn-sm" type="button" id="wikiLookupBtn" onclick="lookupWikipedia()">Wikipedia</button>
+        <button class="btn btn-light btn-sm" type="button" id="searchReviewsBtn" onclick="searchReviewsForSelected()">Search Reviews</button>
         <button class="btn btn-secondary btn-sm" type="button" id="generateBriefingBtn" onclick="generateResearchForSelected(false)" disabled>Generate</button>
         <button class="btn btn-light btn-sm" type="button" id="listenBriefingBtn" onclick="generateBriefingAudioForSelected(false)" disabled>Listen</button>
         <label class="spoiler-toggle" id="spoilerToggleLabel" style="display:none;">
@@ -3339,6 +3506,8 @@ const firebaseConfig = {
 </div>
 
 <input type="file" id="coverUploadInput" accept="image/*" style="display:none" onchange="handleCoverUpload(this)">
+<input type="file" id="bookPhotoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBookPhotoUpload(this)">
+<input type="file" id="bookPhotoUploadInput" accept="image/*" multiple style="display:none" onchange="handleBookPhotoUpload(this)">
 <nav class="mobile-nav" id="mobileNav" aria-label="Main sections">
   <button class="mobile-nav-btn active" data-section="catalog" onclick="setMobileSection('catalog')">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -3584,7 +3753,11 @@ const firebaseConfig = {
 
 <div class="modal-overlay" id="coverLightbox" onclick="closeCoverLightbox()" style="cursor:zoom-out;">
   <div style="display:flex;flex-direction:column;align-items:center;gap:14px;" onclick="event.stopPropagation()">
-    <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:80vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button id="coverLightboxPrevBtn" class="btn cover-lightbox-nav" type="button" onclick="navigateCoverLightbox(-1)" style="display:none;" aria-label="Previous photo">&#8592;</button>
+      <img id="coverLightboxImg" src="" alt="Book cover" style="max-width:90vw;max-height:80vh;object-fit:contain;border:3px solid var(--tan);border-radius:2px;box-shadow:0 8px 40px rgba(0,0,0,0.7);">
+      <button id="coverLightboxNextBtn" class="btn cover-lightbox-nav" type="button" onclick="navigateCoverLightbox(1)" style="display:none;" aria-label="Next photo">&#8594;</button>
+    </div>
     <button id="coverLightboxSelectBtn" style="display:none;" class="btn btn-primary" onclick="selectCoverFromLightbox()">Use this Cover</button>
   </div>
 </div>
@@ -3609,6 +3782,49 @@ const firebaseConfig = {
       <div style="text-align:center;margin-top:14px;">
         <button class="btn btn-light" onclick="closeCoverSourceModal()">Dismiss</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bookPhotoSourceModal" onclick="closeBookPhotoSourceModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Add Photos</h3>
+    <p class="account-settings-copy" style="margin-top:0;">Use the camera for one quick shot, or choose multiple images from your gallery.</p>
+    <div class="button-row" style="margin-top:14px;">
+      <button class="btn btn-accent" type="button" onclick="startBookPhotoCamera()">Camera</button>
+      <button class="btn btn-secondary" type="button" onclick="startBookPhotoGallery()">Gallery</button>
+      <button class="btn btn-light" type="button" onclick="closeBookPhotoSourceModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bookPhotoMetaModal" onclick="closeBookPhotoMetaModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="bookPhotoMetaTitle">Photo Details</h3>
+    <div class="form-group">
+      <label for="bookPhotoCaptionInput">Text / Caption</label>
+      <textarea id="bookPhotoCaptionInput" placeholder="Optional note about this photo"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Photo Type</label>
+      <div class="book-photo-type-list">
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="inscription"> Inscription</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="signature"> Signature</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="title-page"> Title Page</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="copyright-page"> Copyright Page</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="illustration"> Illustration</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="binding-spine"> Binding / Spine</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="condition"> Condition</label>
+        <label class="book-photo-type-option"><input type="radio" name="bookPhotoType" value="other" onchange="toggleBookPhotoOtherInput()"> Other</label>
+      </div>
+    </div>
+    <div class="form-group" id="bookPhotoOtherWrap" style="display:none;">
+      <label for="bookPhotoOtherInput">Other Type</label>
+      <input type="text" id="bookPhotoOtherInput" placeholder="Optional custom type">
+    </div>
+    <div class="book-photo-meta-actions">
+      <button class="btn btn-light" type="button" onclick="closeBookPhotoMetaModal()">Cancel</button>
+      <button class="btn btn-secondary" type="button" onclick="saveBookPhotoMetaModal()">Save</button>
     </div>
   </div>
 </div>
@@ -3765,6 +3981,7 @@ let books = [];
 let researchCache = {};
 let briefingAudioCache = {};
 let backupJobsCache = {};
+let bookPhotoCache = {};
 const PRO_TTS_MODEL = "gemini-2.5-pro-preview-tts";
 const FLASH_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 let shelves = [];
@@ -3795,9 +4012,17 @@ let editingBookId = null;
 let _filteredBookIds = [];
 let pendingCoverBlob = null;
 let _coverUploadBookId = null;
+let _bookPhotoUploadBookId = null;
+let _bookPhotoMetaResolver = null;
 let _coverSearchResults = [];
 let _coverSearchMode = "library";
 let _authorSortTouched = false;
+let _coverLightboxItems = [];
+let _coverLightboxIndex = -1;
+let _coverLightboxTouchX = 0;
+let _coverLightboxTouchY = 0;
+let bookPhotoSectionCollapsed = {};
+let hasPhotosModeSectionCollapsed = false;
 let catalogStoragePath = "";
 let manualSearchResults = [];
 let manualSelectedResult = null;
@@ -3845,6 +4070,7 @@ let _catalogUnsubscribe = null;  // snapshot listener teardown
 let _briefingsUnsubscribe = null; // briefings subcollection listener teardown
 let _briefingAudioUnsubscribe = null; // briefing audio subcollection listener teardown
 let _backupJobsUnsubscribe = null; // backup jobs subcollection listener teardown
+let _bookPhotosUnsubscribe = null; // book photos subcollection listener teardown
 let _allowDuplicateOverride = false;
 let briefingAudioRequestInFlight = false;
 let briefingAudioUrls = {};
@@ -3858,6 +4084,121 @@ function safeLoad(key, fallback) {
   } catch (error) {
     return fallback;
   }
+}
+
+function sanitizeBookPhotoEntry(photo, fallbackIndex) {
+  const source = photo && typeof photo === "object" ? photo : {};
+  const url = String(source.url || "").trim();
+  if (!url) return null;
+  const caption = String(source.caption || "").trim().slice(0, 160);
+  const type = String(source.type || "").trim().slice(0, 40) || "other";
+  const storagePath = String(source.storagePath || "").trim();
+  const createdAt = String(source.createdAt || "").trim() || new Date().toISOString();
+  const sortOrder = Number(source.sortOrder);
+  return {
+    id: String(source.id || `photo-${fallbackIndex || 0}`),
+    url,
+    caption,
+    type,
+    storagePath,
+    createdAt,
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : (fallbackIndex || 0)
+  };
+}
+
+function sanitizeBookPhotoList(photos) {
+  return (Array.isArray(photos) ? photos : [])
+    .map(function(photo, index) { return sanitizeBookPhotoEntry(photo, index); })
+    .filter(Boolean)
+    .sort(function(a, b) {
+      return (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0)
+        || String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+        || String(a.id || "").localeCompare(String(b.id || ""));
+    });
+}
+
+function getBookPhotos(bookId) {
+  return sanitizeBookPhotoList(bookPhotoCache[bookId] || []);
+}
+
+function formatBookPhotoTypeLabel(value) {
+  const type = String(value || "").trim();
+  if (!type || type === "other") return "Other";
+  return type.replace(/[-_]+/g, " ").replace(/\b\w/g, function(ch) { return ch.toUpperCase(); });
+}
+
+function prepareLightboxItems(urls) {
+  return (Array.isArray(urls) ? urls : [])
+    .map(function(url) { return String(url || "").trim(); })
+    .filter(Boolean);
+}
+
+function bookHasAdditionalPhotos(book) {
+  return Boolean(book && book.id && getBookPhotos(book.id).length);
+}
+
+function loadBookPhotoSectionState(bookId) {
+  if (Object.prototype.hasOwnProperty.call(bookPhotoSectionCollapsed, bookId)) {
+    return Boolean(bookPhotoSectionCollapsed[bookId]);
+  }
+  let collapsed = true;
+  try {
+    const raw = localStorage.getItem("tomeshelf-book-photo-collapsed");
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, bookId)) {
+      collapsed = Boolean(parsed[bookId]);
+      bookPhotoSectionCollapsed[bookId] = collapsed;
+    }
+  } catch (e) {}
+  return collapsed;
+}
+
+function saveBookPhotoSectionState() {
+  try {
+    localStorage.setItem("tomeshelf-book-photo-collapsed", JSON.stringify(bookPhotoSectionCollapsed));
+  } catch (e) {}
+}
+
+function loadHasPhotosModeSectionState() {
+  try {
+    hasPhotosModeSectionCollapsed = localStorage.getItem("tomeshelf-has-photos-collapsed") === "1";
+  } catch (e) {
+    hasPhotosModeSectionCollapsed = false;
+  }
+  return hasPhotosModeSectionCollapsed;
+}
+
+function saveHasPhotosModeSectionState() {
+  try {
+    localStorage.setItem("tomeshelf-has-photos-collapsed", hasPhotosModeSectionCollapsed ? "1" : "0");
+  } catch (e) {}
+}
+
+function toggleBookPhotoSection(bookId) {
+  const sortMode = document.getElementById("sortSelect") ? document.getElementById("sortSelect").value : "";
+  if (sortMode === "has-photos") {
+    hasPhotosModeSectionCollapsed = !loadHasPhotosModeSectionState();
+    saveHasPhotosModeSectionState();
+    renderBriefingPanel();
+    return;
+  }
+  bookPhotoSectionCollapsed[bookId] = !loadBookPhotoSectionState(bookId);
+  saveBookPhotoSectionState();
+  renderBriefingPanel();
+}
+
+function openBookPhotoLightbox(bookId, index) {
+  const photos = getBookPhotos(bookId);
+  const galleryUrls = photos.map(function(photo) { return photo.url; }).filter(Boolean);
+  const active = photos[index] && photos[index].url ? photos[index].url : (galleryUrls[0] || "");
+  if (!active) return;
+  showCoverLightbox(active, galleryUrls, index);
+}
+
+function serializeBookForCatalog(book) {
+  const source = book && typeof book === "object" ? { ...book } : {};
+  delete source.additionalPhotos;
+  return source;
 }
 
 async function persistCatalog() {
@@ -3874,7 +4215,12 @@ async function persistCatalog() {
   try {
     // books/shelves/pending go in "data"; researchCache lives in its own "research"
     // document to avoid hitting Firestore's 1MB per-document limit.
-    await catalog.doc("data").set({ books, shelves, pendingBriefingIds, shareLinks });
+    await catalog.doc("data").set({
+      books: books.map(serializeBookForCatalog),
+      shelves,
+      pendingBriefingIds,
+      shareLinks
+    });
   } catch (error) {
     console.error("[persistCatalog] data write failed:", error);
     setStatus("addStatus", "Saved locally, but cloud sync failed.", "error");
@@ -3899,6 +4245,7 @@ function subscribeToBackgroundUpdates(uid) {
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
   if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
   if (_backupJobsUnsubscribe) { _backupJobsUnsubscribe(); _backupJobsUnsubscribe = null; }
+  if (_bookPhotosUnsubscribe) { _bookPhotosUnsubscribe(); _bookPhotosUnsubscribe = null; }
 
   const catalog = db.collection("users").doc(uid).collection("catalog");
 
@@ -3983,6 +4330,29 @@ function subscribeToBackgroundUpdates(uid) {
       }
     }
   }, (err) => { console.error("[subscribeToBackgroundUpdates] backupJobs snapshot error:", err); });
+
+  _bookPhotosUnsubscribe = db.collection("users").doc(uid).collection("bookPhotos").onSnapshot((snap) => {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    let changed = false;
+    snap.docChanges().forEach(function(change) {
+      if (change.type === "added" || change.type === "modified") {
+        const nextPhotos = sanitizeBookPhotoList((change.doc.data() || {}).photos);
+        if (JSON.stringify(bookPhotoCache[change.doc.id] || []) !== JSON.stringify(nextPhotos)) {
+          bookPhotoCache[change.doc.id] = nextPhotos;
+          changed = true;
+        }
+      } else if (change.type === "removed") {
+        if (bookPhotoCache[change.doc.id] !== undefined) {
+          delete bookPhotoCache[change.doc.id];
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      renderCatalog();
+      renderBriefingPanel();
+    }
+  }, (err) => { console.error("[subscribeToBackgroundUpdates] bookPhotos snapshot error:", err); });
 }
 
 async function saveBooks() {
@@ -3996,10 +4366,12 @@ async function loadCatalogData() {
   const uid = user.uid;
   try {
     const catalog = db.collection("users").doc(uid).collection("catalog");
-    const briefingsCol = db.collection("users").doc(uid).collection("briefings");
-    const briefingAudioCol = db.collection("users").doc(uid).collection("briefingAudio");
-    const backupJobsCol = db.collection("users").doc(uid).collection("backupJobs");
-    const [dataSnap, researchSnap, briefingsSnap, briefingAudioResult, backupJobsSnap] = await Promise.all([
+    const userDoc = db.collection("users").doc(uid);
+    const briefingsCol = userDoc.collection("briefings");
+    const briefingAudioCol = userDoc.collection("briefingAudio");
+    const backupJobsCol = userDoc.collection("backupJobs");
+    const bookPhotosCol = userDoc.collection("bookPhotos");
+    const [dataSnap, researchSnap, briefingsSnap, briefingAudioResult, backupJobsSnap, bookPhotosSnap] = await Promise.all([
       catalog.doc("data").get({ source: "server" }),
       catalog.doc("research").get({ source: "server" }),
       briefingsCol.get({ source: "server" }),
@@ -4009,6 +4381,10 @@ async function loadCatalogData() {
       }),
       backupJobsCol.orderBy("createdAt", "desc").limit(10).get({ source: "server" }).catch(function(error) {
         console.warn("[loadCatalogData] backupJobs fetch failed; continuing without backup cache:", error);
+        return null;
+      }),
+      bookPhotosCol.get({ source: "server" }).catch(function(error) {
+        console.warn("[loadCatalogData] bookPhotos fetch failed; continuing without photo cache:", error);
         return null;
       })
     ]);
@@ -4053,10 +4429,18 @@ async function loadCatalogData() {
     if (backupJobsSnap && typeof backupJobsSnap.forEach === "function") {
       backupJobsSnap.forEach(function(doc) { backupCache[doc.id] = doc.data(); });
     }
+    const nextBookPhotoCache = {};
+    if (bookPhotosSnap && typeof bookPhotosSnap.forEach === "function") {
+      bookPhotosSnap.forEach(function(doc) {
+        const data = doc.data() || {};
+        nextBookPhotoCache[doc.id] = sanitizeBookPhotoList(data.photos);
+      });
+    }
 
     researchCache = Object.assign({}, legacyDataCache, legacyResearchCache, subcollectionCache);
     briefingAudioCache = audioCache;
     backupJobsCache = backupCache;
+    bookPhotoCache = nextBookPhotoCache;
     console.log("[loadCatalogData] briefings in cache:", Object.keys(researchCache).length,
       "(subcollection:", briefingsSnap.size, "legacy-research:", Object.keys(legacyResearchCache).length,
       "legacy-data:", Object.keys(legacyDataCache).length, ")");
@@ -4125,7 +4509,8 @@ function normalizeBook(book) {
     finishDate: normalizeDateInput(source.finishDate),
     rating: ratingValue >= 1 && ratingValue <= 5 ? ratingValue : 0,
     listShelfId: source.listShelfId || "default",
-    customOrder: Number.isFinite(customOrderValue) ? customOrderValue : null
+    customOrder: Number.isFinite(customOrderValue) ? customOrderValue : null,
+    additionalPhotos: sanitizeBookPhotoList(source.additionalPhotos)
   };
 }
 
@@ -4237,6 +4622,9 @@ function compareBooksByCustomOrder(a, b) {
 }
 
 function compareBooksBySort(a, b, sort) {
+  if (sort === "has-photos") {
+    return (a.title || "").localeCompare(b.title || "");
+  }
   if (sort === "title") {
     return (a.title || "").localeCompare(b.title || "");
   }
@@ -4299,6 +4687,7 @@ function getSelectedBooksInDisplayOrder() {
 function handleSortChange() {
   clearBookDragState();
   renderCatalog();
+  renderBriefingPanel();
   updateSelectionBar();
 }
 
@@ -5296,6 +5685,10 @@ function renderCatalog() {
       .some((value) => String(value).toLowerCase().includes(query));
   });
 
+  if (sort === "has-photos") {
+    list = list.filter(function(book) { return bookHasAdditionalPhotos(book); });
+  }
+
   list = [...list].sort((a, b) => compareBooksBySort(a, b, sort));
 
   renderStats();
@@ -5507,8 +5900,12 @@ async function deleteSelectedBooks() {
   if (!confirm(`Delete ${ids.length} book${ids.length === 1 ? "" : "s"} from your catalog? This cannot be undone.`)) return;
   const removedBooks = cloneBookEntries(books.filter((b) => ids.includes(b.id)));
   const removedBriefings = cloneBriefingEntries(ids);
+  const removedPhotos = cloneBookPhotoEntries(ids);
   books = books.filter(b => !ids.includes(b.id));
-  ids.forEach(id => { delete researchCache[id]; });
+  ids.forEach(id => {
+    delete researchCache[id];
+    delete bookPhotoCache[id];
+  });
   pendingBriefingIds = pendingBriefingIds.filter(pid => !ids.includes(pid));
   const user = auth.currentUser;
   await persistCatalog();
@@ -5527,8 +5924,12 @@ async function deleteSelectedBooks() {
   }
   exitSelectionMode();
   renderCatalog();
+  scheduleBookPhotoCleanup(ids, removedPhotos);
   queueUndo(`${ids.length} book${ids.length === 1 ? "" : "s"} deleted`, async () => {
-    await restoreBooksFromUndo(removedBooks, removedBriefings, { restoreToFront: true });
+    await restoreBooksFromUndo(removedBooks, removedBriefings, {
+      restoreToFront: true,
+      bookPhotosToRestore: removedPhotos
+    });
     showToast(`${ids.length} book${ids.length === 1 ? "" : "s"} restored`);
   });
 }
@@ -5572,13 +5973,26 @@ function cloneBriefingEntries(ids = []) {
   return out;
 }
 
+function cloneBookPhotoEntries(ids = []) {
+  const out = {};
+  ids.forEach((id) => {
+    const photos = getBookPhotos(id);
+    if (photos.length) out[id] = JSON.parse(JSON.stringify(photos));
+  });
+  return out;
+}
+
 async function restoreBooksFromUndo(booksToRestore = [], briefingsToRestore = {}, options = {}) {
   const restoreToFront = options.restoreToFront !== false;
   const removeIds = new Set((options.removeIds || []).filter(Boolean));
+  const bookPhotosToRestore = options.bookPhotosToRestore && typeof options.bookPhotosToRestore === "object"
+    ? options.bookPhotosToRestore
+    : {};
   if (removeIds.size) {
     books = books.filter((book) => !removeIds.has(book.id));
     removeIds.forEach((id) => {
       delete researchCache[id];
+      delete bookPhotoCache[id];
       pendingBriefingIds = pendingBriefingIds.filter((pid) => pid !== id);
     });
   }
@@ -5588,14 +6002,39 @@ async function restoreBooksFromUndo(booksToRestore = [], briefingsToRestore = {}
   Object.entries(briefingsToRestore || {}).forEach(([id, briefing]) => {
     researchCache[id] = briefing;
   });
+  Object.entries(bookPhotosToRestore).forEach(([id, photos]) => {
+    bookPhotoCache[id] = sanitizeBookPhotoList(photos);
+  });
   await persistCatalog();
   await Promise.all(Object.entries(briefingsToRestore || {}).map(([id, briefing]) => saveBriefing(id, briefing).catch(() => {})));
+  await Promise.all(Object.entries(bookPhotosToRestore).map(([id, photos]) => saveBookPhotos(id, photos).catch(() => {})));
   renderCatalog();
   renderBriefingPanel();
 }
 
 function queueUndo(message, actionFn) {
   showToast(message, "Undo", actionFn);
+}
+
+function scheduleBookPhotoCleanup(bookIds, photosByBookId) {
+  const ids = Array.isArray(bookIds) ? bookIds.filter(Boolean) : [];
+  if (!ids.length) return;
+  const user = auth.currentUser;
+  const uid = user && _booksOwnedByUid === user.uid ? user.uid : "";
+  if (!uid) return;
+  window.setTimeout(function() {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+    ids.forEach(function(id) {
+      if (findBook(id)) return;
+      db.collection("users").doc(uid).collection("bookPhotos").doc(id).delete()
+        .catch(err => console.error("[scheduleBookPhotoCleanup] doc delete failed:", err));
+      (photosByBookId[id] || []).forEach(function(photo) {
+        if (!photo || !photo.storagePath) return;
+        storage.ref(photo.storagePath).delete()
+          .catch(err => console.error("[scheduleBookPhotoCleanup] storage delete failed:", err));
+      });
+    });
+  }, 6500);
 }
 
 // ── Close move menu when clicking outside ───────────────────────────────────
@@ -5612,8 +6051,10 @@ async function deleteBook(id) {
   }
   const removedBook = cloneBookEntries(books.filter((book) => book.id === id));
   const removedBriefings = cloneBriefingEntries([id]);
+  const removedPhotos = getBookPhotos(id);
   books = books.filter((book) => book.id !== id);
   delete researchCache[id];
+  delete bookPhotoCache[id];
   pendingBriefingIds = pendingBriefingIds.filter(pid => pid !== id);
   const user = auth.currentUser;
   await persistCatalog();
@@ -5628,8 +6069,12 @@ async function deleteBook(id) {
     if (window.innerWidth < 1024) setMobileSection("catalog");
   }
   renderCatalog();
+  scheduleBookPhotoCleanup([id], { [id]: removedPhotos });
   queueUndo("Book removed from catalog", async () => {
-    await restoreBooksFromUndo(removedBook, removedBriefings, { restoreToFront: true });
+    await restoreBooksFromUndo(removedBook, removedBriefings, {
+      restoreToFront: true,
+      bookPhotosToRestore: { [id]: removedPhotos }
+    });
     showToast("Book restored");
   });
 }
@@ -5805,7 +6250,8 @@ function renderBriefingPanel() {
         ${book.notes ? `<div class="book-detail-notes">${esc(book.notes)}</div>` : ""}
         ${book.personalNotes ? `<div class="book-detail-personal-notes"><strong>Your notes:</strong> ${esc(book.personalNotes)}</div>` : ""}
       </div>
-    </div>`;
+    </div>
+    ${renderBookPhotoSection(book, false)}`;
 
   // ── Show action buttons and wire them ──
   actionsEl.style.display = "";
@@ -6132,6 +6578,14 @@ async function lookupWikipedia() {
         <button class="btn btn-light btn-sm" onclick="closeWikipediaModal()">Close</button>
       </div>`;
   }
+}
+
+function searchReviewsForSelected() {
+  const book = selectedBookId ? findBook(selectedBookId) : null;
+  if (!book) return;
+  const query = [book.title || "", book.author || "", "review"].filter(Boolean).join(" ");
+  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function renderWikiSummary(data, notice = "") {
@@ -6471,6 +6925,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (document.getElementById("coverLightbox").classList.contains("open")) {
       closeCoverLightbox();
+    } else if (document.getElementById("bookPhotoMetaModal").classList.contains("open")) {
+      closeBookPhotoMetaModal();
+    } else if (document.getElementById("bookPhotoSourceModal").classList.contains("open")) {
+      closeBookPhotoSourceModal();
     } else if (document.getElementById("coverSourceModal").classList.contains("open")) {
       closeCoverSourceModal();
     } else {
@@ -6481,10 +6939,30 @@ document.addEventListener("keydown", (e) => {
       if (selectionMode) exitSelectionMode();
       closeMoveMenu();
     }
+  } else if (document.getElementById("coverLightbox").classList.contains("open")) {
+    if (e.key === "ArrowRight" && _coverLightboxItems.length > 1) {
+      navigateCoverLightbox(1);
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" && _coverLightboxItems.length > 1) {
+      navigateCoverLightbox(-1);
+      e.preventDefault();
+    }
   }
 });
 
-function showCoverLightbox(url) {
+function showCoverLightbox(url, galleryUrls, galleryIndex) {
+  _coverLightboxItems = prepareLightboxItems(galleryUrls);
+  _coverLightboxIndex = _coverLightboxItems.length
+    ? Math.max(0, Math.min(Number(galleryIndex) || 0, _coverLightboxItems.length - 1))
+    : -1;
+  const activeUrl = _coverLightboxIndex >= 0 ? _coverLightboxItems[_coverLightboxIndex] : url;
+  const prevBtn = document.getElementById("coverLightboxPrevBtn");
+  const nextBtn = document.getElementById("coverLightboxNextBtn");
+  if (prevBtn) prevBtn.style.display = _coverLightboxItems.length > 1 ? "" : "none";
+  if (nextBtn) nextBtn.style.display = _coverLightboxItems.length > 1 ? "" : "none";
+  if (prevBtn) prevBtn.disabled = _coverLightboxIndex <= 0;
+  if (nextBtn) nextBtn.disabled = _coverLightboxIndex === -1 || _coverLightboxIndex >= _coverLightboxItems.length - 1;
+  url = activeUrl || url;
   let largeUrl = url;
   if (/covers\.openlibrary\.org/.test(url)) {
     // Open Library: upgrade -S / -M suffix to -L (always available)
@@ -6514,9 +6992,22 @@ function showCoverLightbox(url) {
   document.getElementById("coverLightbox").classList.add("open");
 }
 
+function navigateCoverLightbox(delta) {
+  if (_coverLightboxItems.length <= 1) return;
+  const nextIndex = _coverLightboxIndex + delta;
+  if (nextIndex < 0 || nextIndex >= _coverLightboxItems.length) return;
+  showCoverLightbox(_coverLightboxItems[nextIndex], _coverLightboxItems, nextIndex);
+}
+
 function closeCoverLightbox() {
   document.getElementById("coverLightbox").classList.remove("open");
   document.getElementById("coverLightboxSelectBtn").style.display = "none";
+  const prevBtn = document.getElementById("coverLightboxPrevBtn");
+  const nextBtn = document.getElementById("coverLightboxNextBtn");
+  if (prevBtn) prevBtn.style.display = "none";
+  if (nextBtn) nextBtn.style.display = "none";
+  _coverLightboxItems = [];
+  _coverLightboxIndex = -1;
   const img = document.getElementById("coverLightboxImg");
   img.style.minWidth = "";
   img.src = "";
@@ -6540,6 +7031,25 @@ function closeCamera() {
     scanner.stop().then(() => scanner.clear()).catch(() => {});
   }
 }
+
+(function attachCoverLightboxSwipe() {
+  const lightbox = document.getElementById("coverLightbox");
+  if (!lightbox) return;
+  lightbox.addEventListener("touchstart", function(e) {
+    if (!e.touches || !e.touches.length) return;
+    _coverLightboxTouchX = e.touches[0].clientX;
+    _coverLightboxTouchY = e.touches[0].clientY;
+  }, { passive: true });
+  lightbox.addEventListener("touchend", function(e) {
+    if (_coverLightboxItems.length <= 1 || !e.changedTouches || !e.changedTouches.length) return;
+    const dx = e.changedTouches[0].clientX - _coverLightboxTouchX;
+    const dy = e.changedTouches[0].clientY - _coverLightboxTouchY;
+    if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 50) {
+      if (dx < 0) navigateCoverLightbox(1);
+      else navigateCoverLightbox(-1);
+    }
+  }, { passive: true });
+})();
 
 // ═══════════════════════════════════════════════════════════════
 // Photo Lookup — capture/select images → Cloud Function → review
@@ -6970,6 +7480,10 @@ async function generateBriefingAudioForSelected(forceRefresh) {
     await ensureBriefingAudioUrl(book.id, spoilerMode, existingVariant);
     renderBriefingPanel();
     return;
+  }
+  if (!forceRefresh) {
+    const proceed = confirm(`Generate audio for "${book.title}"? This uses paid audio generation credits.`);
+    if (!proceed) return;
   }
 
   briefingAudioRequestInFlight = true;
@@ -7460,6 +7974,218 @@ async function uploadCoverToStorage(bookId, blob) {
   return await ref.getDownloadURL();
 }
 
+async function uploadBookPhotoToStorage(bookId, photoId, blob) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  const storagePath = `users/${uid}/book-photos/${bookId}/${photoId}.jpg`;
+  const ref = storage.ref(storagePath);
+  await ref.put(blob, { contentType: "image/jpeg" });
+  return {
+    url: await ref.getDownloadURL(),
+    storagePath
+  };
+}
+
+async function saveBookPhotos(bookId, photos) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  if (_booksOwnedByUid && user.uid !== _booksOwnedByUid) throw new Error("Wrong signed-in user");
+  const sanitized = sanitizeBookPhotoList(photos);
+  const ref = db.collection("users").doc(user.uid).collection("bookPhotos").doc(bookId);
+  if (!sanitized.length) {
+    await ref.delete().catch(function(error) {
+      if (error && error.code !== "not-found") throw error;
+    });
+    delete bookPhotoCache[bookId];
+    return;
+  }
+  await ref.set({ photos: sanitized, updatedAt: new Date().toISOString() });
+  bookPhotoCache[bookId] = sanitized;
+}
+
+function startBookPhotoUpload(bookId) {
+  _bookPhotoUploadBookId = bookId;
+  document.getElementById("bookPhotoSourceModal").classList.add("open");
+}
+
+function closeBookPhotoSourceModal(event) {
+  if (event && event.target !== document.getElementById("bookPhotoSourceModal")) return;
+  document.getElementById("bookPhotoSourceModal").classList.remove("open");
+}
+
+function startBookPhotoCamera() {
+  try { localStorage.setItem("_cameraActive", Date.now().toString()); } catch (e) {}
+  closeBookPhotoSourceModal();
+  const input = document.getElementById("bookPhotoCameraInput");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+
+function startBookPhotoGallery() {
+  closeBookPhotoSourceModal();
+  const input = document.getElementById("bookPhotoUploadInput");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+
+function toggleBookPhotoOtherInput() {
+  const selected = document.querySelector('input[name="bookPhotoType"]:checked');
+  const wrap = document.getElementById("bookPhotoOtherWrap");
+  if (!wrap) return;
+  wrap.style.display = selected && selected.value === "other" ? "" : "none";
+}
+
+function openBookPhotoMetaModal(initialValues, options = {}) {
+  const defaults = initialValues && typeof initialValues === "object" ? initialValues : {};
+  const knownTypes = new Set(["inscription", "signature", "title-page", "copyright-page", "illustration", "binding-spine", "condition", "other"]);
+  const storedType = String(defaults.type || "other").trim() || "other";
+  const selectedType = knownTypes.has(storedType) ? storedType : "other";
+  const otherValue = selectedType === "other" && storedType !== "other" ? storedType : "";
+  document.getElementById("bookPhotoMetaTitle").textContent = options.title || "Photo Details";
+  document.getElementById("bookPhotoCaptionInput").value = String(defaults.caption || "");
+  document.getElementById("bookPhotoOtherInput").value = otherValue;
+  document.querySelectorAll('input[name="bookPhotoType"]').forEach(function(input) {
+    input.checked = input.value === selectedType;
+  });
+  toggleBookPhotoOtherInput();
+  document.getElementById("bookPhotoMetaModal").classList.add("open");
+  return new Promise(function(resolve) {
+    _bookPhotoMetaResolver = resolve;
+  });
+}
+
+function closeBookPhotoMetaModal(event) {
+  if (event && event.target !== document.getElementById("bookPhotoMetaModal")) return;
+  const resolve = _bookPhotoMetaResolver;
+  _bookPhotoMetaResolver = null;
+  document.getElementById("bookPhotoMetaModal").classList.remove("open");
+  if (typeof resolve === "function") {
+    const selected = document.querySelector('input[name="bookPhotoType"]:checked');
+    const otherInput = document.getElementById("bookPhotoOtherInput");
+    const rawType = selected ? selected.value : "other";
+    const otherValue = String(otherInput && otherInput.value || "").trim();
+    resolve({
+      caption: String(document.getElementById("bookPhotoCaptionInput").value || "").trim(),
+      type: rawType === "other" ? (otherValue || "other") : rawType
+    });
+  }
+}
+
+function saveBookPhotoMetaModal() {
+  closeBookPhotoMetaModal();
+}
+
+async function editBookPhotoMeta(bookId, photoId) {
+  const photos = getBookPhotos(bookId);
+  const photo = photos.find(function(entry) { return entry.id === photoId; });
+  if (!photo) return;
+  const result = await openBookPhotoMetaModal(photo, { title: "Edit Photo Details" });
+  const next = photos.map(function(entry) {
+    return entry.id === photoId ? { ...entry, caption: result.caption, type: result.type } : entry;
+  });
+  await saveBookPhotos(bookId, next);
+  renderBriefingPanel();
+}
+
+function renderBookPhotoSection(book, isReadOnly) {
+  const photos = getBookPhotos(book.id);
+  const sortMode = document.getElementById("sortSelect") ? document.getElementById("sortSelect").value : "";
+  const isCollapsed = photos.length
+    ? (sortMode === "has-photos" ? loadHasPhotosModeSectionState() : loadBookPhotoSectionState(book.id))
+    : false;
+  const cards = photos.map(function(photo, index) {
+    const type = esc(formatBookPhotoTypeLabel(photo.type));
+    const caption = photo.caption ? `<div class="book-photo-card-caption">${esc(photo.caption)}</div>` : "";
+    const altText = photo.caption ? esc(photo.caption) : type;
+    const editBtn = isReadOnly ? "" : `<button class="book-photo-edit-btn" type="button" title="Edit photo details" onclick="event.stopPropagation();editBookPhotoMeta('${escapeAttribute(book.id)}','${escapeAttribute(photo.id)}')">&#9998;</button>`;
+    const deleteBtn = isReadOnly ? "" : `<button class="book-photo-delete-btn" type="button" title="Remove photo" onclick="event.stopPropagation();removeBookPhoto('${escapeAttribute(book.id)}','${escapeAttribute(photo.id)}')">&#10005;</button>`;
+    return `
+      <div class="book-photo-card" onclick="openBookPhotoLightbox('${escapeAttribute(book.id)}', ${index})" title="Click to enlarge">
+        <img src="${escapeAttribute(photo.url)}" alt="${altText}" onerror="this.closest('.book-photo-card').style.display='none'">
+        ${editBtn}
+        ${deleteBtn}
+        <div class="book-photo-card-meta">
+          <div class="book-photo-card-type">${type}</div>
+          ${caption}
+        </div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="book-photo-section">
+      <div class="book-photo-section-header">
+        <div class="book-photo-section-header-main">
+          <div class="book-photo-section-title">Additional Photos</div>
+          ${photos.length ? `<button class="btn btn-light btn-sm book-photo-toggle" type="button" onclick="toggleBookPhotoSection('${escapeAttribute(book.id)}')">${isCollapsed ? "Show" : "Hide"}</button>` : ""}
+        </div>
+        ${isReadOnly ? "" : `<div class="book-photo-actions"><button class="btn btn-light btn-sm" type="button" onclick="startBookPhotoUpload('${escapeAttribute(book.id)}')"><span class="book-photo-add-label-full">Add Photos: Camera or Gallery</span><span class="book-photo-add-label-compact">Add Photos</span></button></div>`}
+      </div>
+      ${(!isReadOnly && !isCollapsed) ? `<div class="book-photo-helper">Use the camera for one page, or choose multiple images from your gallery at once.</div>` : ""}
+      ${photos.length ? (isCollapsed ? "" : `<div class="book-photo-grid">${cards}</div>`) : `<div class="book-photo-empty">${isReadOnly ? "No additional photos shared for this book." : "Add inscription pages, signatures, title or copyright pages, illustrations, binding shots, or condition photos."}</div>`}
+    </div>`;
+}
+
+async function handleBookPhotoUpload(input) {
+  const files = Array.from(input.files || []).filter((file) => file && /^image\//.test(file.type || ""));
+  try { localStorage.removeItem("_cameraActive"); } catch (e) {}
+  input.value = "";
+  const bookId = _bookPhotoUploadBookId;
+  _bookPhotoUploadBookId = null;
+  if (!files.length || !bookId) return;
+  const book = findBook(bookId);
+  if (!book) return;
+  setResearchStatus("Uploading additional photos...", "");
+  try {
+    const existing = getBookPhotos(bookId);
+    const uploads = [];
+    for (const [index, file] of files.entries()) {
+      const blob = await compressImageForCover(file, 1400);
+      const photoId = Math.random().toString(36).slice(2, 10);
+      const uploaded = await uploadBookPhotoToStorage(bookId, photoId, blob);
+      const meta = await openBookPhotoMetaModal({ caption: "", type: "other" }, {
+        title: files.length > 1 ? `Photo ${index + 1} of ${files.length}` : "Photo Details"
+      });
+      uploads.push({
+        id: photoId,
+        url: uploaded.url,
+        storagePath: uploaded.storagePath,
+        caption: meta.caption,
+        type: meta.type,
+        createdAt: new Date().toISOString(),
+        sortOrder: existing.length + index
+      });
+    }
+    await saveBookPhotos(bookId, existing.concat(uploads));
+    renderBriefingPanel();
+    setResearchStatus("", "");
+  } catch (error) {
+    console.error("[handleBookPhotoUpload] failed:", error);
+    setResearchStatus("Additional photo upload failed: " + error.message, "error");
+  }
+}
+
+async function removeBookPhoto(bookId, photoId) {
+  if (!confirm("Remove this additional photo?")) return;
+  const photos = getBookPhotos(bookId);
+  const photo = photos.find(function(entry) { return entry.id === photoId; });
+  if (!photo) return;
+  try {
+    if (photo.storagePath) {
+      await storage.ref(photo.storagePath).delete().catch(function(error) {
+        console.warn("[removeBookPhoto] storage delete failed:", error);
+      });
+    }
+    const next = photos
+      .filter(function(entry) { return entry.id !== photoId; })
+      .map(function(entry, index) { return { ...entry, sortOrder: index }; });
+    await saveBookPhotos(bookId, next);
+    renderBriefingPanel();
+  } catch (error) {
+    setResearchStatus("Could not remove that photo.", "error");
+  }
+}
+
 function pickCoverForBook(bookId) {
   _coverUploadBookId = bookId;
   document.getElementById("coverSourceStep1").style.display = "";
@@ -7626,6 +8352,7 @@ async function handleCoverUpload(input) {
 // ── Arrow-key navigation when detail panel is in focus ──
 window.addEventListener("keydown", (e) => {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  if (document.getElementById("coverLightbox").classList.contains("open")) return;
   const bp = document.getElementById("briefingPanel");
   const isDetailVisible = window.innerWidth >= 1024 || (bp && bp.classList.contains("mobile-active"));
   if (!isDetailVisible || !selectedBookId) return;
@@ -7663,7 +8390,7 @@ function setFilter(status) {
   renderCatalog();
 }
 
-const BACKUP_SCHEMA_VERSION = 1;
+const BACKUP_SCHEMA_VERSION = 2;
 
 function extFromContentType(contentType, fallback) {
   const value = String(contentType || "").toLowerCase();
@@ -7707,10 +8434,13 @@ function _renderBackupJobsSection() {
     const details = [];
     const report = [];
     if (job.bookCount) details.push(`${job.bookCount} books`);
-    if (job.assetCount || stats.audioAdded || stats.coversAdded) details.push(`${job.assetCount || 0} assets`);
+    if (job.assetCount || stats.audioAdded || stats.coversAdded || stats.bookPhotosAdded) details.push(`${job.assetCount || 0} assets`);
     if (typeof stats.briefingsCount === "number") report.push(`${stats.briefingsCount} briefings`);
     if (typeof stats.coversAdded === "number" || typeof stats.coversSkipped === "number") {
       report.push(`covers ${stats.coversAdded || 0} added, ${stats.coversSkipped || 0} skipped`);
+    }
+    if (typeof stats.bookPhotosAdded === "number" || typeof stats.bookPhotosSkipped === "number") {
+      report.push(`extra photos ${stats.bookPhotosAdded || 0} added, ${stats.bookPhotosSkipped || 0} skipped`);
     }
     if (typeof stats.audioAdded === "number" || typeof stats.audioSkipped === "number") {
       report.push(`audio ${stats.audioAdded || 0} added, ${stats.audioSkipped || 0} skipped`);
@@ -7770,6 +8500,11 @@ function coverAssetForBook(bookId, manifest) {
 function audioAssetForBook(bookId, variant, manifest) {
   const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
   return assets.find((asset) => asset && asset.bookId === bookId && asset.kind === "audio" && asset.variant === variant) || null;
+}
+
+function photoAssetsForBook(bookId, manifest) {
+  const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+  return assets.filter((asset) => asset && asset.bookId === bookId && asset.kind === "book-photo");
 }
 
 function guessContentTypeFromUrl(url) {
@@ -7878,12 +8613,14 @@ function buildBackupManifest() {
       shelves: true,
       briefings: true,
       briefingAudio: true,
+      bookPhotos: true,
       assets: true
     },
     preferences: {
       currentShelfId: currentShelfId || "default"
     },
     books: books.map((book) => JSON.parse(JSON.stringify(book))),
+    bookPhotos: JSON.parse(JSON.stringify(bookPhotoCache || {})),
     shelves: shelves.map((shelf) => JSON.parse(JSON.stringify(shelf))),
     briefings: JSON.parse(JSON.stringify(researchCache || {})),
     briefingAudio: sanitizedBriefingAudio,
@@ -7930,6 +8667,7 @@ function normalizeBackupManifest(raw) {
   return {
     schemaVersion: Number(manifest.schemaVersion || 0),
     books: Array.isArray(manifest.books) ? manifest.books : [],
+    bookPhotos: manifest.bookPhotos && typeof manifest.bookPhotos === "object" ? manifest.bookPhotos : {},
     shelves: Array.isArray(manifest.shelves) ? manifest.shelves : [],
     briefings: manifest.briefings && typeof manifest.briefings === "object" ? manifest.briefings : {},
     briefingAudio: manifest.briefingAudio && typeof manifest.briefingAudio === "object" ? manifest.briefingAudio : {},
@@ -8008,7 +8746,9 @@ async function importBackupZip(file) {
   });
 
   const importedAudioDocs = {};
+  const importedBookPhotos = {};
   let restoredCovers = 0;
+  let restoredExtraPhotos = 0;
   let restoredAudio = 0;
 
   for (const rawBook of manifest.books) {
@@ -8027,6 +8767,36 @@ async function importBackupZip(file) {
         restoredCovers++;
       } catch (error) {
         console.warn("[importBackupZip] cover restore failed:", rawBook.title, error);
+      }
+    }
+
+    const rawPhotos = sanitizeBookPhotoList((manifest.bookPhotos && manifest.bookPhotos[rawBook.id]) || []);
+    if (rawPhotos.length) {
+      const photoAssets = photoAssetsForBook(rawBook.id, manifest);
+      const restoredPhotos = [];
+      for (const rawPhoto of rawPhotos) {
+        const asset = photoAssets.find(function(entry) { return entry.photoId === rawPhoto.id; });
+        if (!asset || !asset.pathInZip || !zip.file(asset.pathInZip)) continue;
+        try {
+          const blob = await zip.file(asset.pathInZip).async("blob");
+          const ext = extFromPath(asset.pathInZip, extFromContentType(asset.contentType, ".jpg")) || ".jpg";
+          const storagePath = `users/${importUser.uid}/book-photos/${targetId}/${rawPhoto.id}${ext}`;
+          const url = await uploadImportedBlob(storagePath, blob, asset.contentType);
+          restoredPhotos.push({
+            ...rawPhoto,
+            url,
+            storagePath
+          });
+          restoredExtraPhotos++;
+        } catch (error) {
+          console.warn("[importBackupZip] additional photo restore failed:", rawBook.title, rawPhoto.id, error);
+        }
+      }
+      if (restoredPhotos.length) {
+        importedBookPhotos[targetId] = restoredPhotos.map(function(photo, index) {
+          return { ...photo, sortOrder: index };
+        });
+        bookPhotoCache[targetId] = importedBookPhotos[targetId];
       }
     }
 
@@ -8088,6 +8858,19 @@ async function importBackupZip(file) {
     } catch (err) { console.error("[importBackupZip] briefing audio save failed:", err); }
   }
 
+  if (importUser && Object.keys(importedBookPhotos).length > 0) {
+    try {
+      const batch = db.batch();
+      Object.entries(importedBookPhotos).forEach(function([id, photos]) {
+        batch.set(db.collection("users").doc(importUser.uid).collection("bookPhotos").doc(id), {
+          photos: sanitizeBookPhotoList(photos),
+          updatedAt: new Date().toISOString()
+        });
+      });
+      await batch.commit();
+    } catch (err) { console.error("[importBackupZip] book photo save failed:", err); }
+  }
+
   if (manifest.preferences.currentShelfId && shelves.find(function(s) { return s.id === manifest.preferences.currentShelfId; })) {
     currentShelfId = manifest.preferences.currentShelfId;
     saveCurrentShelfId();
@@ -8104,6 +8887,7 @@ async function importBackupZip(file) {
   if (updated > 0) parts.push(`${updated} existing book${updated === 1 ? "" : "s"} restored`);
   if (Object.keys(importedBriefings).length > 0) parts.push(`${Object.keys(importedBriefings).length} briefing${Object.keys(importedBriefings).length === 1 ? "" : "s"} restored`);
   if (restoredCovers > 0) parts.push(`${restoredCovers} cover image${restoredCovers === 1 ? "" : "s"} restored`);
+  if (restoredExtraPhotos > 0) parts.push(`${restoredExtraPhotos} additional photo${restoredExtraPhotos === 1 ? "" : "s"} restored`);
   if (restoredAudio > 0) parts.push(`${restoredAudio} audio file${restoredAudio === 1 ? "" : "s"} restored`);
   if (parts.length === 0) parts.push("no changes");
   setStatus("addStatus", `Backup import complete: ${parts.join(", ")}.`, "success");
@@ -9026,6 +9810,32 @@ async function signInWithGoogle() {
   }
 }
 
+async function addBookPhotoAssetsToZip(zip, manifest, bookId) {
+  const photos = getBookPhotos(bookId);
+  for (const photo of photos) {
+    if (!photo || !photo.url) continue;
+    try {
+      const blob = await fetchBlobForBackup(photo.url);
+      const contentType = blob.type || guessContentTypeFromUrl(photo.url);
+      const ext = extFromContentType(contentType, extFromPath(photo.url, ".jpg")) || ".jpg";
+      const pathInZip = `files/book-photos/${bookId}/${photo.id}${ext}`;
+      zip.file(pathInZip, blob);
+      manifest.assets.push({
+        assetId: `book-photo-${bookId}-${photo.id}`,
+        bookId,
+        photoId: photo.id,
+        kind: "book-photo",
+        contentType,
+        pathInZip,
+        sourcePath: photo.storagePath || "",
+        sourceUrl: photo.url
+      });
+    } catch (error) {
+      console.warn("[exportJSON] additional photo export skipped:", bookId, photo.id, error);
+    }
+  }
+}
+
 async function tryAsGuest() {
   document.getElementById("authError").textContent = "";
   try {
@@ -9303,6 +10113,28 @@ async function confirmDeleteAccount() {
       await Promise.all(list.items.map((item) => item.delete()));
     } catch (storageErr) {
       // Storage may not have covers folder — not fatal
+    }
+
+    try {
+      const photosRootRef = storage.ref(`users/${uid}/book-photos`);
+      const top = await photosRootRef.listAll();
+      await Promise.all(top.prefixes.map(async function(folderRef) {
+        const list = await folderRef.listAll();
+        await Promise.all(list.items.map((item) => item.delete()));
+      }));
+    } catch (storageErr) {
+      // Storage may not have additional book photos — not fatal
+    }
+
+    try {
+      const photoDocs = await db.collection("users").doc(uid).collection("bookPhotos").get();
+      if (!photoDocs.empty) {
+        const batch = db.batch();
+        photoDocs.forEach(function(doc) { batch.delete(doc.ref); });
+        await batch.commit();
+      }
+    } catch (firestoreErr) {
+      console.warn("Delete account bookPhotos cleanup failed:", firestoreErr);
     }
 
     // 3. Delete Firebase Auth account (may require recent login)
@@ -10231,6 +11063,7 @@ function _doSignOut() {
   if (_briefingsUnsubscribe) { _briefingsUnsubscribe(); _briefingsUnsubscribe = null; }
   if (_briefingAudioUnsubscribe) { _briefingAudioUnsubscribe(); _briefingAudioUnsubscribe = null; }
   if (_backupJobsUnsubscribe) { _backupJobsUnsubscribe(); _backupJobsUnsubscribe = null; }
+  if (_bookPhotosUnsubscribe) { _bookPhotosUnsubscribe(); _bookPhotosUnsubscribe = null; }
   document.getElementById("authOverlay").style.display = "flex";
   document.getElementById("guestBanner").style.display = "none";
   const icon = document.getElementById("userEmailIcon");
@@ -10249,6 +11082,7 @@ function _doSignOut() {
   researchCache = {};
   briefingAudioCache = {};
   backupJobsCache = {};
+  bookPhotoCache = {};
   briefingAudioUrls = {};
   briefingAudioUrlErrors = {};
   pendingBriefingIds = [];
