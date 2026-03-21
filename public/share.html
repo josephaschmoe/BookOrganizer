@@ -1062,6 +1062,7 @@ let sharedBooks       = [];
 let sharedCache       = {};
 let sharedAudioCache  = {};
 let sharedShelfName   = "";
+let sharedShareType   = "shelf";
 let sharedAllowWikiAI = false;
 let sharedAllowBriefingAudio = false;
 let selectedBookId    = null;
@@ -1080,10 +1081,50 @@ let _coverLightboxTouchY = 0;
 let sharedBookPhotoSectionCollapsed = {};
 let sharedHasPhotosModeSectionCollapsed = false;
 
+function refreshAboutCopy() {
+  document.querySelectorAll(".about-feature").forEach(function(card) {
+    const title = card.querySelector("strong");
+    const copy = card.querySelector("p");
+    if (!title || !copy) return;
+    const heading = (title.textContent || "").trim();
+    if (heading === "Auto-Generated Briefings") {
+      copy.textContent = "Rich, college-level discussion guides appear automatically as you add books — themes, historical context, literary analysis, discussion questions, and genre-specific structure for fiction, non-fiction, and reference titles.";
+    } else if (heading === "Share Your Shelves") {
+      title.textContent = "Share Shelves and Books";
+      copy.textContent = "Generate read-only links for whole shelves or individual books — viewers need no account. Control whether notes, Wikipedia lookup, audio, and book photos are included, and revoke access at any time.";
+    }
+  });
+
+  document.querySelectorAll(".about-more-section-title").forEach(function(titleEl) {
+    const heading = (titleEl.textContent || "").trim();
+    const list = titleEl.nextElementSibling;
+    if (!list || !list.classList || !list.classList.contains("about-more-list")) return;
+    if (heading === "AI Research Briefings") {
+      const items = list.querySelectorAll("li");
+      items.forEach(function(item) {
+        const text = (item.textContent || "").trim();
+        if (text.includes("toggle with one tap")) {
+          item.innerHTML = "<strong>Fiction</strong> briefings default to spoiler-safe summaries, character notes, analysis, and discussion questions";
+        }
+      });
+    } else if (heading === "Shelf Sharing") {
+      titleEl.textContent = "Sharing";
+      list.innerHTML = [
+        "<li>Generate a <strong>public, read-only share link</strong> for any shelf or any individual book — viewers need no account or sign-in</li>",
+        "<li>One active link per shelf and one active link per book; any number of people can use the same link simultaneously</li>",
+        "<li>Per-share controls: include personal notes (off by default), enable AI-powered Wikipedia lookups for viewers, enable audio briefings for viewers, and for single-book shares choose whether additional photos are included</li>",
+        "<li>Shelf shares let viewers browse books, read briefings, and navigate the shelf; single-book shares open directly to that book's discussion page</li>",
+        "<li>Revoke links from the shelf's Share button, the book detail Share Book button, or from Account Settings at any time</li>"
+      ].join("");
+    }
+  });
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 const token = (window.location.pathname.split("/share/")[1] || "").split("?")[0].trim();
 
 window.addEventListener("DOMContentLoaded", async function() {
+  refreshAboutCopy();
   if (!token) { showError("Invalid share link."); return; }
   restoreShareDetailExpanded();
   await loadSharedShelf();
@@ -1095,25 +1136,43 @@ async function loadSharedShelf() {
   try {
     const fn = functions.httpsCallable("getSharedShelf");
     const result = await fn({ token });
-    const data = result.data;
-    sharedBooks       = data.books || [];
-    sharedCache       = data.researchCache || {};
-    sharedAudioCache  = data.briefingAudioCache || {};
-    sharedShelfName   = data.shelfName || "Shared Shelf";
-    sharedAllowWikiAI = Boolean(data.allowWikiAI);
-    sharedAllowBriefingAudio = Boolean(data.allowBriefingAudio);
-    currentSort = sharedBooks.some(function(book) { return Number.isFinite(Number(book && book.customOrder)); })
-      ? "custom"
-      : "added";
-    document.getElementById("headerShelfName").textContent = sharedShelfName;
-    document.title = "TomeShelf \u2014 " + sharedShelfName;
-    renderLayout();
+    applySharedPayload(result.data || {});
   } catch (err) {
+    if (err && err.code === "functions/failed-precondition") {
+      try {
+        const bookResult = await functions.httpsCallable("getSharedBook")({ token });
+        applySharedPayload(bookResult.data || {});
+        return;
+      } catch (bookErr) {
+        const isBookNotFound = bookErr.code === "functions/not-found";
+        showError(isBookNotFound
+          ? "This share link is no longer active."
+          : "Could not load this shared book. Please try again later.");
+        return;
+      }
+    }
     const isNotFound = err.code === "functions/not-found";
     showError(isNotFound
       ? "This share link is no longer active."
-      : "Could not load this shelf. Please try again later.");
+      : "Could not load this share. Please try again later.");
   }
+}
+
+function applySharedPayload(data) {
+  sharedBooks = data.books || (data.book ? [data.book] : []);
+  sharedCache = data.researchCache || {};
+  sharedAudioCache = data.briefingAudioCache || {};
+  sharedShareType = data.shareType === "book" ? "book" : "shelf";
+  sharedShelfName = data.resourceName || data.shelfName || (sharedShareType === "book" ? "Shared Book" : "Shared Shelf");
+  sharedAllowWikiAI = Boolean(data.allowWikiAI);
+  sharedAllowBriefingAudio = Boolean(data.allowBriefingAudio);
+  selectedBookId = data.selectedBookId || (sharedShareType === "book" && sharedBooks[0] ? sharedBooks[0].id : null);
+  currentSort = sharedBooks.some(function(book) { return Number.isFinite(Number(book && book.customOrder)); })
+    ? "custom"
+    : "added";
+  document.getElementById("headerShelfName").textContent = sharedShelfName;
+  document.title = "TomeShelf \u2014 " + sharedShelfName;
+  renderLayout();
 }
 
 function applyShareDetailExpanded() {
@@ -1154,13 +1213,30 @@ function showError(msg) {
   document.getElementById("appRoot").innerHTML =
     '<div class="state-container">' +
     '<div class="state-icon">\uD83D\uDCDA</div>' +
-    '<div class="state-title">Shelf Unavailable</div>' +
+    '<div class="state-title">' + esc(sharedShareType === "book" ? "Book Unavailable" : "Shelf Unavailable") + '</div>' +
     '<div class="state-body">' + esc(msg) + '</div>' +
     '</div>';
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 function renderLayout() {
+  if (sharedShareType === "book") {
+    document.getElementById("appRoot").innerHTML =
+      '<div class="share-layout" style="grid-template-columns:minmax(0,1fr);max-width:980px;">' +
+        '<div class="panel share-detail-col detail-panel detail-visible" id="detailCol" style="position:static;">' +
+          '<div class="panel-header">' +
+            '<span>Book Details &amp; Discussion Guide</span>' +
+            '<div class="nav-group">' +
+              '<button class="panel-focus-toggle" id="shareDetailToggle" type="button" onclick="toggleShareDetailExpanded()" title="Expand detail panel" aria-label="Expand detail panel">&#8596;</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="panel-body" id="detailBody"></div>' +
+        '</div>' +
+      '</div>';
+    applyShareDetailExpanded();
+    renderBookDetail();
+    return;
+  }
   document.getElementById("appRoot").innerHTML =
     '<div class="share-layout">' +
       '<div class="panel share-list-col" id="listCol">' +
@@ -1202,6 +1278,7 @@ function renderLayout() {
   const sortSelect = document.getElementById("sortSelect");
   if (sortSelect) sortSelect.value = currentSort;
   renderBookList();
+  if (selectedBookId) renderBookDetail();
   _attachDetailSwipe();
 }
 
@@ -1573,15 +1650,8 @@ function renderBookDetail() {
   const genre = briefing ? (briefing.genre || "").toLowerCase() : "";
   const isFiction = genre === "fiction";
   const isReference = genre === "reference";
-  const spoilerToggleHtml = (briefing && isFiction)
-    ? '<label class="spoiler-toggle" id="spoilerToggleLabel">' +
-        '<input type="checkbox" id="spoilerToggle"' + (showSpoilers ? " checked" : "") +
-          ' onchange="toggleSpoilers(this.checked)">' +
-        '<span class="toggle-slider"></span>' +
-        '<span class="toggle-text">Show Spoilers</span>' +
-      '</label>'
-    : '';
-  const spoilerMode = isFiction && showSpoilers ? "spoiler" : "safe";
+  const spoilerToggleHtml = '';
+  const spoilerMode = "safe";
   const audioVariant = sharedAllowBriefingAudio && briefing ? sharedAudioVariant(book.id, spoilerMode) : null;
   const audioKey = sharedAudioKey(book.id, spoilerMode);
   const audioUrl = sharedAudioUrls[audioKey] || "";
@@ -1608,7 +1678,7 @@ function renderBookDetail() {
   if (!briefing) {
     briefingHtml = '<div class="briefing-empty"><p>No discussion guide available for this book.</p></div>';
   } else {
-    const s = showSpoilers;
+    const s = false;
     const summaryText    = isFiction ? (s ? briefing.summary_spoiler   : briefing.summary_safe)   : (isReference ? briefing.editorial_approach : briefing.summary);
     const keyElems       = isFiction ? (s ? briefing.key_elements_spoiler : briefing.key_elements_safe) : (isReference ? briefing.contents_overview : briefing.key_elements);
     const craftText      = isFiction ? (s ? briefing.craft_analysis_spoiler : briefing.craft_analysis_safe) : (isReference ? briefing.production_notes : briefing.craft_analysis);

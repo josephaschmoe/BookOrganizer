@@ -31,6 +31,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    match /users/{userId}/shares/{shareId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Share link token lookup — public read, Admin SDK writes only.
     match /shareLinks/{token} {
       allow read: if true;

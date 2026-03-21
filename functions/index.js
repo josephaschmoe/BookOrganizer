@@ -279,6 +279,28 @@ exports.generateBriefing = onCall({ secrets: [geminiApiKey, perplexityApiKey, br
   };
 });
 
+exports.resolveEditionMetadata = onCall({ secrets: [perplexityApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const input = sanitizeEditionLookupInput(request.data || {});
+  const extractedIsbn = cleanPossibleIsbn(input.extracted.isbn_13 || input.extracted.isbn_10 || "");
+  if (!input.book.title && !input.extracted.title) {
+    throw new HttpsError("invalid-argument", "Book title is required.");
+  }
+  if (extractedIsbn.length === 10 || extractedIsbn.length === 13) {
+    throw new HttpsError("failed-precondition", "A valid ISBN was read from the image, so edition lookup is not needed.");
+  }
+
+  try {
+    const metadata = await callPerplexityForEditionMetadata(input, perplexityApiKey.value());
+    return { metadata };
+  } catch (error) {
+    throw new HttpsError("internal", error.message || "Edition lookup failed.");
+  }
+});
+
 exports.generateBriefingAudio = onCall({ secrets: [briefingAdminPassword] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
@@ -973,14 +995,221 @@ function sanitizeBook(book) {
     year:      cleanText(source.year),
     publisher: cleanText(source.publisher),
     edition:   cleanText(source.edition),
+    contributor: cleanText(source.contributor),
+    illustrationNote: cleanText(source.illustrationNote),
     isbn:      cleanText(source.isbn),
     subjects:  cleanText(source.subjects),
     notes:     cleanText(source.notes)
   };
 }
 
+function sanitizeEditionLookupInput(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const extracted = source.extracted && typeof source.extracted === "object" ? source.extracted : {};
+  const candidate = source.candidate && typeof source.candidate === "object" ? source.candidate : {};
+  return {
+    book: sanitizeBook(source.book),
+    extracted: {
+      title: cleanText(extracted.title),
+      subtitle: cleanText(extracted.subtitle),
+      authors: Array.isArray(extracted.authors) ? extracted.authors.map(cleanText).filter(Boolean).slice(0, 6) : [],
+      publisher: cleanText(extracted.publisher),
+      published_year: normalizeYearText(extracted.published_year) || cleanText(extracted.published_year),
+      edition: cleanText(extracted.edition),
+      contributors: Array.isArray(extracted.contributors) ? extracted.contributors.map(cleanText).filter(Boolean).slice(0, 8) : [],
+      illustration_note: cleanText(extracted.illustration_note),
+      source_visible: Array.isArray(extracted.source_visible) ? extracted.source_visible.map(cleanText).filter(Boolean).slice(0, 6) : []
+    },
+    candidate: {
+      title: cleanText(candidate.title),
+      author: cleanText(candidate.author),
+      publisher: cleanText(candidate.publisher),
+      year: normalizeYearText(candidate.year) || cleanText(candidate.year),
+      edition: cleanText(candidate.edition),
+      contributor: cleanText(candidate.contributor),
+      source: cleanText(candidate.source)
+    }
+  };
+}
+
+const editionMetadataSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    author: { type: "string" },
+    publisher: { type: "string" },
+    year: { type: "string" },
+    edition: { type: "string" },
+    contributor: { type: "string" },
+    illustration_note: { type: "string" },
+    confidence_note: { type: "string" }
+  },
+  required: ["title", "author", "publisher", "year", "edition", "contributor", "illustration_note", "confidence_note"]
+};
+
+function buildEditionResolutionPrompt(input) {
+  const book = input.book || {};
+  const extracted = input.extracted || {};
+  const candidate = input.candidate || {};
+  const hasExtractedContext = Boolean(
+    extracted.title
+    || (Array.isArray(extracted.authors) && extracted.authors.length)
+    || extracted.publisher
+    || extracted.published_year
+    || extracted.edition
+    || (Array.isArray(extracted.contributors) && extracted.contributors.length)
+    || extracted.illustration_note
+  );
+  return [
+    "Resolve the most likely specific edition of a book using web-grounded search.",
+    "Return only conservative bibliographic fields you can support from reliable sources.",
+    "Prefer filling missing edition-sensitive metadata rather than restating obvious fields.",
+    "If a field cannot be verified confidently, return an empty string for that field.",
+    "",
+    ...(hasExtractedContext ? [
+      "Use only the metadata read directly from the user's image as search evidence.",
+      "Do not use API candidate data or current form values as evidence when they conflict with the extracted image metadata.",
+      ""
+    ] : [
+      "Current saved / selected metadata:",
+      `title: ${book.title || ""}`,
+      `author: ${book.author || ""}`,
+      `publisher: ${book.publisher || ""}`,
+      `year: ${book.year || ""}`,
+      `edition: ${book.edition || ""}`,
+      `contributor: ${book.contributor || ""}`,
+      `illustration note: ${book.illustrationNote || ""}`,
+      `isbn: ${book.isbn || ""}`,
+      ""
+    ]),
+    "Image-extracted metadata:",
+    `title: ${extracted.title || ""}`,
+    `subtitle: ${extracted.subtitle || ""}`,
+    `authors: ${(extracted.authors || []).join(", ")}`,
+    `publisher: ${extracted.publisher || ""}`,
+    `published_year: ${extracted.published_year || ""}`,
+    `edition: ${extracted.edition || ""}`,
+    `contributors: ${(extracted.contributors || []).join(", ")}`,
+    `illustration_note: ${extracted.illustration_note || ""}`,
+    `seen_on: ${(extracted.source_visible || []).join(", ")}`,
+    "",
+    ...(hasExtractedContext ? [] : [
+      "Best API candidate already selected in the app:",
+      `title: ${candidate.title || ""}`,
+      `author: ${candidate.author || ""}`,
+      `publisher: ${candidate.publisher || ""}`,
+      `year: ${candidate.year || ""}`,
+      `edition: ${candidate.edition || ""}`,
+      `contributor: ${candidate.contributor || ""}`,
+      `source: ${candidate.source || ""}`,
+      ""
+    ]),
+    "Instructions:",
+    "- Search the web for the likely edition that matches the extracted image metadata.",
+    "- Use contributor credits such as illustrator, editor, translator, or introduction-by when they help identify the edition.",
+    "- Use publisher and publication year heavily when the image provides them.",
+    "- Keep title and author only if they are clearly supported.",
+    "- edition should be a concise statement such as 'First edition' or '1930 Scribner illustrated edition' only if that wording can be supported.",
+    "- contributor should be the most relevant single edition-specific contributor.",
+    "- illustration_note may restate a verified illustration clue if it is specific and helpful.",
+    "- confidence_note should briefly say what evidence supported the result or why the edition remains uncertain.",
+    "- Return JSON only."
+  ].join("\n");
+}
+
+async function callPerplexityForEditionMetadata(input, apiKey) {
+  const payload = {
+    model: PERPLEXITY_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a careful bibliographic edition resolver.",
+          "Search the web to identify the most likely specific edition of a book.",
+          "Prefer conservative accuracy over completeness.",
+          "Only fill fields that can be supported by reliable web sources.",
+          "Return JSON only."
+        ].join(" ")
+      },
+      { role: "user", content: buildEditionResolutionPrompt(input) }
+    ],
+    max_tokens: 900,
+    temperature: 0.2,
+    return_images: false,
+    return_related_questions: false
+  };
+
+  const response = await fetchWithRetry(PERPLEXITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify(payload)
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    let apiError = {};
+    try { apiError = JSON.parse(rawText); } catch {}
+    console.error("Perplexity edition metadata error", response.status, JSON.stringify(apiError));
+    throw new Error(`Perplexity request failed (HTTP ${response.status})`);
+  }
+
+  let parsedApi;
+  try { parsedApi = JSON.parse(rawText); }
+  catch { throw new Error("Perplexity returned unreadable JSON"); }
+
+  const text = extractPerplexityMessageText(parsedApi);
+  if (!text) throw new Error("No content in Perplexity response");
+
+  let metadata;
+  try {
+    metadata = parseResearchJson(text);
+  } catch (error) {
+    metadata = salvageResearchJson(text);
+  }
+
+  return {
+    title: cleanText(metadata.title),
+    author: cleanText(metadata.author),
+    publisher: cleanText(metadata.publisher),
+    year: normalizeYearText(metadata.year) || cleanText(metadata.year),
+    edition: cleanText(metadata.edition),
+    contributor: cleanText(metadata.contributor),
+    illustration_note: cleanText(metadata.illustration_note),
+    confidence_note: cleanText(metadata.confidence_note)
+  };
+}
+
 function cleanText(value) {
   return String(value || "").trim().slice(0, 600);
+}
+
+function romanToInteger(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw || /[^IVXLCDM]/.test(raw)) return null;
+  const numerals = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let total = 0;
+  let prev = 0;
+  for (let i = raw.length - 1; i >= 0; i -= 1) {
+    const current = numerals[raw[i]];
+    if (!current) return null;
+    if (current < prev) total -= current;
+    else {
+      total += current;
+      prev = current;
+    }
+  }
+  return total;
+}
+
+function normalizeYearText(value) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  const digitMatch = raw.match(/\b(1[4-9]\d{2}|20\d{2}|2100)\b/);
+  if (digitMatch) return digitMatch[1];
+  const romanMatch = raw.match(/\b[MCDLXVI]+\b/i);
+  if (!romanMatch) return "";
+  const romanYear = romanToInteger(romanMatch[0]);
+  return romanYear && romanYear >= 1400 && romanYear <= 2100 ? String(romanYear) : "";
 }
 
 function todayUsageKey() {
@@ -1529,6 +1758,146 @@ function audioVariantFromDoc(doc, variantKey) {
   const variants = doc && typeof doc.variants === "object" ? doc.variants : {};
   const variant = variants[variantKey];
   return variant && typeof variant === "object" ? variant : null;
+}
+
+function userSharesCol(uid) {
+  return db.collection("users").doc(uid).collection("shares");
+}
+
+function normalizeShareType(value) {
+  return String(value || "").trim().toLowerCase() === "book" ? "book" : "shelf";
+}
+
+function buildShareRecord({
+  token,
+  uid,
+  type,
+  resourceId,
+  resourceName,
+  includePersonalNotes,
+  allowWikiAI,
+  allowBriefingAudio,
+  includeAdditionalPhotos,
+  createdAt,
+  updatedAt,
+  status = "active"
+}) {
+  const shareType = normalizeShareType(type);
+  return {
+    token,
+    ownerUid: uid,
+    type: shareType,
+    resourceId: String(resourceId || "").trim(),
+    resourceName: String(resourceName || "").trim(),
+    includePersonalNotes: Boolean(includePersonalNotes),
+    allowWikiAI: Boolean(allowWikiAI),
+    allowBriefingAudio: Boolean(allowBriefingAudio),
+    includeAdditionalPhotos: shareType === "book" ? Boolean(includeAdditionalPhotos) : true,
+    createdAt: Number(createdAt) || Date.now(),
+    updatedAt: Number(updatedAt) || Number(createdAt) || Date.now(),
+    status: status === "revoked" ? "revoked" : "active"
+  };
+}
+
+function buildPublicShareLinkDoc(share) {
+  return {
+    ownerUid: share.ownerUid,
+    type: share.type,
+    shareId: share.token,
+    resourceId: share.resourceId,
+    resourceName: share.resourceName,
+    includePersonalNotes: share.includePersonalNotes,
+    allowWikiAI: share.allowWikiAI,
+    allowBriefingAudio: share.allowBriefingAudio,
+    includeAdditionalPhotos: share.includeAdditionalPhotos,
+    createdAt: share.createdAt,
+    updatedAt: share.updatedAt,
+    status: share.status,
+    shelfId: share.type === "shelf" ? share.resourceId : null,
+    bookId: share.type === "book" ? share.resourceId : null
+  };
+}
+
+async function getCatalogData(uid) {
+  const catalogSnap = await db.collection("users").doc(uid).collection("catalog").doc("data").get();
+  if (!catalogSnap.exists) throw new HttpsError("not-found", "Catalog not found.");
+  return catalogSnap.data() || {};
+}
+
+async function listActiveShareDocs(uid) {
+  const snap = await userSharesCol(uid).where("status", "==", "active").get();
+  return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
+}
+
+async function findActiveShareByResource(uid, type, resourceId) {
+  const shareType = normalizeShareType(type);
+  const snap = await userSharesCol(uid)
+    .where("status", "==", "active")
+    .where("type", "==", shareType)
+    .where("resourceId", "==", String(resourceId || "").trim())
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...(snap.docs[0].data() || {}) };
+}
+
+async function resolveShareToken(token) {
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
+  const data = tokenDoc.data() || {};
+  if (String(data.status || "active").trim().toLowerCase() === "revoked") {
+    throw new HttpsError("not-found", "Share link not found or expired.");
+  }
+  const ownerUid = String(data.ownerUid || "").trim();
+  if (!ownerUid) throw new HttpsError("not-found", "Share link is invalid.");
+  if (data.type) {
+    return buildShareRecord({
+      token,
+      uid: ownerUid,
+      type: data.type,
+      resourceId: data.resourceId || (data.type === "book" ? data.bookId : data.shelfId),
+      resourceName: data.resourceName || "",
+      includePersonalNotes: data.includePersonalNotes,
+      allowWikiAI: data.allowWikiAI,
+      allowBriefingAudio: data.allowBriefingAudio,
+      includeAdditionalPhotos: data.includeAdditionalPhotos,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      status: data.status || "active"
+    });
+  }
+  return buildShareRecord({
+    token,
+    uid: ownerUid,
+    type: "shelf",
+    resourceId: data.shelfId,
+    resourceName: "",
+    includePersonalNotes: data.includePersonalNotes,
+    allowWikiAI: data.allowWikiAI,
+    allowBriefingAudio: data.allowBriefingAudio,
+    includeAdditionalPhotos: true,
+    createdAt: data.createdAt,
+    updatedAt: data.createdAt,
+    status: "active"
+  });
+}
+
+function sanitizeSharedAudioDoc(data) {
+  const variants = data && typeof data.variants === "object" ? data.variants : {};
+  const sanitized = {};
+  Object.entries(variants).forEach(([key, value]) => {
+    if (!value || typeof value !== "object" || value.status !== "ready") return;
+    sanitized[key] = {
+      status: value.status,
+      voice: value.voice || DEFAULT_AUDIO_VOICE,
+      generatedAt: value.generatedAt || "",
+      ttsModel: value.ttsModel || "",
+      ttsFallbackReason: value.ttsFallbackReason || "",
+      durationSec: value.durationSec || 0,
+      sourceBriefingGeneratedAt: value.sourceBriefingGeneratedAt || ""
+    };
+  });
+  return Object.keys(sanitized).length ? { variants: sanitized } : null;
 }
 
 async function loadBookAndBriefing(uid, bookId) {
@@ -2122,6 +2491,9 @@ const extractionSchema = {
     publisher:      { type: "string" },
     published_year: { type: "string" },
     edition:        { type: "string" },
+    contributors:   { type: "array", items: { type: "string" } },
+    imprint_or_city:{ type: "string" },
+    illustration_note: { type: "string" },
     confidence:     { type: "number" },
     source_visible: { type: "array", items: { type: "string" } },
     notes:          { type: "string" }
@@ -2138,17 +2510,60 @@ exports.analyzeBookPhoto = onCall({
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
 
-  const images = request.data && request.data.images;
-  if (!Array.isArray(images) || images.length === 0 || images.length > 3) {
+  const legacyImages = request.data && request.data.images;
+  const imageInputs = Array.isArray(request.data && request.data.imageInputs)
+    ? request.data.imageInputs
+    : legacyImages;
+  if (!Array.isArray(imageInputs) || imageInputs.length === 0 || imageInputs.length > 3) {
     throw new HttpsError("invalid-argument", "Provide 1 to 3 images.");
   }
 
   // Step 1: Send images to Gemini for bibliographic extraction
-  const imageParts = images.map((img) => ({
-    inline_data: {
-      mime_type: img.mimeType || "image/jpeg",
-      data: img.data
+  const imageParts = await Promise.all(imageInputs.map(async (img) => {
+    if (img && typeof img.data === "string" && img.data.trim()) {
+      return {
+        inline_data: {
+          mime_type: img.mimeType || "image/jpeg",
+          data: img.data
+        }
+      };
     }
+
+    const storagePath = String(img && img.storagePath || "").trim();
+    const remoteUrl = String(img && img.url || "").trim();
+    let buffer = null;
+    let mimeType = String(img && img.mimeType || "").trim() || "image/jpeg";
+
+    if (storagePath) {
+      try {
+        const download = await admin.storage().bucket().file(storagePath).download();
+        buffer = download && download[0] ? download[0] : null;
+      } catch (error) {
+        console.warn("[analyzeBookPhoto] storagePath download failed:", storagePath, error.message);
+      }
+    }
+
+    if (!buffer && remoteUrl) {
+      const response = await fetchWithRetry(remoteUrl, {}, { maxRetries: 1, baseDelayMs: 500 });
+      if (!response.ok) {
+        throw new HttpsError("failed-precondition", "Could not load one of the saved photos for analysis.");
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+      const contentType = response.headers.get("content-type");
+      if (contentType) mimeType = contentType;
+    }
+
+    if (!buffer) {
+      throw new HttpsError("failed-precondition", "Could not load one of the saved photos for analysis.");
+    }
+
+    return {
+      inline_data: {
+        mime_type: mimeType,
+        data: buffer.toString("base64")
+      }
+    };
   }));
 
   const payload = {
@@ -2160,9 +2575,12 @@ exports.analyzeBookPhoto = onCall({
           text: [
             "Extract all visible bibliographic metadata from these book images.",
             "Look for: ISBN (on barcode, copyright page, or back cover),",
-            "title, subtitle, author names, publisher, publication year, edition info.",
+            "title, subtitle, author names, publisher, imprint/city, publication year, edition or printing info.",
+            "Also extract edition-useful contributor credits when visible, such as illustrator, editor, translator, or introduction by.",
+            "If the page mentions illustration details such as number of illustrations or colour plates, capture that in illustration_note.",
             "Only report what you can actually read in the images.",
             "Use empty string for fields you cannot determine.",
+            "Use contributors as an array of contributor strings exactly as they appear when readable.",
             "For confidence: 0.0 to 1.0 where 1.0 means all key fields are clearly readable.",
             "For source_visible: list what each image shows,",
             "e.g. 'title page', 'copyright page', 'front cover', 'back cover barcode'.",
@@ -2226,8 +2644,11 @@ exports.analyzeBookPhoto = onCall({
     subtitle:       extracted.subtitle || null,
     authors:        Array.isArray(extracted.authors) ? extracted.authors.filter(Boolean) : [],
     publisher:      extracted.publisher || null,
-    published_year: extracted.published_year || null,
+    published_year: normalizeYearText(extracted.published_year) || extracted.published_year || null,
     edition:        extracted.edition || null,
+    contributors:   Array.isArray(extracted.contributors) ? extracted.contributors.filter(Boolean) : [],
+    imprint_or_city: extracted.imprint_or_city || null,
+    illustration_note: extracted.illustration_note || null,
     confidence:     typeof extracted.confidence === "number" ? extracted.confidence : null,
     source_visible: Array.isArray(extracted.source_visible) ? extracted.source_visible : [],
     notes:          extracted.notes || null
@@ -2243,15 +2664,16 @@ exports.analyzeBookPhoto = onCall({
     await searchByIsbn(isbn, candidates);
   }
 
-  // Fallback: title + author search
+  // Fallback: metadata-aware search
   if (candidates.length === 0 && extracted.title) {
-    await searchByTitleAuthor(extracted.title, extracted.authors[0] || "", candidates);
+    await searchByMetadata(extracted, candidates);
   }
 
   // Score and sort candidates
   for (const c of candidates) {
     c.confidence = scoreCandidate(c, extracted);
   }
+  dedupeCandidates(candidates);
   candidates.sort((a, b) => b.confidence - a.confidence);
 
   const bestMatch = candidates.length > 0 && candidates[0].confidence >= 0.3
@@ -2301,26 +2723,43 @@ async function searchByIsbn(isbn, candidates) {
 }
 
 async function searchByTitleAuthor(title, author, candidates) {
+  return searchByMetadata({ title, authors: author ? [author] : [] }, candidates);
+}
+
+async function searchByMetadata(extracted, candidates) {
+  const title = cleanMetadataText(extracted && extracted.title);
+  const author = cleanMetadataText(extracted && Array.isArray(extracted.authors) ? extracted.authors[0] : "");
+  const publisher = cleanMetadataText(extracted && extracted.publisher);
+  const contributor = cleanMetadataText(extracted && Array.isArray(extracted.contributors) ? extracted.contributors[0] : "");
+  const year = cleanYear(extracted && extracted.published_year);
+
   // Google Books by title + author
   try {
-    const terms = [];
-    if (title) terms.push(`intitle:${title}`);
-    if (author) terms.push(`inauthor:${author}`);
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(terms.join(" "))}&maxResults=5`
-    );
-    const data = await res.json();
-    for (const item of (data.items || []).slice(0, 5)) {
-      candidates.push(formatGBCandidate(item));
+    const gbQueries = [];
+    const structured = [];
+    if (title) structured.push(`intitle:${title}`);
+    if (author) structured.push(`inauthor:${author}`);
+    if (structured.length) gbQueries.push(structured.join(" "));
+    const broadTerms = [title, author, publisher, contributor, year].filter(Boolean);
+    if (broadTerms.length) gbQueries.push(broadTerms.join(" "));
+
+    for (const query of gbQueries.slice(0, 2)) {
+      const res = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=8`
+      );
+      const data = await res.json();
+      for (const item of (data.items || []).slice(0, 8)) {
+        candidates.push(formatGBCandidate(item));
+      }
     }
   } catch (e) { console.error("GB title search:", e.message); }
 
   // Open Library by title
   try {
-    const q = encodeURIComponent(title + (author ? " " + author : ""));
-    const res = await fetch(`https://openlibrary.org/search.json?q=${q}&limit=5`);
+    const q = encodeURIComponent([title, author, publisher, contributor].filter(Boolean).join(" "));
+    const res = await fetch(`https://openlibrary.org/search.json?q=${q}&limit=8`);
     const data = await res.json();
-    for (const doc of (data.docs || []).slice(0, 3)) {
+    for (const doc of (data.docs || []).slice(0, 8)) {
       candidates.push(formatOLSearchCandidate(doc));
     }
   } catch (e) { console.error("OL title search:", e.message); }
@@ -2333,6 +2772,10 @@ function formatGBCandidate(item) {
   const ids = v.industryIdentifiers || [];
   const isbn13 = (ids.find((i) => i.type === "ISBN_13") || {}).identifier || "";
   const isbn10 = (ids.find((i) => i.type === "ISBN_10") || {}).identifier || "";
+  const contributors = extractContributorCredits([
+    v.subtitle || "",
+    v.description || ""
+  ]);
   return {
     source: "google_books",
     title: v.title || "",
@@ -2340,6 +2783,7 @@ function formatGBCandidate(item) {
     authors: v.authors || [],
     publisher: v.publisher || "",
     publishedDate: v.publishedDate || "",
+    contributors,
     isbn_13: isbn13,
     isbn_10: isbn10,
     description: (v.description || "").slice(0, 500),
@@ -2358,6 +2802,10 @@ function formatOLApiCandidate(book, isbn) {
     authors: (book.authors || []).map((a) => a.name),
     publisher: (book.publishers || []).map((p) => p.name).join(", "),
     publishedDate: book.publish_date || "",
+    contributors: dedupeStringList([
+      ...extractContributorCredits([book.by_statement || "", typeof book.notes === "string" ? book.notes : ""]),
+      ...((book.contributors || []).map((entry) => entry && (entry.name || entry.role || "")).filter(Boolean))
+    ]),
     isbn_13: isbn.length === 13 ? isbn : "",
     isbn_10: isbn.length === 10 ? isbn : "",
     description: typeof book.notes === "string" ? book.notes.slice(0, 500) : "",
@@ -2376,6 +2824,10 @@ function formatOLSearchCandidate(doc) {
     authors: Array.isArray(doc.author_name) ? doc.author_name : [],
     publisher: Array.isArray(doc.publisher) ? doc.publisher[0] || "" : "",
     publishedDate: doc.first_publish_year ? String(doc.first_publish_year) : "",
+    contributors: dedupeStringList([
+      ...(Array.isArray(doc.contributor) ? doc.contributor : []),
+      ...extractContributorCredits([doc.subtitle || ""])
+    ]),
     isbn_13: Array.isArray(doc.isbn) ? (doc.isbn.find((i) => i.length === 13) || "") : "",
     isbn_10: Array.isArray(doc.isbn) ? (doc.isbn.find((i) => i.length === 10) || "") : "",
     description: "",
@@ -2393,37 +2845,185 @@ function scoreCandidate(candidate, extracted) {
   let weight = 0;
 
   // ISBN match is very strong signal
-  const cIsbn = (candidate.isbn_13 || candidate.isbn_10 || "").replace(/[^0-9X]/gi, "");
-  const eIsbn = (extracted.isbn_13 || extracted.isbn_10 || "").replace(/[^0-9X]/gi, "");
+  const cIsbn = cleanPossibleIsbn(candidate.isbn_13 || candidate.isbn_10);
+  const eIsbn = cleanPossibleIsbn(extracted.isbn_13 || extracted.isbn_10);
   if (cIsbn && eIsbn && cIsbn === eIsbn) {
-    score += 0.5;
-    weight += 0.5;
+    score += 0.58;
+    weight += 0.58;
   }
 
   // Title similarity
   if (extracted.title && candidate.title) {
-    score += wordOverlap(extracted.title, candidate.title) * 0.3;
-    weight += 0.3;
+    score += wordOverlap(extracted.title, candidate.title) * 0.22;
+    weight += 0.22;
   }
 
   // Author match
   if (extracted.authors.length > 0 && candidate.authors.length > 0) {
-    score += wordOverlap(extracted.authors[0], candidate.authors[0]) * 0.2;
-    weight += 0.2;
+    score += wordOverlap(extracted.authors[0], candidate.authors[0]) * 0.12;
+    weight += 0.12;
   }
 
-  return weight > 0 ? score / weight : 0;
+  if (extracted.publisher && candidate.publisher) {
+    score += textIncludesOverlap(extracted.publisher, candidate.publisher) * 0.05;
+    weight += 0.05;
+  }
+
+  const yearScore = yearSimilarity(extracted.published_year, candidate.publishedDate);
+  if (yearScore >= 0) {
+    score += yearScore * 0.04;
+    weight += 0.04;
+  }
+
+  const contributorScore = listOverlap(extracted.contributors, candidate.contributors);
+  if (contributorScore >= 0) {
+    score += contributorScore * 0.04;
+    weight += 0.04;
+  }
+
+  if (extracted.edition && candidate.edition) {
+    score += textIncludesOverlap(extracted.edition, candidate.edition) * 0.03;
+    weight += 0.03;
+  }
+
+  let normalized = weight > 0 ? score / weight : 0;
+  if (extracted.publisher && candidate.publisher) {
+    const publisherOverlap = textIncludesOverlap(extracted.publisher, candidate.publisher);
+    if (publisherOverlap < 0.2) normalized -= 0.05;
+  }
+  if (extracted.published_year && candidate.publishedDate) {
+    const candidateYear = cleanYear(candidate.publishedDate);
+    const extractedYear = cleanYear(extracted.published_year);
+    if (candidateYear && extractedYear && Math.abs(Number(candidateYear) - Number(extractedYear)) > 5) {
+      normalized -= 0.04;
+    }
+  }
+  return Math.max(0, Math.min(1, normalized));
 }
 
 function wordOverlap(a, b) {
   if (!a || !b) return 0;
-  const aWords = new Set(a.toLowerCase().split(/\s+/));
-  const bWords = new Set(b.toLowerCase().split(/\s+/));
+  const aWords = new Set(normalizeSearchText(a).split(/\s+/).filter(Boolean));
+  const bWords = new Set(normalizeSearchText(b).split(/\s+/).filter(Boolean));
   let overlap = 0;
   for (const w of aWords) {
     if (bWords.has(w)) overlap++;
   }
   return overlap / Math.max(aWords.size, bWords.size);
+}
+
+function normalizeSearchText(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function cleanMetadataText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function cleanYear(value) {
+  return normalizeYearText(value);
+}
+
+function cleanPossibleIsbn(value) {
+  return String(value || "").replace(/[^0-9X]/gi, "").toUpperCase();
+}
+
+function textIncludesOverlap(a, b) {
+  const aNorm = normalizeSearchText(a);
+  const bNorm = normalizeSearchText(b);
+  if (!aNorm || !bNorm) return -1;
+  if (aNorm === bNorm) return 1;
+  if (aNorm.includes(bNorm) || bNorm.includes(aNorm)) return 0.8;
+  return wordOverlap(aNorm, bNorm);
+}
+
+function yearSimilarity(extractedYear, candidateDate) {
+  const a = cleanYear(extractedYear);
+  const b = cleanYear(candidateDate);
+  if (!a || !b) return -1;
+  const delta = Math.abs(Number(a) - Number(b));
+  if (delta === 0) return 1;
+  if (delta <= 1) return 0.8;
+  if (delta <= 3) return 0.5;
+  if (delta <= 5) return 0.25;
+  return 0;
+}
+
+function listOverlap(a, b) {
+  const left = dedupeStringList(Array.isArray(a) ? a : []);
+  const right = dedupeStringList(Array.isArray(b) ? b : []);
+  if (!left.length || !right.length) return -1;
+  let best = 0;
+  left.forEach((leftItem) => {
+    right.forEach((rightItem) => {
+      best = Math.max(best, textIncludesOverlap(leftItem, rightItem));
+    });
+  });
+  return best;
+}
+
+function dedupeStringList(values) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const cleaned = cleanMetadataText(value);
+    const key = normalizeSearchText(cleaned);
+    if (!cleaned || !key || seen.has(key)) return;
+    seen.add(key);
+    out.push(cleaned);
+  });
+  return out;
+}
+
+function extractContributorCredits(textParts) {
+  const patterns = [
+    /\billustrated by\s+([^.;,\n]+)/ig,
+    /\bwith illustrations by\s+([^.;,\n]+)/ig,
+    /\bedited by\s+([^.;,\n]+)/ig,
+    /\btranslation by\s+([^.;,\n]+)/ig,
+    /\btranslated by\s+([^.;,\n]+)/ig,
+    /\bintroduction by\s+([^.;,\n]+)/ig,
+    /\bwith introduction by\s+([^.;,\n]+)/ig
+  ];
+  const found = [];
+  (Array.isArray(textParts) ? textParts : []).forEach((text) => {
+    const source = String(text || "");
+    patterns.forEach((pattern) => {
+      let match;
+      while ((match = pattern.exec(source))) {
+        found.push(match[1]);
+      }
+      pattern.lastIndex = 0;
+    });
+  });
+  return dedupeStringList(found);
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Map();
+  const deduped = [];
+  (Array.isArray(candidates) ? candidates : []).forEach((candidate) => {
+    if (!candidate) return;
+    const key = cleanPossibleIsbn(candidate.isbn_13 || candidate.isbn_10)
+      || `${normalizeSearchText(candidate.title)}|${normalizeSearchText((candidate.authors || [])[0] || "")}|${cleanYear(candidate.publishedDate)}`;
+    if (!key) {
+      deduped.push(candidate);
+      return;
+    }
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, candidate);
+      deduped.push(candidate);
+      return;
+    }
+    if ((candidate.confidence || 0) > (existing.confidence || 0)) {
+      const index = deduped.indexOf(existing);
+      if (index >= 0) deduped[index] = candidate;
+      seen.set(key, candidate);
+    }
+  });
+  candidates.length = 0;
+  candidates.push(...deduped);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2622,58 +3222,100 @@ exports.identifyBooksInImage = onCall({
 // ─── Share Link Functions ────────────────────────────────────────────────────
 
 /**
- * createShareLink — generates a public read-only share token for one shelf.
- * One active token per shelf (revokes any prior token for the same shelf).
+ * createShareLink — generates a public read-only share token for one shelf or book.
+ * One active token per resource.
  */
 exports.createShareLink = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
 
-  const uid                = request.auth.uid;
-  const shelfId            = String((request.data || {}).shelfId || "").trim();
+  const uid = request.auth.uid;
+  const requestedType = normalizeShareType((request.data || {}).type || "");
+  const legacyShelfId = String((request.data || {}).shelfId || "").trim();
+  const resourceId = String((request.data || {}).resourceId || legacyShelfId).trim();
   const includePersonalNotes = Boolean((request.data || {}).includePersonalNotes);
-  const allowWikiAI          = Boolean((request.data || {}).allowWikiAI);
-  const allowBriefingAudio   = Boolean((request.data || {}).allowBriefingAudio);
+  const allowWikiAI = Boolean((request.data || {}).allowWikiAI);
+  const allowBriefingAudio = Boolean((request.data || {}).allowBriefingAudio);
+  const includeAdditionalPhotos = Boolean((request.data || {}).includeAdditionalPhotos);
 
-  if (!shelfId) throw new HttpsError("invalid-argument", "shelfId is required.");
-
-  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
-  const snap = await catalogRef.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Catalog not found.");
-
-  const data  = snap.data();
-  const shelf = (data.shelves || []).find((s) => s.id === shelfId);
-  if (!shelf) throw new HttpsError("not-found", "Shelf not found.");
-
-  const existingLinks = data.shareLinks || {};
-  const existingToken = Object.keys(existingLinks).find((t) => existingLinks[t].shelfId === shelfId);
-
-  const token = crypto.randomBytes(16).toString("hex");
-  const createdAt = Date.now();
-
-  const batch = db.batch();
-
-  if (existingToken) {
-    batch.delete(db.collection("shareLinks").doc(existingToken));
+  if (!resourceId) {
+    throw new HttpsError("invalid-argument", `${requestedType === "book" ? "bookId" : "shelfId"} is required.`);
   }
 
-  batch.set(db.collection("shareLinks").doc(token), {
-    ownerUid: uid,
-    shelfId,
+  const data = await getCatalogData(uid);
+  let resourceName = "";
+  if (requestedType === "book") {
+    const book = (data.books || []).find((entry) => entry && entry.id === resourceId);
+    if (!book) throw new HttpsError("not-found", "Book not found.");
+    resourceName = String(book.title || "").trim() || "Shared Book";
+  } else {
+    const shelf = (data.shelves || []).find((entry) => entry && entry.id === resourceId);
+    if (!shelf) throw new HttpsError("not-found", "Shelf not found.");
+    resourceName = String(shelf.name || "").trim() || "Shared Shelf";
+  }
+
+  const existingShare = await findActiveShareByResource(uid, requestedType, resourceId);
+  const legacyShareMap = data.shareLinks && typeof data.shareLinks === "object" ? data.shareLinks : {};
+  const legacyToken = !existingShare && requestedType === "shelf"
+    ? Object.keys(legacyShareMap).find((candidate) => {
+        const item = legacyShareMap[candidate];
+        return item && String(item.shelfId || "").trim() === resourceId;
+      })
+    : "";
+  const token = crypto.randomBytes(16).toString("hex");
+  const createdAt = Date.now();
+  const share = buildShareRecord({
+    token,
+    uid,
+    type: requestedType,
+    resourceId,
+    resourceName,
     includePersonalNotes,
     allowWikiAI,
     allowBriefingAudio,
+    includeAdditionalPhotos,
     createdAt,
+    updatedAt: createdAt,
+    status: "active"
   });
 
-  const updatedLinks = { ...existingLinks };
-  if (existingToken) delete updatedLinks[existingToken];
-  updatedLinks[token] = { shelfId, shelfName: shelf.name, includePersonalNotes, allowWikiAI, allowBriefingAudio, createdAt };
-  batch.update(catalogRef, { shareLinks: updatedLinks });
-
+  const batch = db.batch();
+  if (existingShare && existingShare.token) {
+    batch.delete(db.collection("shareLinks").doc(existingShare.token));
+    batch.set(userSharesCol(uid).doc(existingShare.token), {
+      ...existingShare,
+      status: "revoked",
+      updatedAt: createdAt,
+      revokedAt: createdAt
+    }, { merge: true });
+  }
+  if (legacyToken) {
+    batch.delete(db.collection("shareLinks").doc(legacyToken));
+    batch.set(userSharesCol(uid).doc(legacyToken), buildShareRecord({
+      token: legacyToken,
+      uid,
+      type: "shelf",
+      resourceId,
+      resourceName,
+      includePersonalNotes: legacyShareMap[legacyToken] && legacyShareMap[legacyToken].includePersonalNotes,
+      allowWikiAI: legacyShareMap[legacyToken] && legacyShareMap[legacyToken].allowWikiAI,
+      allowBriefingAudio: legacyShareMap[legacyToken] && legacyShareMap[legacyToken].allowBriefingAudio,
+      includeAdditionalPhotos: true,
+      createdAt: legacyShareMap[legacyToken] && legacyShareMap[legacyToken].createdAt,
+      updatedAt: createdAt,
+      status: "revoked",
+      revokedAt: createdAt
+    }), { merge: true });
+  }
+  batch.set(db.collection("shareLinks").doc(token), buildPublicShareLinkDoc(share));
+  batch.set(userSharesCol(uid).doc(token), share);
   await batch.commit();
-  return { token };
+
+  return {
+    token,
+    share
+  };
 });
 
 /**
@@ -2683,28 +3325,26 @@ exports.getSharedShelf = onCall(async (request) => {
   const token = String((request.data || {}).token || "").trim();
   if (!token) throw new HttpsError("invalid-argument", "token is required.");
 
-  const tokenDoc = await db.collection("shareLinks").doc(token).get();
-  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
+  const share = await resolveShareToken(token);
+  if (share.type !== "shelf") throw new HttpsError("failed-precondition", "This share link is for a single book.");
 
-  const { ownerUid, shelfId, includePersonalNotes, allowWikiAI, allowBriefingAudio } = tokenDoc.data();
-
-  const catalogRef   = db.collection("users").doc(ownerUid).collection("catalog");
-  const briefingsCol = db.collection("users").doc(ownerUid).collection("briefings");
-  const briefingAudioCol = db.collection("users").doc(ownerUid).collection("briefingAudio");
-  const bookPhotosCol = db.collection("users").doc(ownerUid).collection("bookPhotos");
+  const catalogRef = db.collection("users").doc(share.ownerUid).collection("catalog");
+  const briefingsCol = db.collection("users").doc(share.ownerUid).collection("briefings");
+  const briefingAudioCol = db.collection("users").doc(share.ownerUid).collection("briefingAudio");
+  const bookPhotosCol = db.collection("users").doc(share.ownerUid).collection("bookPhotos");
 
   const catalogSnap = await catalogRef.doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
 
   const catalogData = catalogSnap.data();
-  const shelf = (catalogData.shelves || []).find((s) => s.id === shelfId);
+  const shelf = (catalogData.shelves || []).find((s) => s.id === share.resourceId);
   if (!shelf) throw new HttpsError("not-found", "Shelf no longer exists.");
 
   const shelfBooks = (catalogData.books || [])
-    .filter((b) => (b.listShelfId || "default") === shelfId)
+    .filter((b) => (b.listShelfId || "default") === share.resourceId)
     .map((b) => {
       const out = { ...b };
-      if (!includePersonalNotes) delete out.personalNotes;
+      if (!share.includePersonalNotes) delete out.personalNotes;
       return out;
     });
 
@@ -2743,37 +3383,81 @@ exports.getSharedShelf = onCall(async (request) => {
   }
 
   let briefingAudioCache = {};
-  if (allowBriefingAudio && shelfBookIds.size) {
+  if (share.allowBriefingAudio && shelfBookIds.size) {
     const audioSnaps = await Promise.all([...shelfBookIds].map((id) => briefingAudioCol.doc(id).get()));
     audioSnaps.forEach((snap) => {
       if (!snap.exists) return;
-      const data = snap.data() || {};
-      const variants = data.variants && typeof data.variants === "object" ? data.variants : {};
-      const sanitized = {};
-      Object.entries(variants).forEach(([key, value]) => {
-        if (!value || typeof value !== "object" || value.status !== "ready") return;
-        sanitized[key] = {
-          status: value.status,
-          voice: value.voice || DEFAULT_AUDIO_VOICE,
-          generatedAt: value.generatedAt || "",
-          ttsModel: value.ttsModel || "",
-          ttsFallbackReason: value.ttsFallbackReason || "",
-          durationSec: value.durationSec || 0,
-          sourceBriefingGeneratedAt: value.sourceBriefingGeneratedAt || ""
-        };
-      });
-      if (Object.keys(sanitized).length) briefingAudioCache[snap.id] = { variants: sanitized };
+      const sanitized = sanitizeSharedAudioDoc(snap.data() || {});
+      if (sanitized) briefingAudioCache[snap.id] = sanitized;
     });
   }
 
   return {
+    shareType: "shelf",
+    resourceName: shelf.name,
     shelfName: shelf.name,
-    shelfId,
-    includePersonalNotes,
-    allowWikiAI: Boolean(allowWikiAI),
-    allowBriefingAudio: Boolean(allowBriefingAudio),
+    shelfId: share.resourceId,
+    includePersonalNotes: share.includePersonalNotes,
+    includeAdditionalPhotos: true,
+    allowWikiAI: Boolean(share.allowWikiAI),
+    allowBriefingAudio: Boolean(share.allowBriefingAudio),
     books: shelfBooks,
     researchCache: filteredCache,
+    briefingAudioCache
+  };
+});
+
+exports.getSharedBook = onCall(async (request) => {
+  const token = cleanText((request.data || {}).token || "");
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+
+  const share = await resolveShareToken(token);
+  if (share.type !== "book") throw new HttpsError("failed-precondition", "This share link is for a shelf.");
+
+  const catalogData = await getCatalogData(share.ownerUid);
+  const rawBook = (catalogData.books || []).find((entry) => entry && entry.id === share.resourceId);
+  if (!rawBook) throw new HttpsError("not-found", "Book no longer exists.");
+
+  const book = { ...rawBook };
+  if (!share.includePersonalNotes) delete book.personalNotes;
+
+  const [briefingSnap, audioSnap, photoSnap] = await Promise.all([
+    db.collection("users").doc(share.ownerUid).collection("briefings").doc(share.resourceId).get(),
+    db.collection("users").doc(share.ownerUid).collection("briefingAudio").doc(share.resourceId).get(),
+    db.collection("users").doc(share.ownerUid).collection("bookPhotos").doc(share.resourceId).get()
+  ]);
+
+  const photoData = photoSnap.exists ? (photoSnap.data() || {}) : {};
+  book.additionalPhotos = share.includeAdditionalPhotos && Array.isArray(photoData.photos) ? photoData.photos : [];
+
+  const researchCache = {};
+  if (briefingSnap.exists) {
+    researchCache[share.resourceId] = briefingSnap.data() || {};
+  } else {
+    const researchSnap = await db.collection("users").doc(share.ownerUid).collection("catalog").doc("research").get();
+    const legacyCache = (researchSnap.exists && researchSnap.data().researchCache)
+      ? researchSnap.data().researchCache
+      : (catalogData.researchCache || {});
+    if (legacyCache[share.resourceId]) researchCache[share.resourceId] = legacyCache[share.resourceId];
+  }
+
+  const briefingAudioCache = {};
+  if (share.allowBriefingAudio && audioSnap.exists) {
+    const sanitized = sanitizeSharedAudioDoc(audioSnap.data() || {});
+    if (sanitized) briefingAudioCache[share.resourceId] = sanitized;
+  }
+
+  return {
+    shareType: "book",
+    resourceName: share.resourceName || book.title || "Shared Book",
+    book,
+    books: [book],
+    selectedBookId: share.resourceId,
+    includePersonalNotes: share.includePersonalNotes,
+    includeAdditionalPhotos: share.includeAdditionalPhotos,
+    allowWikiAI: Boolean(share.allowWikiAI),
+    allowBriefingAudio: Boolean(share.allowBriefingAudio),
+    researchCache,
     briefingAudioCache
   };
 });
@@ -2786,20 +3470,22 @@ exports.getSharedBriefingAudio = onCall(async (request) => {
   if (!token) throw new HttpsError("invalid-argument", "token is required.");
   if (!bookId) throw new HttpsError("invalid-argument", "bookId is required.");
 
-  const tokenDoc = await db.collection("shareLinks").doc(token).get();
-  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
-  if (!tokenDoc.data().allowBriefingAudio) {
+  const share = await resolveShareToken(token);
+  if (!share.allowBriefingAudio) {
     throw new HttpsError("permission-denied", "Briefing audio is not enabled for this share link.");
   }
 
-  const ownerUid = tokenDoc.data().ownerUid;
-  const shelfId = tokenDoc.data().shelfId;
+  const ownerUid = share.ownerUid;
   const catalogSnap = await db.collection("users").doc(ownerUid).collection("catalog").doc("data").get();
   if (!catalogSnap.exists) throw new HttpsError("not-found", "Library not found.");
   const catalogData = catalogSnap.data() || {};
-  const onSharedShelf = (catalogData.books || []).some((book) => book && book.id === bookId && (book.listShelfId || "default") === shelfId);
-  if (!onSharedShelf) {
-    throw new HttpsError("permission-denied", "This book is not part of the shared shelf.");
+  const allowed = share.type === "book"
+    ? share.resourceId === bookId
+    : (catalogData.books || []).some((book) => book && book.id === bookId && (book.listShelfId || "default") === share.resourceId);
+  if (!allowed) {
+    throw new HttpsError("permission-denied", share.type === "book"
+      ? "This book is not part of the shared book link."
+      : "This book is not part of the shared shelf.");
   }
 
   const briefingSnap = await db.collection("users").doc(ownerUid).collection("briefings").doc(bookId).get();
@@ -2837,9 +3523,8 @@ exports.resolveWikipediaArticlesShared = onCall({ secrets: [geminiApiKey] }, asy
   if (!token) throw new HttpsError("invalid-argument", "token is required.");
   if (!title) throw new HttpsError("invalid-argument", "Book title is required.");
 
-  const tokenDoc = await db.collection("shareLinks").doc(token).get();
-  if (!tokenDoc.exists) throw new HttpsError("not-found", "Share link not found or expired.");
-  if (!tokenDoc.data().allowWikiAI) {
+  const share = await resolveShareToken(token);
+  if (!share.allowWikiAI) {
     throw new HttpsError("permission-denied", "AI Wikipedia lookup is not enabled for this share link.");
   }
 
@@ -2915,19 +3600,26 @@ exports.revokeShareLink = onCall(async (request) => {
   const token = String((request.data || {}).token || "").trim();
   if (!token) throw new HttpsError("invalid-argument", "token is required.");
 
-  const tokenDoc = await db.collection("shareLinks").doc(token).get();
-  if (!tokenDoc.exists) return { revoked: false };
+  let share;
+  try {
+    share = await resolveShareToken(token);
+  } catch (error) {
+    if (error && error.code === "not-found") return { revoked: false };
+    throw error;
+  }
 
-  if (tokenDoc.data().ownerUid !== uid) {
+  if (share.ownerUid !== uid) {
     throw new HttpsError("permission-denied", "Not your share link.");
   }
 
-  const catalogRef = db.collection("users").doc(uid).collection("catalog").doc("data");
   const batch = db.batch();
   batch.delete(db.collection("shareLinks").doc(token));
-  const update = {};
-  update[`shareLinks.${token}`] = admin.firestore.FieldValue.delete();
-  batch.update(catalogRef, update);
+  batch.set(userSharesCol(uid).doc(token), {
+    ...share,
+    status: "revoked",
+    updatedAt: Date.now(),
+    revokedAt: Date.now()
+  }, { merge: true });
 
   await batch.commit();
   return { revoked: true };
