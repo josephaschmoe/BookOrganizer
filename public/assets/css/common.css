@@ -1,0 +1,39 @@
+:root {
+  --cream: #f5f0e8;
+  --parchment: #ede5d0;
+  --tan: #c9b99a;
+  --brown: #2e5c85;
+  --dark: #152d45;
+  --ink: #0c1926;
+  --red: #8b2020;
+  --gold: #3f7eb5;
+  --green: #2f6a3a;
+  --shadow: rgba(21, 45, 69, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: "EB Garamond", Georgia, serif;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.panel {
+  background: var(--parchment);
+  border: 1px solid var(--tan);
+  border-radius: 2px;
+  box-shadow: 3px 3px 12px var(--shadow);
+  overflow: hidden;
+}

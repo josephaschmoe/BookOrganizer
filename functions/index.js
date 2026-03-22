@@ -1829,6 +1829,17 @@ async function listActiveShareDocs(uid) {
   return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
 }
 
+function getShareResourceNameFromCatalog(data, requestedType, resourceId) {
+  if (requestedType === "book") {
+    const book = (data.books || []).find((entry) => entry && entry.id === resourceId);
+    if (!book) throw new HttpsError("not-found", "Book not found.");
+    return String(book.title || "").trim() || "Shared Book";
+  }
+  const shelf = (data.shelves || []).find((entry) => entry && entry.id === resourceId);
+  if (!shelf) throw new HttpsError("not-found", "Shelf not found.");
+  return String(shelf.name || "").trim() || "Shared Shelf";
+}
+
 async function findActiveShareByResource(uid, type, resourceId) {
   const shareType = normalizeShareType(type);
   const snap = await userSharesCol(uid)
@@ -2473,6 +2484,28 @@ async function getPlayableStorageUrl(objectPath) {
   return {
     audioUrl: `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`
   };
+}
+
+async function getStorageDownloadUrl(objectPath) {
+  const file = admin.storage().bucket().file(objectPath);
+  const [exists] = await file.exists();
+  if (!exists) throw new HttpsError("not-found", "Storage file not found.");
+  const [metadata] = await file.getMetadata();
+  let token = metadata && metadata.metadata && metadata.metadata.firebaseStorageDownloadTokens
+    ? String(metadata.metadata.firebaseStorageDownloadTokens).split(",")[0].trim()
+    : "";
+  if (!token) {
+    token = crypto.randomUUID();
+    await file.setMetadata({
+      metadata: {
+        ...(metadata && metadata.metadata ? metadata.metadata : {}),
+        firebaseStorageDownloadTokens: token
+      }
+    });
+  }
+  const bucket = admin.storage().bucket().name;
+  const encodedPath = encodeURIComponent(objectPath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${token}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3244,16 +3277,7 @@ exports.createShareLink = onCall(async (request) => {
   }
 
   const data = await getCatalogData(uid);
-  let resourceName = "";
-  if (requestedType === "book") {
-    const book = (data.books || []).find((entry) => entry && entry.id === resourceId);
-    if (!book) throw new HttpsError("not-found", "Book not found.");
-    resourceName = String(book.title || "").trim() || "Shared Book";
-  } else {
-    const shelf = (data.shelves || []).find((entry) => entry && entry.id === resourceId);
-    if (!shelf) throw new HttpsError("not-found", "Shelf not found.");
-    resourceName = String(shelf.name || "").trim() || "Shared Shelf";
-  }
+  const resourceName = getShareResourceNameFromCatalog(data, requestedType, resourceId);
 
   const existingShare = await findActiveShareByResource(uid, requestedType, resourceId);
   const legacyShareMap = data.shareLinks && typeof data.shareLinks === "object" ? data.shareLinks : {};
@@ -3315,6 +3339,107 @@ exports.createShareLink = onCall(async (request) => {
   return {
     token,
     share
+  };
+});
+
+/**
+ * restoreShareLink — restores a revoked share token and reactivates its original URL.
+ * If another token is currently active for the same resource, it is revoked first.
+ */
+exports.restoreShareLink = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const token = String((request.data || {}).token || "").trim();
+  if (!token) throw new HttpsError("invalid-argument", "token is required.");
+
+  const ownerShareSnap = await userSharesCol(uid).doc(token).get();
+  if (!ownerShareSnap.exists) {
+    throw new HttpsError("not-found", "Saved share history not found.");
+  }
+
+  const ownerShareData = ownerShareSnap.data() || {};
+  const requestedType = normalizeShareType(ownerShareData.type || "");
+  const resourceId = String(ownerShareData.resourceId || (requestedType === "book" ? ownerShareData.bookId : ownerShareData.shelfId) || "").trim();
+  if (!resourceId) {
+    throw new HttpsError("failed-precondition", "Saved share history is missing its resource.");
+  }
+
+  const ownerShare = buildShareRecord({
+    token,
+    uid,
+    type: requestedType,
+    resourceId,
+    resourceName: ownerShareData.resourceName || "",
+    includePersonalNotes: ownerShareData.includePersonalNotes,
+    allowWikiAI: ownerShareData.allowWikiAI,
+    allowBriefingAudio: ownerShareData.allowBriefingAudio,
+    includeAdditionalPhotos: ownerShareData.includeAdditionalPhotos,
+    createdAt: ownerShareData.createdAt,
+    updatedAt: ownerShareData.updatedAt,
+    status: ownerShareData.status || "active"
+  });
+
+  if (ownerShare.status !== "revoked") {
+    throw new HttpsError("failed-precondition", "That share link is already active.");
+  }
+
+  const data = await getCatalogData(uid);
+  const resourceName = getShareResourceNameFromCatalog(data, requestedType, resourceId);
+  const createdAt = Date.now();
+  const restoredShare = buildShareRecord({
+    token,
+    uid,
+    type: requestedType,
+    resourceId,
+    resourceName,
+    includePersonalNotes: ownerShareData.includePersonalNotes,
+    allowWikiAI: ownerShareData.allowWikiAI,
+    allowBriefingAudio: ownerShareData.allowBriefingAudio,
+    includeAdditionalPhotos: ownerShareData.includeAdditionalPhotos,
+    createdAt: ownerShareData.createdAt,
+    updatedAt: createdAt,
+    status: "active"
+  });
+
+  const tokenDoc = await db.collection("shareLinks").doc(token).get();
+  if (tokenDoc.exists) {
+    const tokenData = tokenDoc.data() || {};
+    const tokenOwner = String(tokenData.ownerUid || "").trim();
+    if (tokenOwner && tokenOwner !== uid) {
+      throw new HttpsError("already-exists", "That share URL is no longer available.");
+    }
+  }
+
+  const existingShare = await findActiveShareByResource(uid, requestedType, resourceId);
+  const replacedToken = existingShare && existingShare.token && existingShare.token !== token
+    ? existingShare.token
+    : "";
+
+  const batch = db.batch();
+  if (replacedToken) {
+    batch.delete(db.collection("shareLinks").doc(replacedToken));
+    batch.set(userSharesCol(uid).doc(replacedToken), {
+      ...existingShare,
+      status: "revoked",
+      updatedAt: createdAt,
+      revokedAt: createdAt
+    }, { merge: true });
+  }
+
+  batch.set(db.collection("shareLinks").doc(token), buildPublicShareLinkDoc(restoredShare));
+  batch.set(userSharesCol(uid).doc(token), {
+    ...restoredShare,
+    revokedAt: admin.firestore.FieldValue.delete()
+  }, { merge: true });
+
+  await batch.commit();
+  return {
+    restored: true,
+    replacedToken,
+    share: restoredShare
   };
 });
 
@@ -3623,4 +3748,58 @@ exports.revokeShareLink = onCall(async (request) => {
 
   await batch.commit();
   return { revoked: true };
+});
+
+exports.copyCurrentCoverToBookPhoto = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const bookId = cleanText((request.data || {}).bookId || "");
+  const caption = cleanText((request.data || {}).caption || "Previous cover") || "Previous cover";
+  if (!bookId) {
+    throw new HttpsError("invalid-argument", "bookId is required.");
+  }
+
+  const bucket = admin.storage().bucket();
+  const sourcePath = `users/${uid}/covers/${bookId}.jpg`;
+  const sourceFile = bucket.file(sourcePath);
+  const [exists] = await sourceFile.exists();
+  if (!exists) {
+    throw new HttpsError("not-found", "Current cover not found.");
+  }
+
+  const photoId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  const destPath = `users/${uid}/book-photos/${bookId}/${photoId}.jpg`;
+  const destFile = bucket.file(destPath);
+  await sourceFile.copy(destFile);
+  const [sourceMetadata] = await sourceFile.getMetadata().catch(() => [{}]);
+  await destFile.setMetadata({
+    contentType: sourceMetadata && sourceMetadata.contentType ? sourceMetadata.contentType : "image/jpeg",
+    metadata: {
+      firebaseStorageDownloadTokens: crypto.randomUUID()
+    }
+  });
+  const url = await getStorageDownloadUrl(destPath);
+
+  const ref = db.collection("users").doc(uid).collection("bookPhotos").doc(bookId);
+  const snap = await ref.get();
+  const existing = snap.exists && Array.isArray((snap.data() || {}).photos) ? (snap.data() || {}).photos : [];
+  const photo = {
+    id: photoId,
+    url,
+    storagePath: destPath,
+    caption,
+    type: "other",
+    createdAt: new Date().toISOString(),
+    sortOrder: existing.length
+  };
+  const photos = existing.concat(photo);
+  await ref.set({
+    photos,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+
+  return { ok: true, photo, photos };
 });

@@ -14,6 +14,8 @@ firebase deploy --only firestore  # rules/indexes only
 firebase deploy                   # everything
 ```
 
+If a frontend change introduces or depends on a new/updated callable, deploy `hosting` and `functions` together in the same release.
+
 **Always check the current git commit before deploying.** Deploying from a stale base can overwrite features.
 
 Commit and push to GitHub at natural stopping points. GitHub is the source of truth.
@@ -35,8 +37,14 @@ Commit and push to GitHub at natural stopping points. GitHub is the source of tr
 
 | File | Purpose |
 |---|---|
-| `public/index.html` | Entire frontend - all CSS, HTML, and JS in one file |
-| `public/share.html` | Public read-only shared shelf/book viewer |
+| `public/index.html` | Main app entrypoint; loads shared/app CSS and JS assets |
+| `public/share.html` | Public read-only share entrypoint; loads shared/share CSS and JS assets |
+| `public/assets/css/common.css` | Shared styles used by main app and share page |
+| `public/assets/css/index.css` | Main app-specific styles |
+| `public/assets/css/share.css` | Share page-specific styles |
+| `public/assets/js/shared/` | Shared frontend utilities used by both entrypoints |
+| `public/assets/js/app/` | Main app JS modules |
+| `public/assets/js/share/` | Share page JS modules |
 | `functions/index.js` | All Cloud Functions |
 | `firestore.rules` | Firestore security rules |
 | `storage.rules` | Firebase Storage security rules |
@@ -53,7 +61,7 @@ Commit and push to GitHub at natural stopping points. GitHub is the source of tr
 | Database | Cloud Firestore |
 | Storage | Firebase Storage (covers, book photos, audio) |
 | AI backend | Firebase Cloud Functions (Node.js) + Google Gemini + Perplexity |
-| Frontend | Vanilla HTML/CSS/JS - single file, no build step, no npm |
+| Frontend | Vanilla HTML/CSS/JS split into static assets, no build step, no npm |
 
 ---
 
@@ -139,9 +147,15 @@ Active shelf selection: `localStorage` key `tomeshelf-active-shelf-{uid}`.
 
 ---
 
-## Frontend Architecture (`public/index.html`)
+## Frontend Architecture
 
-Single-file, no build step. All state is global JS variables; there is no framework or reactive system.
+Static-asset frontend, no build step. The app still uses global JS state and browser-loaded scripts; there is no framework or reactive system.
+
+Current layout:
+- `public/index.html` loads the main app shell plus files from `public/assets/css/` and `public/assets/js/app/`
+- `public/share.html` loads the public share shell plus files from `public/assets/css/` and `public/assets/js/share/`
+- `public/assets/js/shared/` contains utilities shared by both entrypoints
+- Runtime behavior still depends on script load order and globally visible functions for inline event handlers
 
 **Key global state:**
 - `books[]` - in-memory array of all book objects for the active account
@@ -247,7 +261,9 @@ The main add flow now has two user-facing bibliographic modes:
 - **CSS variables:** `--cream`, `--parchment`, `--tan`, `--brown`, `--dark`, `--ink`, `--red`, `--gold`, `--green`
 - **No frameworks** - pure vanilla JS
 - **Mobile-first** - bottom nav on small screens; multi-column layout on desktop
-- **Single-file rule** - all main app styles, markup, and scripts stay in `public/index.html`; `share.html` remains standalone
+- **No build-step rule** - keep frontend code as static browser-loaded assets under `public/`; do not introduce a bundler/framework without explicit approval
+- **Entrypoint rule** - `public/index.html` and `public/share.html` remain the two HTML entrypoints
+- **Separation rule** - shared utilities belong in `public/assets/js/shared/`; main-app-only code belongs in `public/assets/js/app/`; share-only code belongs in `public/assets/js/share/`
 
 ---
 

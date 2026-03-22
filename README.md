@@ -58,7 +58,7 @@ A personal book catalog with a vintage aesthetic and AI-powered research briefin
 | Auth | Firebase Auth (Google Sign-In + Anonymous) |
 | Database | Cloud Firestore |
 | AI backend | Firebase Cloud Functions (Node.js) + Google Gemini + Perplexity |
-| Frontend | Vanilla HTML/CSS/JS — single file, no build step |
+| Frontend | Vanilla HTML/CSS/JS — static assets, no build step |
 
 ### AI Models
 
@@ -94,10 +94,10 @@ cd BookOrganizer
 
 ### 3. Add Firebase config to the app
 
-Open `public/index.html` and fill in your project's values in the `firebaseConfig` block near the top of the `<script>` section:
+Open `public/assets/js/shared/firebase-init.js` and fill in your project's values in the `firebaseConfig` block:
 
 ```js
-const firebaseConfig = {
+var firebaseConfig = {
   apiKey:            "YOUR_API_KEY",
   authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
   projectId:         "YOUR_PROJECT_ID",
@@ -144,6 +144,8 @@ Or deploy separately:
 firebase deploy --only hosting    # frontend only (~15 seconds)
 firebase deploy --only functions  # Cloud Functions only
 ```
+
+If the frontend now depends on a new or changed callable, deploy Hosting and Functions together instead of shipping the UI first.
 
 ## Data Storage
 

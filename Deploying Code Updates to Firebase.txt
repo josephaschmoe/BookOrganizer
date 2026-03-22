@@ -4,3 +4,5 @@
   # or selectively:
   firebase deploy --only hosting
   firebase deploy --only functions
+
+  If the frontend depends on a new or updated callable, deploy hosting and functions together rather than deploying hosting first.

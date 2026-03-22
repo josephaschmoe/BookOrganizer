@@ -251,6 +251,8 @@ firebase deploy --only functions     # Cloud Function changes
 firebase deploy --only firestore     # Firestore rules changes
 ```
 
+If an HTML/CSS/JS change depends on a new or updated callable, deploy Hosting and Functions together in the same release.
+
 ---
 
 ## Troubleshooting
